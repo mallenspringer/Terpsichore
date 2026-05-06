@@ -1,0 +1,225 @@
+body, html {
+  margin: 0;
+  padding: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  /* Warmer, parchment-like graph paper background */
+  background-color: #ebe8e0;
+  background-image: radial-gradient(#c8c2b5 1.2px, transparent 1.2px);
+  background-size: 24px 24px;
+  font-family: 'Courier New', Courier, monospace;
+  color: #222;
+}
+
+#root {
+  display: flex;
+  width: 100%;
+  height: 100%;
+}
+
+/* Layout */
+.app-container {
+  display: flex;
+  flex-direction: row;
+  width: 100%;
+  height: 100%;
+}
+
+.sidebar {
+  width: 300px;
+  border-right: 2px solid #333;
+  background-color: rgba(255, 255, 255, 0.9);
+  display: flex;
+  flex-direction: column;
+}
+
+.main-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: transparent;
+}
+
+.canvas-container {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: transparent;
+}
+
+.canvas-container canvas {
+  width: 100%;
+  max-width: 800px;
+  aspect-ratio: 16 / 9;
+}
+
+.device-rack {
+  height: 350px;
+  border-top: 2px solid #333;
+  background-color: rgba(255, 255, 255, 0.9);
+  display: flex;
+  flex-direction: row;
+  overflow-x: auto;
+  padding: 10px;
+  gap: 10px;
+}
+
+/* Components */
+.panel-header {
+  padding: 10px;
+  border-bottom: 2px solid #333;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.layer-item {
+  padding: 10px;
+  border-bottom: 1px solid #ccc;
+  cursor: pointer;
+}
+
+.layer-item:hover {
+  background-color: #f0f0f0;
+}
+
+.device-module {
+  min-width: 200px;
+  border: 2px solid #333;
+  background-color: #fff;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 2px 2px 0px #333;
+}
+
+.device-header {
+  padding: 5px 10px;
+  border-bottom: 2px solid #333;
+  font-weight: bold;
+  background-color: #f0f0f0;
+}
+
+.device-body {
+  padding: 10px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Controls */
+.control-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.control-group label {
+  font-size: 0.8em;
+  margin-bottom: 2px;
+}
+
+.control-group input[type="range"] {
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  background: #333;
+  outline: none;
+}
+
+.control-group input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  background: #fff;
+  border: 2px solid #333;
+  cursor: pointer;
+}
+
+.timeline-container {
+  position: relative;
+  height: 24px;
+  width: 100%;
+}
+
+.timeline-track {
+  position: absolute;
+  top: 10px;
+  width: 100%;
+  height: 4px;
+  background: #333;
+}
+
+.timeline-input {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 24px;
+  background: transparent !important;
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  margin: 0;
+  z-index: 30; /* Flags are now high priority to catch thumbs */
+}
+
+/* Scrubber should be below flags so it doesn't block them, 
+   but it will still catch clicks that pass through the flag track */
+.timeline-input:not(.flag-input) {
+  z-index: 10;
+}
+
+.timeline-input::-webkit-slider-runnable-track {
+  background: transparent !important;
+  border-color: transparent !important;
+  color: transparent !important;
+}
+
+.timeline-input::-webkit-slider-thumb {
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  width: 2px !important;
+  height: 24px !important;
+  background: #ffffff !important;
+  border: none !important;
+  cursor: pointer !important;
+  position: relative !important;
+  z-index: 5 !important;
+  box-shadow: 0 0 8px rgba(255,255,255,0.8) !important;
+}
+
+.timeline-input.flag-start::-webkit-slider-thumb {
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  width: 8px !important;
+  height: 18px !important;
+  background: #88cc00 !important;
+  clip-path: polygon(0% 0%, 100% 0%, 100% 70%, 50% 100%, 0% 70%) !important;
+  border: none !important;
+  border-radius: 0 !important;
+  transform: translateY(-2px);
+  box-shadow: 0 0 5px rgba(136, 204, 0, 0.4) !important;
+}
+
+.timeline-input.flag-end::-webkit-slider-thumb {
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  width: 8px !important;
+  height: 18px !important;
+  background: #88cc00 !important;
+  clip-path: polygon(0% 0%, 100% 0%, 100% 70%, 50% 100%, 0% 70%) !important;
+  border: none !important;
+  border-radius: 0 !important;
+  transform: translateY(-2px);
+  box-shadow: 0 0 5px rgba(136, 204, 0, 0.4) !important;
+}
+
+.timeline-input.flag-input {
+  pointer-events: none;
+  z-index: 20; 
+}
+.timeline-input.flag-input::-webkit-slider-thumb {
+  pointer-events: auto;
+}
