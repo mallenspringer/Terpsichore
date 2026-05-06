@@ -226,7 +226,17 @@ export interface SpawnEffect {
   globalLatch?: boolean;
 }
 
-export type SignalType = 'video' | 'audio' | 'modulation' | 'trigger' | 'midi' | 'generic';
+export interface PathEffect {
+  id: string;
+  type: 'Path';
+  mode: 'physics' | 'wiggle' | 'orbit';
+  speed: number; // e.g. Rising speed or orbit speed
+  strength: number; // e.g. Wobble amount or gravity strength
+  frequency: number; // e.g. Wobble frequency
+  drift: number; // e.g. Horizontal wind
+}
+
+export type SignalType = 'video' | 'audio' | 'modulation' | 'trigger' | 'midi' | 'generic' | 'trajectory';
 
 export interface InterLayerEdge {
   id: string;
@@ -242,12 +252,12 @@ export type AnyEffect =
   | Transform2DEffect | ColorAdjustEffect | LumaKeyEffect 
   | SimpleFeedbackEffect | AudioAnalyzerEffect | BipolarConverterEffect
   | InterLayerOutputEffect | InterLayerInputEffect | ColorRGBEffect 
-  | LumaSplitterEffect | RGBMixerEffect | SpawnEffect;
+  | LumaSplitterEffect | RGBMixerEffect | SpawnEffect | PathEffect;
 
 export type EffectType = 
   | 'Transform2D' | 'ColorAdjust' | 'LumaKey' | 'SimpleFeedback' 
   | 'AudioAnalyzer' | 'BipolarConverter' | 'InterLayerOutput' | 'InterLayerInput' 
-  | 'ColorRGB' | 'LumaSplitter' | 'RGBMixer' | 'Spawn';
+  | 'ColorRGB' | 'LumaSplitter' | 'RGBMixer' | 'Spawn' | 'Path';
 
 // --- GRAPH ---
 export interface GraphEdge {

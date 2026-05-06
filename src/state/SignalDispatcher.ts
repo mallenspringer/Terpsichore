@@ -141,7 +141,7 @@ export class SignalDispatcher {
       });
     });
 
-    // Ensure logic nodes that analyze globally (like AudioAnalyzer) are populated
+    // Ensure logic nodes are populated
     layer.effects.forEach(effect => {
       if (effect.type === 'AudioAnalyzer') {
         pipeline.push((ctx: DispatchContext) => {
@@ -159,6 +159,13 @@ export class SignalDispatcher {
             peak = buffer.getMean();
           }
           ctx.signalValues[`${effect.id}.out`] = peak;
+        });
+      } else if (effect.type === 'Path') {
+        pipeline.push((ctx: DispatchContext) => {
+          const ef = effect as any;
+          const time = performance.now() / 1000;
+          // Output a basic oscillation based on frequency for the mod port
+          ctx.signalValues[`${effect.id}.modulation_out`] = Math.sin(time * (ef.frequency || 1)) * 0.5 + 0.5;
         });
       }
     });

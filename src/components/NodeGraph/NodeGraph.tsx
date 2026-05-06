@@ -404,6 +404,7 @@ export function NodeGraph({ layer, videoProgress, onSeek, onSeekStart, onSeekEnd
     else if (type === 'LumaSplitter') newEffect = { id: newId, type, threshold1: 0.33, threshold2: 0.66, softness: 0.1 };
     else if (type === 'Spawn') newEffect = { id: newId, type, x: 0, y: 0, scale: 0.5, rotation: 0, maxCount: 20, lifetime: 2.0, fadeOut: true, randomPos: 0.0, randomScale: 0.0, coordinateMode: 'normalized' } as any;
     else if (type === 'RGBMixer') newEffect = { id: newId, type, rLevel: 1, gLevel: 1, bLevel: 1 };
+    else if (type === 'Path') newEffect = { id: newId, type, mode: 'physics', speed: 1.0, strength: 1.0, frequency: 1.0, drift: 0.0 };
     else newEffect = { id: newId, type: 'SimpleFeedback', feedbackAmount: 0.9, zoom: 0.95, angle: 0.05 };
     updateLayer(layer.id, { effects: [...layer.effects, newEffect] });
   }, [layer, updateLayer]);

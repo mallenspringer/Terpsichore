@@ -10,12 +10,12 @@ import { ImageVideoSourceWGSL, VideoSourceWGSL } from './shaders/ImageVideoSourc
 import { AudioEngine } from '../state/AudioEngine';
 import { LumaSplitterWGSL } from './shaders/LumaSplitter';
 import { RGBMixerWGSL } from './shaders/RGBMixer';
-import { SpawnWGSL } from './shaders/Spawn';
+import { SpawnWGSL, SpawnVertexWGSL } from './shaders/Spawn';
 import { 
   ShapeGeneratorSource, Transform2DEffect, ColorAdjustEffect, LumaKeyEffect, 
   SimpleFeedbackEffect, ColorRGBEffect, LumaSplitterEffect, RGBMixerEffect, 
   VideoURLSource, VideoFileSource, WebcamCaptureSource, ImageLoaderSource, ImageFileSource, 
-  LFOModulatorSource, TriggerPadSource, SignalProcessorSource, SpawnEffect,
+  LFOModulatorSource, TriggerPadSource, SignalProcessorSource, SpawnEffect, PathEffect,
   LayerState
 } from '../state/types';
 
@@ -73,6 +73,7 @@ export class Renderer {
   private analysisReadbackBuffers: Map<string, GPUBuffer> = new Map();
   private analysisWeightBuffers: Map<string, GPUBuffer> = new Map();
   private uniformBuffers: Map<string, GPUBuffer> = new Map();
+  private storageBuffers: Map<string, GPUBuffer> = new Map();
   private analysisBusy: Set<string> = new Set();
   public latestLumaValues: Record<string, number> = {};
 
@@ -130,6 +131,8 @@ export class Renderer {
     if (this.masterFBO) this.masterFBO.destroy();
     if (this.layerFBO_A) this.layerFBO_A.destroy();
     if (this.layerFBO_B) this.layerFBO_B.destroy();
+    this.storageBuffers.forEach(b => b.destroy());
+    this.storageBuffers.clear();
 
     const size = { width: this.canvas.width, height: this.canvas.height };
     const usage = GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC;
@@ -181,6 +184,20 @@ export class Renderer {
       return latched.includes(portId) ? birth : current;
     };
 
+    // --- Path Logic ---
+    // Look for a path connected to this Spawn node
+    const pathEdge = layer.graph?.edges.find(e => e.toNodeId === nodeId && e.toPort === 'path_in');
+    const pathEffect = pathEdge ? layer.effects.find(e => e.id === pathEdge.fromNodeId) as PathEffect : null;
+
+    // Resolve path params (modulated)
+    let pathSpeed = 1.0, pathStrength = 1.0, pathFreq = 1.0, pathDrift = 0.0;
+    if (pathEffect) {
+      pathSpeed = this.getEffectiveParam(layer, pathEffect.id, 'speed', pathEffect.speed, timeSec);
+      pathStrength = this.getEffectiveParam(layer, pathEffect.id, 'strength', pathEffect.strength, timeSec);
+      pathFreq = this.getEffectiveParam(layer, pathEffect.id, 'frequency', pathEffect.frequency, timeSec);
+      pathDrift = this.getEffectiveParam(layer, pathEffect.id, 'drift', pathEffect.drift, timeSec);
+    }
+
     // 1. Clear Target
     const pass = commandEncoder.beginRenderPass({
       colorAttachments: [{
@@ -193,34 +210,60 @@ export class Renderer {
 
     if (spawns.length > 0) {
       pass.setPipeline(this.spawnPipeline);
+      
+      const instanceData = new Float32Array(spawns.length * 8); // 8 floats per instance
       spawns.forEach((obj, idx) => {
-        const finalX = resolve('x', currentX, obj.birthX) + obj.randomX;
-        const finalY = resolve('y', currentY, obj.birthY) + obj.randomY;
+        const age = timeSec - obj.birthTime;
+        let pathOffsetX = 0;
+        let pathOffsetY = 0;
+
+        if (pathEffect) {
+          if (pathEffect.mode === 'physics') {
+            pathOffsetY = -age * pathSpeed * 0.1; // Slow rise
+            pathOffsetX = age * pathDrift * 0.1;
+          } else if (pathEffect.mode === 'wiggle') {
+            pathOffsetX = Math.sin(age * pathFreq + obj.randomX * 100) * pathStrength * 0.05;
+            pathOffsetY = Math.cos(age * pathFreq * 0.7 + obj.randomY * 100) * pathStrength * 0.05;
+          } else if (pathEffect.mode === 'orbit') {
+            const angle = age * pathSpeed + (obj.randomX * Math.PI * 2);
+            const dist = pathStrength * 0.1;
+            pathOffsetX = Math.cos(angle) * dist;
+            pathOffsetY = Math.sin(angle) * dist;
+          }
+        }
+
+        const finalX = resolve('x', currentX, obj.birthX) + obj.randomX + pathOffsetX;
+        const finalY = resolve('y', currentY, obj.birthY) + obj.randomY + pathOffsetY;
         const finalScale = resolve('scale', currentScale, obj.birthScale) * (1.0 + obj.randomScale);
         const finalRotation = resolve('rotation', currentRotation, obj.birthRotation);
 
-        const uniformBuffer = this.getUniformBuffer(`${stateKey}.spawn.${idx}`, 32);
-        const buf = new Float32Array(8);
-        buf[0] = finalX;
-        buf[1] = finalY;
-        buf[2] = finalScale;
-        buf[3] = finalRotation;
-        buf[4] = obj.alpha;
-        buf[5] = aspect;
-        this.device.queue.writeBuffer(uniformBuffer, 0, buf);
-
-        const bindGroup = this.device.createBindGroup({
-          layout: this.spawnPipeline.getBindGroupLayout(0),
-          entries: [
-            { binding: 0, resource: { buffer: uniformBuffer } },
-            { binding: 1, resource: inputTex.createView() },
-            { binding: 2, resource: this.sampler }
-          ]
-        });
-
-        pass.setBindGroup(0, bindGroup);
-        pass.draw(3);
+        const base = idx * 8;
+        instanceData[base + 0] = finalX;
+        instanceData[base + 1] = finalY;
+        instanceData[base + 2] = finalScale;
+        instanceData[base + 3] = finalRotation;
+        instanceData[base + 4] = obj.alpha;
+        // padding: indices 5, 6, 7
       });
+
+      const storageBuffer = this.getStorageBuffer(`${stateKey}.instances`, instanceData.byteLength);
+      this.device.queue.writeBuffer(storageBuffer, 0, instanceData);
+
+      const globalUniforms = this.getUniformBuffer(`${stateKey}.globals`, 16);
+      this.device.queue.writeBuffer(globalUniforms, 0, new Float32Array([aspect, 0, 0, 0]));
+
+      const bindGroup = this.device.createBindGroup({
+        layout: this.spawnPipeline.getBindGroupLayout(0),
+        entries: [
+          { binding: 0, resource: { buffer: storageBuffer } },
+          { binding: 1, resource: { buffer: globalUniforms } },
+          { binding: 2, resource: inputTex.createView() },
+          { binding: 3, resource: this.sampler }
+        ]
+      });
+
+      pass.setBindGroup(0, bindGroup);
+      pass.draw(3, spawns.length);
     }
 
     pass.end();
@@ -348,14 +391,18 @@ export class Renderer {
         bindGroupLayouts: [
           this.device.createBindGroupLayout({
             entries: [
-              { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
-              { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
-              { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: {} }
+              { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
+              { binding: 1, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+              { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+              { binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: {} }
             ]
           })
         ]
       }),
-      vertex,
+      vertex: {
+        module: this.device.createShaderModule({ code: SpawnVertexWGSL }),
+        entryPoint: 'vs_main'
+      },
       fragment: { 
         module: this.device.createShaderModule({ code: SpawnWGSL }), 
         entryPoint: 'fs_main', 
@@ -369,6 +416,19 @@ export class Renderer {
       },
       primitive
     });
+  }
+
+  private getStorageBuffer(key: string, size: number): GPUBuffer {
+    let buf = this.storageBuffers.get(key);
+    if (!buf || buf.size < size) {
+      if (buf) buf.destroy();
+      buf = this.device.createBuffer({
+        size: Math.ceil(size / 256) * 256,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+      });
+      this.storageBuffers.set(key, buf);
+    }
+    return buf;
   }
 
   public getVideoElement(layerId: string): HTMLVideoElement | null {
@@ -852,7 +912,11 @@ export class Renderer {
 
         // 1. Resolve Active State (Manual Button/Key OR Remote Input)
         const remoteSync = this.calculateSignalValue(layer, nodeId, 'trigger_in', timeSec);
-        const isRemoteActive = remoteSync > 0.5;
+        
+        const settings = layer.inputSettings?.[`${nodeId}.trigger_in`];
+        const isBipolar = settings?.bipolar ?? false;
+        
+        const isRemoteActive = isBipolar ? Math.abs(remoteSync) > 0.5 : remoteSync > 0.5;
         const isActive = tp.isPressed || isRemoteActive;
 
         // 2. Process Envelope
@@ -882,7 +946,12 @@ export class Renderer {
         const lastTrigger = this.lastTriggerVals.get(stateKey) || 0;
         this.lastTriggerVals.set(stateKey, triggerVal);
 
-        const isTriggered = triggerVal > 0.5 && lastTrigger <= 0.5;
+        const settings = layer.inputSettings?.[`${effect.id}.trigger_in`];
+        const isBipolar = settings?.bipolar ?? false;
+
+        const isTriggered = isBipolar 
+          ? ( (triggerVal > 0.5 && lastTrigger <= 0.5) || (triggerVal < -0.5 && lastTrigger >= -0.5) )
+          : (triggerVal > 0.5 && lastTrigger <= 0.5);
 
         // 2. Check Reset
         const resetVal = this.calculateSignalValue(layer, effect.id, 'reset_in', timeSec);

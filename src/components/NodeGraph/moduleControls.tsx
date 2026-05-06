@@ -7,7 +7,7 @@ import {
   LFOModulatorSource, TriggerPadSource, SignalProcessorSource,
   Transform2DEffect, ColorAdjustEffect, LumaKeyEffect, SimpleFeedbackEffect,
   InterLayerOutputEffect, InterLayerInputEffect, ColorRGBEffect, LumaSplitterEffect,
-  SpawnEffect, RGBMixerEffect
+  SpawnEffect, RGBMixerEffect, PathEffect
 } from '../../state/types';
 
 // ── Context types ──────────────────────────────────────────────────────────────
@@ -955,5 +955,37 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
     { id: 'rLevel', label: 'R Level', render: ctx => <Slider label="Red" min={0} max={2} step={0.01} resetValue={1} value={eff<RGBMixerEffect>(ctx).rLevel} onChange={v => upd(ctx)({ rLevel: v })} /> },
     { id: 'gLevel', label: 'G Level', render: ctx => <Slider label="Green" min={0} max={2} step={0.01} resetValue={1} value={eff<RGBMixerEffect>(ctx).gLevel} onChange={v => upd(ctx)({ gLevel: v })} /> },
     { id: 'bLevel', label: 'B Level', render: ctx => <Slider label="Blue" min={0} max={2} step={0.01} resetValue={1} value={eff<RGBMixerEffect>(ctx).bLevel} onChange={v => upd(ctx)({ bLevel: v })} /> },
+  ],
+
+  Path: [
+    { id: 'mode', label: 'Mode',
+      render: ctx => (
+        <div className="rack-row-content" onPointerDown={e => e.stopPropagation()}>
+          <span className="rack-row-label">Mode</span>
+          <select value={eff<PathEffect>(ctx).mode} 
+            onChange={e => { e.stopPropagation(); upd(ctx)({ mode: e.target.value as any }); }}>
+            <option value="physics">Physics (Rise)</option>
+            <option value="wiggle">Wiggle (Noise)</option>
+            <option value="orbit">Orbit</option>
+          </select>
+        </div>
+      )
+    },
+    { id: 'speed', label: 'Speed',
+      render: ctx => <Slider label="Speed" min={-5} max={5} step={0.01} resetValue={0}
+        value={eff<PathEffect>(ctx).speed} onChange={v => upd(ctx)({ speed: v })} />
+    },
+    { id: 'strength', label: 'Strength',
+      render: ctx => <Slider label="Strength" min={0} max={2} step={0.01} resetValue={1}
+        value={eff<PathEffect>(ctx).strength} onChange={v => upd(ctx)({ strength: v })} />
+    },
+    { id: 'frequency', label: 'Frequency',
+      render: ctx => <Slider label="Frequency" min={0} max={10} step={0.01} resetValue={1}
+        value={eff<PathEffect>(ctx).frequency} onChange={v => upd(ctx)({ frequency: v })} />
+    },
+    { id: 'drift', label: 'Drift',
+      render: ctx => <Slider label="Drift" min={-2} max={2} step={0.01} resetValue={0}
+        value={eff<PathEffect>(ctx).drift} onChange={v => upd(ctx)({ drift: v })} />
+    },
   ],
 };

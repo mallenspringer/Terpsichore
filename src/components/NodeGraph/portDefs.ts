@@ -1,4 +1,4 @@
-export type SignalType = 'video' | 'modulation' | 'trigger' | 'audio' | 'red' | 'green' | 'blue' | 'midi' | 'generic';
+export type SignalType = 'video' | 'modulation' | 'trigger' | 'audio' | 'red' | 'green' | 'blue' | 'midi' | 'generic' | 'trajectory';
 
 export interface PortDef {
   id: string;
@@ -54,6 +54,7 @@ export const PORT_DEFS: Record<string, PortDef[]> = {
     { id: 'y',           label: 'Y Pos',       direction: 'in',  signalType: 'modulation' },
     { id: 'scale',       label: 'Scale',       direction: 'in',  signalType: 'modulation' },
     { id: 'rotation',    label: 'Rotation',    direction: 'in',  signalType: 'modulation' },
+    { id: 'path_in',     label: 'Path In',     direction: 'in',  signalType: 'trajectory', priority: 3 },
   ],
   ColorAdjust: [
     { id: 'video_in',   label: 'Video In',   direction: 'in',  signalType: 'video' },
@@ -122,6 +123,14 @@ export const PORT_DEFS: Record<string, PortDef[]> = {
     { id: 'b_in',      label: 'Blue In',   direction: 'in',  signalType: 'video' },
     { id: 'video_out', label: 'Composite', direction: 'out', signalType: 'video', priority: 0 },
   ],
+  Path: [
+    { id: 'trajectory_out', label: 'Trajectory', direction: 'out', signalType: 'trajectory', priority: 0 },
+    { id: 'modulation_out', label: 'Value Out',  direction: 'out', signalType: 'modulation', priority: 1 },
+    { id: 'speed',          label: 'Speed',      direction: 'in',  signalType: 'modulation' },
+    { id: 'strength',       label: 'Strength',   direction: 'in',  signalType: 'modulation' },
+    { id: 'frequency',      label: 'Frequency',  direction: 'in',  signalType: 'modulation' },
+    { id: 'drift',          label: 'Drift',      direction: 'in',  signalType: 'modulation' },
+  ],
   None: [],
   __OUTPUT__: [
     { id: 'composite_in', label: 'Composite In', direction: 'in', signalType: 'video' },
@@ -137,7 +146,7 @@ export const SIGNAL_COLORS: Record<SignalType, string> = {
   green:      '#88cc00',
   blue:       '#4444ff',
   midi:       '#39ff14', // Workstation Green
-  generic:    '#888888', 
+  trajectory: '#18f58c', // Mint Green
 };
 
 export const SOURCE_WIRE_COLOR: Record<string, string> = {
@@ -183,6 +192,9 @@ const SHORT_LABELS: Record<string, string> = {
   threshold1: 'Thr 1',
   threshold2: 'Thr 2',
   softness: 'Soft',
+  path_in: 'Path',
+  trajectory_out: 'Traj',
+  modulation_out: 'Val',
 };
 
 export function getShortLabel(portId: string, fullLabel: string): string {
@@ -209,4 +221,5 @@ export const MODULE_DISPLAY_NAMES: Record<string, string> = {
   InterLayerOutput: 'Layer Out',
   InterLayerInput: 'Layer In',
   LumaSplitter: 'Luma Split',
+  Path: 'Path',
 };

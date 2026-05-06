@@ -40,7 +40,14 @@ function App() {
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent, isDown: boolean) => {
-      if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement).tagName)) return;
+      const target = e.target as HTMLElement;
+      if (['TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+      if (target.tagName === 'INPUT') {
+        const type = (target as HTMLInputElement).type;
+        // Block if it's a typing field, but ALLOW if it's a slider (range)
+        if (['text', 'number', 'email', 'url', 'password'].includes(type)) return;
+      }
+
       const key = e.key;
       const validKeys = ['1','2','3','4','5','6','7','8','9','0'];
       if (!validKeys.includes(key)) return;
