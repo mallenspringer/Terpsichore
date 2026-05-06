@@ -312,6 +312,8 @@ export function NodeGraph({ layer, videoProgress, onSeek, onSeekStart, onSeekEnd
       newSource = { type, fileUrl: "", fileName: "No file selected", volume: 1.0, muted: false, loop: true, playState: 'pause' };
     } else if (type === 'SystemAudio') {
       newSource = { type, volume: 1.0, muted: false };
+    } else if (type === 'NoiseSource') {
+      newSource = { type, noiseType: 'perlin', scale: 2.0, evolution: 1.0, octaves: 4, persistence: 0.5, seed: 123, brightness: 0, contrast: 1, flowSpeed: 1.0, autoAnimate: true };
     } else {
       newSource = { type: 'ImageLoader', imageUrl: "/logo.png", objectFit: 'cover' } as any;
     }

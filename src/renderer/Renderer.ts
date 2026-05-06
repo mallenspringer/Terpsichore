@@ -16,9 +16,11 @@ import {
   SimpleFeedbackEffect, ColorRGBEffect, LumaSplitterEffect, RGBMixerEffect, 
   VideoURLSource, VideoFileSource, WebcamCaptureSource, ImageLoaderSource, ImageFileSource, 
   LFOModulatorSource, TriggerPadSource, SignalProcessorSource, SpawnEffect, PathEffect,
-  NoiseModulatorSource,
+  NoiseModulatorSource, NoiseVideoSource,
   LayerState
 } from '../state/types';
+
+import { NoiseSourceVertexWGSL, NoiseSourceFragmentWGSL } from './shaders/NoiseSource';
 
 import { PORT_DEFS } from '../components/NodeGraph/portDefs';
 
@@ -58,6 +60,7 @@ export class Renderer {
   private mediaPipeline!: GPURenderPipeline;
   private transformPipeline!: GPURenderPipeline;
   private spawnPipeline!: GPURenderPipeline;
+  private noiseSourcePipeline!: GPURenderPipeline;
   private colorAdjustPipeline!: GPURenderPipeline;
   private lumaKeyPipeline!: GPURenderPipeline;
   private colorRGBPipeline!: GPURenderPipeline;
@@ -152,6 +155,58 @@ export class Renderer {
       });
     }
     return this.prevFrameFBOs[layerId];
+  }
+
+  private renderNoiseSource(layer: LayerState, nodeId: string, target: GPUTexture, timeSec: number, commandEncoder: GPUCommandEncoder) {
+    const source = (nodeId === 'source') ? (layer.source || { type: 'None' }) : (layer.modulators ? layer.modulators[nodeId] : undefined);
+    if (!source || (source as any).type !== 'NoiseSource') return;
+    const ns = source as NoiseVideoSource;
+
+    const scale = this.getEffectiveParam(layer, nodeId, 'scale_cv', ns.scale, timeSec);
+    let evolution = this.getEffectiveParam(layer, nodeId, 'evolution_cv', ns.evolution, timeSec);
+
+    if (ns.autoAnimate) {
+      evolution += timeSec * (ns.flowSpeed ?? 1.0);
+    }
+
+    const octaves = this.getEffectiveParam(layer, nodeId, 'octaves_cv', ns.octaves, timeSec);
+    const persistence = this.getEffectiveParam(layer, nodeId, 'persistence_cv', ns.persistence, timeSec);
+    const seed = this.getEffectiveParam(layer, nodeId, 'seed_cv', ns.seed, timeSec);
+    const brightness = this.getEffectiveParam(layer, nodeId, 'brightness_cv', ns.brightness ?? 0, timeSec);
+    const contrast = this.getEffectiveParam(layer, nodeId, 'contrast_cv', ns.contrast ?? 1, timeSec);
+
+    const uniformData = new Float32Array([
+      ns.noiseType === 'perlin' ? 0 : (ns.noiseType === 'worley' ? 1 : (ns.noiseType === 'white' ? 2 : 3)),
+      scale,
+      evolution,
+      octaves,
+      persistence,
+      seed,
+      brightness,
+      contrast,
+      target.width / target.height,
+      0, 0, 0 // Padding
+    ]);
+
+    const buf = this.getUniformBuffer(`${layer.id}.${nodeId}.noise`, uniformData.byteLength);
+    this.device.queue.writeBuffer(buf, 0, uniformData);
+
+    const pass = commandEncoder.beginRenderPass({
+      colorAttachments: [{
+        view: target.createView(),
+        clearValue: { r: 0, g: 0, b: 0, a: 1 },
+        loadOp: 'clear',
+        storeOp: 'store'
+      }]
+    });
+
+    pass.setPipeline(this.noiseSourcePipeline);
+    pass.setBindGroup(0, this.device.createBindGroup({
+      layout: this.noiseSourcePipeline.getBindGroupLayout(0),
+      entries: [{ binding: 0, resource: { buffer: buf } }]
+    }));
+    pass.draw(3);
+    pass.end();
   }
 
   private renderSpawn(layer: LayerState, nodeId: string, inputTex: GPUTexture, target: GPUTexture, timeSec: number, commandEncoder: GPUCommandEncoder) {
@@ -385,6 +440,26 @@ export class Renderer {
         targets: [{ format: this.format }]
       },
       primitive
+    });
+
+    this.noiseSourcePipeline = this.device.createRenderPipeline({
+      layout: this.device.createPipelineLayout({
+        bindGroupLayouts: [
+          this.device.createBindGroupLayout({
+            entries: [{ binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } }]
+          })
+        ]
+      }),
+      vertex: {
+        module: this.device.createShaderModule({ code: NoiseSourceVertexWGSL }),
+        entryPoint: 'vs_main'
+      },
+      fragment: {
+        module: this.device.createShaderModule({ code: NoiseSourceFragmentWGSL }),
+        entryPoint: 'fs_main',
+        targets: [{ format: this.format }]
+      },
+      primitive: { topology: 'triangle-list' }
     });
 
     this.spawnPipeline = this.device.createRenderPipeline({
@@ -1251,6 +1326,10 @@ export class Renderer {
             this.device.queue.writeBuffer(uniformBuffer, 0, buf);
             const bindGroup = this.device.createBindGroup({ layout: this.shapePipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: uniformBuffer } }] });
             pass.setPipeline(this.shapePipeline); pass.setBindGroup(0, bindGroup); pass.draw(3);
+          } else if (layer.source.type === 'NoiseSource') {
+            pass.end(); // We close the generic pass and let renderNoiseSource handle its own pass
+            this.renderNoiseSource(layer, 'source', target, timeSec, commandEncoder);
+            return; // We skip the rest of the source block
           } else {
             const media = this.manageMediaSource(layer.id, { ...layer.source, _layerAudioMuted: layer.audioMuted });
             if (media) {

@@ -118,7 +118,21 @@ export interface NoiseModulatorSource {
   bipolar: boolean;
 }
 
-export type AnySource = NoneSource | ShapeGeneratorSource | VideoURLSource | VideoFileSource | WebcamCaptureSource | ImageLoaderSource | ImageFileSource | AudioInputSource | AudioFileSource | SystemAudioSource | SignalProcessorSource | LFOModulatorSource | TriggerPadSource | NoiseModulatorSource;
+export interface NoiseVideoSource {
+  type: 'NoiseSource';
+  noiseType: 'perlin' | 'worley' | 'simplex';
+  scale: number;
+  evolution: number;
+  octaves: number;
+  persistence: number;
+  seed: number;
+  brightness: number;
+  contrast: number;
+  flowSpeed: number;
+  autoAnimate: boolean;
+}
+
+export type AnySource = NoneSource | ShapeGeneratorSource | VideoURLSource | VideoFileSource | WebcamCaptureSource | ImageLoaderSource | ImageFileSource | AudioInputSource | AudioFileSource | SystemAudioSource | SignalProcessorSource | LFOModulatorSource | TriggerPadSource | NoiseModulatorSource | NoiseVideoSource;
 
 // --- EFFECTS ---
 

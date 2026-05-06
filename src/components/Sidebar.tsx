@@ -22,6 +22,7 @@ const ALL_MODULES: ModuleEntry[] = [
   { id: 'ImageFile',      glyph: '🖼️', label: 'Img File',  tooltip: 'Local Image File',        category: 'Sources', moduleType: 'source:ImageFile'      },
   { id: 'ImageURL',       glyph: '🔗', label: 'Img URL',   tooltip: 'Image from URL',          category: 'Sources', moduleType: 'source:ImageLoader'    },
   { id: 'ShapeGen',       glyph: '⬜', label: 'Shape',     tooltip: 'Shape Generator',         category: 'Sources', moduleType: 'source:ShapeGenerator' },
+  { id: 'NoiseSource',    glyph: '🌫️', label: 'Noise Gen',  tooltip: '2D Procedural Noise',    category: 'Sources', moduleType: 'source:NoiseSource'    },
   { id: 'AudioInput',     glyph: '🎤', label: 'Audio In',  tooltip: 'Live Audio Input',        category: 'Sources', moduleType: 'source:AudioInput'     },
   { id: 'AudioFile',      glyph: '🎵', label: 'Audio File',tooltip: 'Local Audio File',       category: 'Sources', moduleType: 'source:AudioFile'      },
   { id: 'SystemAudio',    glyph: '🔊', label: 'Sys Audio', tooltip: 'System Audio Capture',    category: 'Sources', moduleType: 'source:SystemAudio'    },

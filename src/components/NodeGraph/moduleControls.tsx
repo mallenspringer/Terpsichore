@@ -5,7 +5,7 @@ import {
   WebcamCaptureSource, ImageLoaderSource, ImageFileSource,
   AudioInputSource, AudioFileSource, SystemAudioSource,
   LFOModulatorSource, TriggerPadSource, SignalProcessorSource,
-  NoiseModulatorSource,
+  NoiseModulatorSource, NoiseVideoSource,
   Transform2DEffect, ColorAdjustEffect, LumaKeyEffect, SimpleFeedbackEffect,
   InterLayerOutputEffect, InterLayerInputEffect, ColorRGBEffect, LumaSplitterEffect,
   SpawnEffect, RGBMixerEffect, PathEffect
@@ -548,6 +548,52 @@ export const SOURCE_ROWS: Record<string, ControlRowDef[]> = {
         </div>
       )
     }
+  ],
+  NoiseSource: [
+    { id: 'noiseType', label: 'Type',
+      render: ctx => (
+        <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} onDragStart={e => e.stopPropagation()}>
+          <span className="rack-row-label">Noise Type</span>
+          <select value={src<NoiseVideoSource>(ctx).noiseType} onChange={e => chg(ctx)('noiseType', e.target.value)}>
+            <option value="perlin">Perlin (fBm)</option>
+            <option value="worley">Worley (Cellular)</option>
+            <option value="white">White Noise (Snow)</option>
+          </select>
+        </div>
+      )
+    },
+    { id: 'scale', label: 'Scale',
+      render: ctx => <Slider label="Scale" min={0.1} max={20} step={0.1} value={src<NoiseVideoSource>(ctx).scale} onChange={v => chg(ctx)('scale', v)} />
+    },
+    { id: 'evolution', label: 'Evol',
+      render: ctx => <Slider label="Evolution" min={0} max={10} step={0.1} value={src<NoiseVideoSource>(ctx).evolution} onChange={v => chg(ctx)('evolution', v)} />
+    },
+    { id: 'autoAnimate', label: 'Auto',
+      render: ctx => (
+        <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} onDragStart={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <span className="rack-row-label">Auto Animate (3D)</span>
+          <input type="checkbox" checked={src<NoiseVideoSource>(ctx).autoAnimate} onChange={e => chg(ctx)('autoAnimate', e.target.checked)} />
+        </div>
+      )
+    },
+    { id: 'flowSpeed', label: 'Speed',
+      render: ctx => src<NoiseVideoSource>(ctx).autoAnimate ? <Slider label="Flow Speed" min={0} max={10} step={0.1} value={src<NoiseVideoSource>(ctx).flowSpeed} onChange={v => chg(ctx)('flowSpeed', v)} /> : null
+    },
+    { id: 'octaves', label: 'Octaves',
+      render: ctx => <Slider label="Octaves" min={1} max={8} step={1} value={src<NoiseVideoSource>(ctx).octaves} onChange={v => chg(ctx)('octaves', v)} />
+    },
+    { id: 'persistence', label: 'Persist',
+      render: ctx => <Slider label="Persistence" min={0} max={1} step={0.01} value={src<NoiseVideoSource>(ctx).persistence} onChange={v => chg(ctx)('persistence', v)} />
+    },
+    { id: 'brightness', label: 'Bright',
+      render: ctx => <Slider label="Brightness" min={-1} max={1} step={0.01} value={src<NoiseVideoSource>(ctx).brightness ?? 0} onChange={v => chg(ctx)('brightness', v)} />
+    },
+    { id: 'contrast', label: 'Contrast',
+      render: ctx => <Slider label="Contrast" min={0} max={4} step={0.01} value={src<NoiseVideoSource>(ctx).contrast ?? 1} onChange={v => chg(ctx)('contrast', v)} />
+    },
+    { id: 'seed', label: 'Seed',
+      render: ctx => <Slider label="Seed" min={0} max={1000} step={1} value={src<NoiseVideoSource>(ctx).seed} onChange={v => chg(ctx)('seed', v)} />
+    },
   ],
 
 

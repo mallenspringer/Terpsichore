@@ -2,10 +2,14 @@
 
 This document tracks planned features and architectural improvements to be addressed after the initial MVP is stable.
 
+## ✅ Completed Milestones
+- **WebGPU Instancing**: Migrated `Spawn` module to high-performance storage-buffer batching.
+- **Path Module**: Initial implementation of trajectory-based movement (Physics, Wiggle, Orbit).
+- **Stochastic Engine**: 1D Noise modulator with White, Pink, Brownian, and Perlin algorithms.
+
 ## 🚀 New Features
 
 ### 1. Advanced Motion & Pathing
-- **Path Module**: A dedicated trajectory generator for complex movement (Lissajous, Bezier, etc.).
 - **Physics Engine**: Add mass, gravity, buoyancy, and friction to spawned objects.
 - **Attractors/Repellers**: Modules that influence the movement of all objects on a layer based on spatial coordinates.
 
@@ -14,7 +18,16 @@ This document tracks planned features and architectural improvements to be addre
 - **Spectral Analysis**: Deeper audio analysis (FFT) for frequency-specific modulation.
 - **Logic Gates**: AND, OR, XOR modules for trigger-based patch logic.
 
-### 3. UI/UX Polishing
+### 3. Effects Modules
+- **Eternal Zoom**: A procedural noise effect that cross-fades octaves during scale changes to create an illusion of infinite inward or outward motion.
+- **Complex and Compound Symmetry**: Advanced tiling and mirroring modules (Kaleidoscopes, Mandalas, and multi-axis reflections).
+- **Outliner**: Stylized edge detection that creates "slabby" or bold outlines at contrast boundaries.
+- **Posterizer**: Color bit-crushing to emulate the stepped-gradient aesthetic of vintage 90s digital video effects.
+
+### 4. 1-Click Audio Visualizers
+- **Visualizer Presets**: A bank of "Macro" patches that instantly wire up audio transients to specific visual styles.
+
+### 5. UI/UX Polishing
 - **Signal Meters**: Dedicated visualizers for every CV input/output in the patchbay.
 - **Mini-Maps**: A "Birds-eye" view for large node graphs.
 - **Module Presets**: Ability to save and load specific module configurations.
@@ -24,7 +37,6 @@ This document tracks planned features and architectural improvements to be addre
 ## 🏗️ Structural Revisions & Refactoring
 
 ### 1. Performance & Rendering
-- **WebGPU Instancing**: Migrate the `Spawn` module to use instanced draw calls for rendering thousands of objects.
 - **Compute Shaders**: Move particle physics and lifecycle management to GPU Compute shaders to free up the CPU.
 - **Texture Management**: Implement Texture Arrays/Atlases to support unique textures per instance.
 

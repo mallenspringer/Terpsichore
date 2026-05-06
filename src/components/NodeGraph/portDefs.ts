@@ -27,6 +27,16 @@ export const PORT_DEFS: Record<string, PortDef[]> = {
     { id: 'frequency_cv',   label: 'Freq CV',  direction: 'in',  signalType: 'modulation', priority: 1 },
     { id: 'amplitude_cv',   label: 'Amp CV',   direction: 'in',  signalType: 'modulation', priority: 2 },
   ],
+  NoiseSource: [
+    { id: 'video_out',      label: 'Video Out', direction: 'out', signalType: 'video', priority: 0 },
+    { id: 'scale_cv',       label: 'Scale CV',  direction: 'in',  signalType: 'modulation' },
+    { id: 'evolution_cv',   label: 'Evol CV',   direction: 'in',  signalType: 'modulation' },
+    { id: 'octaves_cv',     label: 'Oct CV',    direction: 'in',  signalType: 'modulation' },
+    { id: 'persistence_cv', label: 'Pers CV',   direction: 'in',  signalType: 'modulation' },
+    { id: 'seed_cv',        label: 'Seed CV',   direction: 'in',  signalType: 'modulation' },
+    { id: 'brightness_cv',  label: 'Brght CV',  direction: 'in',  signalType: 'modulation' },
+    { id: 'contrast_cv',    label: 'Cont CV',   direction: 'in',  signalType: 'modulation' },
+  ],
   ShapeGenerator: [
     { id: 'video_out',   label: 'Video Out',   direction: 'out', signalType: 'video', priority: 0 },
     { id: 'sides',       label: 'Sides',       direction: 'in',  signalType: 'modulation' },
