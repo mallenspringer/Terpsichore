@@ -41,7 +41,7 @@ function App() {
   useEffect(() => {
     const handleKey = (e: KeyboardEvent, isDown: boolean) => {
       const target = e.target as HTMLElement;
-      if (['TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+      if (target.tagName === 'TEXTAREA') return;
       if (target.tagName === 'INPUT') {
         const type = (target as HTMLInputElement).type;
         // Block if it's a typing field, but ALLOW if it's a slider (range)

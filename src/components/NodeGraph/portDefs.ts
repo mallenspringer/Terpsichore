@@ -22,6 +22,11 @@ export const PORT_DEFS: Record<string, PortDef[]> = {
     { id: 'trigger_out', label: 'Trig Out', direction: 'out', signalType: 'trigger', priority: 0 },
     { id: 'trigger_in',  label: 'Trig In',  direction: 'in',  signalType: 'trigger', priority: 1 }
   ],
+  Noise: [
+    { id: 'modulation_out', label: 'Noise Out', direction: 'out', signalType: 'modulation', priority: 0, bipolar: true },
+    { id: 'frequency_cv',   label: 'Freq CV',  direction: 'in',  signalType: 'modulation', priority: 1 },
+    { id: 'amplitude_cv',   label: 'Amp CV',   direction: 'in',  signalType: 'modulation', priority: 2 },
+  ],
   ShapeGenerator: [
     { id: 'video_out',   label: 'Video Out',   direction: 'out', signalType: 'video', priority: 0 },
     { id: 'sides',       label: 'Sides',       direction: 'in',  signalType: 'modulation' },

@@ -5,6 +5,7 @@ import {
   WebcamCaptureSource, ImageLoaderSource, ImageFileSource,
   AudioInputSource, AudioFileSource, SystemAudioSource,
   LFOModulatorSource, TriggerPadSource, SignalProcessorSource,
+  NoiseModulatorSource,
   Transform2DEffect, ColorAdjustEffect, LumaKeyEffect, SimpleFeedbackEffect,
   InterLayerOutputEffect, InterLayerInputEffect, ColorRGBEffect, LumaSplitterEffect,
   SpawnEffect, RGBMixerEffect, PathEffect
@@ -510,6 +511,42 @@ export const SOURCE_ROWS: Record<string, ControlRowDef[]> = {
     },
     { id: 'release', label: 'Rel',
       render: ctx => src<TriggerPadSource>(ctx).useEnvelope ? <Slider label="Release (s)" min={0} max={5} step={0.01} value={src<TriggerPadSource>(ctx).release} onChange={v => chg(ctx)('release', v)} /> : null
+    }
+  ],
+  Noise: [
+    { id: 'noiseType', label: 'Type',
+      render: ctx => (
+        <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} onDragStart={e => e.stopPropagation()}>
+          <span className="rack-row-label">Noise Type</span>
+          <select value={src<NoiseModulatorSource>(ctx).noiseType} onChange={e => chg(ctx)('noiseType', e.target.value)}>
+            <option value="white">White</option>
+            <option value="pink">Pink</option>
+            <option value="brownian">Brownian</option>
+            <option value="value">Value</option>
+            <option value="perlin">Perlin</option>
+          </select>
+        </div>
+      )
+    },
+    { id: 'frequency', label: 'Freq',
+      render: ctx => <Slider label="Frequency" min={0.1} max={50} step={0.1} value={src<NoiseModulatorSource>(ctx).frequency} onChange={v => chg(ctx)('frequency', v)} />
+    },
+    { id: 'amplitude', label: 'Amp',
+      render: ctx => <Slider label="Amplitude" min={0} max={1} step={0.01} value={src<NoiseModulatorSource>(ctx).amplitude} onChange={v => chg(ctx)('amplitude', v)} />
+    },
+    { id: 'octaves', label: 'Octaves',
+      render: ctx => src<NoiseModulatorSource>(ctx).noiseType === 'perlin' ? <Slider label="Octaves" min={1} max={8} step={1} value={src<NoiseModulatorSource>(ctx).octaves} onChange={v => chg(ctx)('octaves', v)} /> : null
+    },
+    { id: 'persistence', label: 'Persist',
+      render: ctx => src<NoiseModulatorSource>(ctx).noiseType === 'perlin' ? <Slider label="Persistence" min={0} max={1} step={0.01} value={src<NoiseModulatorSource>(ctx).persistence} onChange={v => chg(ctx)('persistence', v)} /> : null
+    },
+    { id: 'bipolar', label: 'Polarity',
+      render: ctx => (
+        <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} onDragStart={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <span className="rack-row-label">Bipolar (-1 to 1)</span>
+          <input type="checkbox" checked={src<NoiseModulatorSource>(ctx).bipolar} onChange={e => chg(ctx)('bipolar', e.target.checked)} />
+        </div>
+      )
     }
   ],
 

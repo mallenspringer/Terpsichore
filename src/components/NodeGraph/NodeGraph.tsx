@@ -382,6 +382,10 @@ export function NodeGraph({ layer, videoProgress, onSeek, onSeekStart, onSeekEnd
     let newMod: AnySource;
     if (type === 'LFO') {
       newMod = { type, waveform: 'sine', frequency: 0.1, speedRange: 'low', amplitude: 1.0, offset: 0, bipolar: true } as any;
+    } else if (type === 'TriggerPad') {
+      newMod = { type, isPressed: false, keyMapping: 'none', useEnvelope: false, attack: 0.1, release: 0.5 } as any;
+    } else if (type === 'Noise') {
+      newMod = { type, noiseType: 'white', frequency: 1.0, amplitude: 1.0, octaves: 4, persistence: 0.5, bipolar: true } as any;
     } else {
       newMod = { type: 'TriggerPad', isPressed: false, keyMapping: 'none', useEnvelope: false, attack: 0.1, release: 0.5 } as any;
     }

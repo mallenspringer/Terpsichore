@@ -16,6 +16,7 @@ import {
   SimpleFeedbackEffect, ColorRGBEffect, LumaSplitterEffect, RGBMixerEffect, 
   VideoURLSource, VideoFileSource, WebcamCaptureSource, ImageLoaderSource, ImageFileSource, 
   LFOModulatorSource, TriggerPadSource, SignalProcessorSource, SpawnEffect, PathEffect,
+  NoiseModulatorSource,
   LayerState
 } from '../state/types';
 
@@ -693,6 +694,16 @@ export class Renderer {
       }
     }
 
+    if (source.type === 'Noise') {
+      const ports = PORT_DEFS[source.type] || [];
+      const portDef = ports.find(p => p.id === portId);
+      if (portDef?.direction === 'out') {
+        const stateKey = `${layer.id}.${nodeId}`;
+        const nState = this.noiseStates.get(stateKey);
+        return nState?.value ?? 0;
+      }
+    }
+
     if (source.type === 'TriggerPad') {
       const ports = PORT_DEFS[source.type] || [];
       const portDef = ports.find(p => p.id === portId);
@@ -853,6 +864,7 @@ export class Renderer {
   private triggerStates = new Map<string, { value: number; lastRemoteSync: number }>();
   private spawnStates = new Map<string, SpawnedObject[]>();
   private lastTriggerVals = new Map<string, number>();
+  private noiseStates = new Map<string, { value: number; b0: number; b1: number; b2: number; b3: number; b4: number; b5: number; b6: number; brown: number; seed: number; t: number }>();
   
   private render() {
     const state = useEngineStore.getState();
@@ -895,6 +907,96 @@ export class Renderer {
           lfoState.phase = (lfoState.phase + lfo.frequency * delta) % 1.0;
           lfoState.syncPulse = lfoState.phase < prevPhase; // Wrapped around
         }
+      });
+      
+      // --- NOISE PRE-PASS ---
+      sortedIds.forEach(nodeId => {
+        const source = (nodeId === 'source') ? (layer.source || { type: 'None' }) : (layer.modulators ? layer.modulators[nodeId] : undefined);
+        if (!source || (source as any).type !== 'Noise') return;
+        
+        const noise = source as NoiseModulatorSource;
+        const stateKey = `${layer.id}.${nodeId}`;
+        let nState = this.noiseStates.get(stateKey);
+        if (!nState) {
+          nState = { value: 0, b0: 0, b1: 0, b2: 0, b3: 0, b4: 0, b5: 0, b6: 0, brown: 0, seed: Math.random() * 1000, t: 0 };
+          this.noiseStates.set(stateKey, nState);
+        }
+
+        const freq = this.getEffectiveParam(layer, nodeId, 'frequency_cv', noise.frequency, timeSec);
+        const amp = this.getEffectiveParam(layer, nodeId, 'amplitude_cv', noise.amplitude, timeSec);
+        
+        nState.t += delta * freq;
+        
+        let raw = 0;
+        switch (noise.noiseType) {
+          case 'white':
+            raw = Math.random() * 2 - 1;
+            break;
+          case 'pink': {
+            // Paul Kellet's refined method
+            const white = Math.random() * 2 - 1;
+            nState.b0 = 0.99886 * nState.b0 + white * 0.0555179;
+            nState.b1 = 0.99332 * nState.b1 + white * 0.0750312;
+            nState.b2 = 0.96900 * nState.b2 + white * 0.1538520;
+            nState.b3 = 0.86650 * nState.b3 + white * 0.3104856;
+            nState.b4 = 0.55000 * nState.b4 + white * 0.5329522;
+            nState.b5 = -0.7616 * nState.b5 - white * 0.0168980;
+            raw = nState.b0 + nState.b1 + nState.b2 + nState.b3 + nState.b4 + nState.b5 + nState.b6 + white * 0.5362;
+            nState.b6 = white * 0.115926;
+            raw *= 0.11; // normalization
+            break;
+          }
+          case 'brownian': {
+            const white = Math.random() * 2 - 1;
+            nState.brown = (nState.brown + (white * 0.1)) / 1.02; // Leaky integrator
+            raw = nState.brown * 3.5;
+            break;
+          }
+          case 'value': {
+            const t = nState.t;
+            const i = Math.floor(t);
+            const f = t - i;
+            const hash = (n: number) => {
+              const x = Math.sin(n + nState.seed) * 43758.5453;
+              return (x - Math.floor(x)) * 2 - 1;
+            };
+            const a = hash(i);
+            const b = hash(i + 1);
+            const u = f * f * (3.0 - 2.0 * f); // smoothstep
+            raw = a + (b - a) * u;
+            break;
+          }
+          case 'perlin': {
+            const t = nState.t;
+            const hash = (n: number) => {
+              const x = Math.sin(n + nState.seed) * 43758.5453;
+              return (x - Math.floor(x)) * 2 - 1;
+            };
+            const noise1d = (x: number) => {
+              const i = Math.floor(x);
+              const f = x - i;
+              const u = f * f * (3.0 - 2.0 * f);
+              const g0 = hash(i);
+              const g1 = hash(i + 1);
+              return (g0 * f + g1 * (f - 1.0)) * 2; // approximation of 1d gradient noise
+            };
+            
+            let val = 0;
+            let weight = 1.0;
+            let scale = 1.0;
+            for (let j = 0; j < noise.octaves; j++) {
+              val += noise1d(t * scale) * weight;
+              weight *= noise.persistence;
+              scale *= 2.0;
+            }
+            raw = val;
+            break;
+          }
+        }
+
+        let final = raw * amp;
+        if (!noise.bipolar) final = (final + 1) * 0.5;
+        nState.value = final;
       });
 
       // TriggerPad Pre-pass

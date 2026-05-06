@@ -40,6 +40,7 @@ const ALL_MODULES: ModuleEntry[] = [
   { id: 'LayerOut',       glyph: '⎆', label: 'Layer Out', tooltip: 'Send signal to other layer', category: 'Utility', moduleType: 'effect:InterLayerOutput' },
   { id: 'LayerIn',        glyph: '⎆', label: 'Layer In',  tooltip: 'Receive signal from other layer', category: 'Utility', moduleType: 'effect:InterLayerInput' },
   { id: 'Path',           glyph: '🛤️', label: 'Path',      tooltip: 'Trajectory Generator',    category: 'Utility', moduleType: 'effect:Path'           },
+  { id: 'Noise',          glyph: '🎲', label: 'Noise',     tooltip: 'Stochastic Signal Gen',   category: 'Utility', moduleType: 'modulator:Noise'        },
 ];
 
 const DEFAULT_BANK_IDS = ALL_MODULES.map(m => m.id);

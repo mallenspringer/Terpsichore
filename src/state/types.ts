@@ -108,16 +108,17 @@ export interface LFOModulatorSource {
   bipolar: boolean;    // true = -1 to 1, false = 0 to 1
 }
 
-export interface TriggerPadSource {
-  type: 'TriggerPad';
-  isPressed: boolean;
-  keyMapping: string; // '1', '2', ..., '0'
-  useEnvelope: boolean;
-  attack: number;     // seconds
-  release: number;    // seconds
+export interface NoiseModulatorSource {
+  type: 'Noise';
+  noiseType: 'white' | 'pink' | 'brownian' | 'value' | 'perlin';
+  frequency: number;
+  amplitude: number;
+  octaves: number;
+  persistence: number;
+  bipolar: boolean;
 }
 
-export type AnySource = NoneSource | ShapeGeneratorSource | VideoURLSource | VideoFileSource | WebcamCaptureSource | ImageLoaderSource | ImageFileSource | AudioInputSource | AudioFileSource | SystemAudioSource | SignalProcessorSource | LFOModulatorSource | TriggerPadSource;
+export type AnySource = NoneSource | ShapeGeneratorSource | VideoURLSource | VideoFileSource | WebcamCaptureSource | ImageLoaderSource | ImageFileSource | AudioInputSource | AudioFileSource | SystemAudioSource | SignalProcessorSource | LFOModulatorSource | TriggerPadSource | NoiseModulatorSource;
 
 // --- EFFECTS ---
 
