@@ -38,9 +38,34 @@ export function FoundationalPanel({ nodeId, source, sourceCtx, effect, effectCtx
     <div className="foundational-panel">
       <div className="foundational-panel-header">
         <span className="fp-dot" style={{ background: dotColor }} />
-        {layerName ?? 'Layer'} — {MODULE_DISPLAY_NAMES[type] || type}
+        {MODULE_DISPLAY_NAMES[type] || type}
       </div>
       <div className="foundational-panel-body">
+        {/* Layer-level Controls (Global for the selected layer) */}
+        <div className="fp-row">
+          <label>Layer Opacity: {(sourceCtx as any).layerOpacity?.toFixed(2) ?? '1.00'}</label>
+          <input type="range" min={0} max={1} step={0.01} 
+            value={(sourceCtx as any).layerOpacity ?? 1} 
+            onChange={e => (sourceCtx as any).onLayerUpdate?.({ opacity: parseFloat(e.target.value) })} />
+        </div>
+        <div className="fp-row">
+          <label>Blend Mode</label>
+          <select value={(sourceCtx as any).layerBlendMode ?? 'normal'} 
+            onChange={e => (sourceCtx as any).onLayerUpdate?.({ blendMode: e.target.value as any })}>
+            <option value="normal">Normal</option>
+            <option value="add">Add</option>
+            <option value="screen">Screen</option>
+            <option value="multiply">Multiply</option>
+          </select>
+        </div>
+        <div className="fp-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <label>Layer Audio Mute</label>
+          <input type="checkbox" 
+            checked={!!(sourceCtx as any).layerAudioMuted} 
+            onChange={e => (sourceCtx as any).onLayerUpdate?.({ audioMuted: e.target.checked })} />
+        </div>
+        <div style={{ height: 1, background: '#222', margin: '4px 0' }} />
+
         {nodeId === 'source' && source && sourceCtx && (
           <>
             {(source.type === 'VideoFile' || source.type === 'VideoURL') && (
@@ -86,6 +111,10 @@ function VideoFoundational({ source, ctx }: {
           <button className={source.playState === 'play' ? 'active' : ''} onClick={() => ctx.onChange('playState', 'play')}>▶ Play</button>
           <button className={source.playState === 'pause' ? 'active' : ''} onClick={() => ctx.onChange('playState', 'pause')}>⏸ Pause</button>
           <button className={source.playState === 'stop' ? 'active' : ''} onClick={() => ctx.onChange('playState', 'stop')}>⏹ Stop</button>
+          <button className={source.audioMuted ? 'active' : ''} onClick={() => ctx.onChange('audioMuted', !source.audioMuted)} 
+            style={{ marginLeft: 'auto', borderLeft: '1px solid #333' }}>
+            {source.audioMuted ? '🔇' : '🔊'}
+          </button>
         </div>
       </div>
 

@@ -18,10 +18,12 @@ Terpsichore uses a **Strictly Decoupled Engine**.
 ### 2. SignalDispatcher (`src/state/SignalDispatcher.ts`)
 - **Role:** The "Heartbeat" and JIT Compiler.
 - **Logic:**
-  - Compiles the node graph into an optimized execution pipeline.
+  - **2-Pass Execution:**
+    - **Pass 1 (Fixed):** Populates `signalValues` from Sources (e.g., `audio_out`), Modulators (e.g., LFO `value`), and Inter-layer inputs.
+    - **Pass 2 (Dynamic):** Executes the JIT-compiled pipeline of edges to propagate signals through the graph.
   - **Single Source of Math:** Handles all signal scaling (Amount), Bipolar conversion, and Smoothing.
-  - **Direct Mutation:** Mutates `layer.signalValues` every frame (`requestAnimationFrame`). This allows the Renderer to see updates with zero latency.
-  - **UI Bridge:** Throttles the update to the Zustand store (using `updateLayerSignals`) to ~10fps to keep the UI responsive without tanking FPS.
+  - **Direct Mutation:** Mutates `layer.signalValues` every frame (`requestAnimationFrame`) for zero-latency rendering.
+  - **UI Bridge:** Throttles store updates to ~10fps to keep the React tree performant.
 - **Handoff Tip:** All CV/Modulation math happens here. The Renderer just consumes the final value.
 
 ### 3. Renderer (`src/renderer/Renderer.ts`)
@@ -36,3 +38,14 @@ Terpsichore uses a **Strictly Decoupled Engine**.
 - **Role:** UI representation and port metadata.
 - **Logic:** Defines which modules can connect to which ports.
 - **Handoff Tip:** Always check `portDefs.ts` when adding new signals to ensure IDs match between the UI and the Renderer.
+
+## Testing & Stability
+
+### 1. The Safety Net (`src/state/__tests__/`)
+- **Vitest:** The project uses Vitest + jsdom for logic testing.
+- **Scope:** All core signal dispatching, inter-layer routing, and graph auto-wiring logic is covered by unit tests.
+- **Command:** Run `npm test` to verify the engine's integrity before starting a new feature.
+
+### 2. Store-Driven Graph
+- **Event-Driven:** Graph re-wiring is triggered by store actions (`setSource`, `addEffect`), NOT React `useEffect`.
+- **Selectors:** Always use specific Zustand selectors (e.g., `useEngineStore(s => s.layers)`) to prevent global re-render cascades during signal updates.

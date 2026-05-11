@@ -120,7 +120,7 @@ export interface NoiseModulatorSource {
 
 export interface NoiseVideoSource {
   type: 'NoiseSource';
-  noiseType: 'perlin' | 'worley' | 'simplex';
+  noiseType: 'fbm' | 'worley' | 'white' | 'perlin';
   scale: number;
   evolution: number;
   octaves: number;
@@ -130,6 +130,18 @@ export interface NoiseVideoSource {
   contrast: number;
   flowSpeed: number;
   autoAnimate: boolean;
+}
+
+export interface TriggerPadSource {
+  type: 'TriggerPad';
+  label: string;
+  value: number; // 0 or 1
+  isPressed: boolean;
+  isToggle: boolean;
+  keyMapping?: string;
+  useEnvelope?: boolean;
+  attack?: number;
+  release?: number;
 }
 
 export type AnySource = NoneSource | ShapeGeneratorSource | VideoURLSource | VideoFileSource | WebcamCaptureSource | ImageLoaderSource | ImageFileSource | AudioInputSource | AudioFileSource | SystemAudioSource | SignalProcessorSource | LFOModulatorSource | TriggerPadSource | NoiseModulatorSource | NoiseVideoSource;
@@ -177,6 +189,8 @@ export interface AudioAnalyzerEffect {
   id: string;
   type: 'AudioAnalyzer';
   smoothing: number; // 0.0 to 0.99
+  sensitivity: number;
+  logarithmic: boolean;
 }
 
 export interface BipolarConverterEffect {
@@ -263,16 +277,46 @@ export interface InterLayerEdge {
   toPortIdx: number;
 }
 
+export interface InverterEffect {
+  id: string;
+  type: 'Inverter';
+  videoMode: 'luma' | 'chroma' | 'rgb';
+  cvMode: 'unipolar' | 'bipolar';
+  triggerMode: 'momentary' | 'latch';
+  mix: number;
+  active: boolean;
+}
+
+export interface LogicGateEffect {
+  id: string;
+  type: 'LogicGate';
+  mode: 'and' | 'or' | 'xor' | 'nand' | 'nor';
+  thresholdA: number;
+  thresholdB: number;
+}
+
+export interface TriggeredGateEffect {
+  id: string;
+  type: 'TriggeredGate';
+  gateMode: 'momentary' | 'latch';
+  defaultState: 'on' | 'off';
+  threshold: number;
+  active?: boolean; // internal state for trigger tracking
+  gateOpen?: boolean; // final resolved gate state for renderer
+}
+
 export type AnyEffect = 
   | Transform2DEffect | ColorAdjustEffect | LumaKeyEffect 
   | SimpleFeedbackEffect | AudioAnalyzerEffect | BipolarConverterEffect
   | InterLayerOutputEffect | InterLayerInputEffect | ColorRGBEffect 
-  | LumaSplitterEffect | RGBMixerEffect | SpawnEffect | PathEffect;
+  | LumaSplitterEffect | RGBMixerEffect | SpawnEffect | PathEffect | InverterEffect
+  | LogicGateEffect | TriggeredGateEffect;
 
 export type EffectType = 
   | 'Transform2D' | 'ColorAdjust' | 'LumaKey' | 'SimpleFeedback' 
   | 'AudioAnalyzer' | 'BipolarConverter' | 'InterLayerOutput' | 'InterLayerInput' 
-  | 'ColorRGB' | 'LumaSplitter' | 'RGBMixer' | 'Spawn' | 'Path';
+  | 'ColorRGB' | 'LumaSplitter' | 'RGBMixer' | 'Spawn' | 'Path' | 'Inverter'
+  | 'LogicGate' | 'TriggeredGate';
 
 // --- GRAPH ---
 export interface GraphEdge {

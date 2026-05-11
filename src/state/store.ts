@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import { LayerState, LayerGraph, InterLayerEdge, EngineState, PortSettings } from './types';
+import { LayerState, LayerGraph, InterLayerEdge, EngineState, PortSettings, AnySource, AnyEffect } from './types';
+import { buildAutoEdges } from './graphUtils';
 
 interface EngineActions {
   // Global Settings
@@ -11,20 +12,40 @@ interface EngineActions {
   updateLayer: (id: string, updates: Partial<LayerState>) => void;
   removeLayer: (id: string) => void;
   reorderLayer: (fromIndex: number, toIndex: number) => void;
+  loadProject: (project: any) => void;
   reorderEffect: (layerId: string, fromIndex: number, toIndex: number) => void;
   updateLayerGraph: (layerId: string, graph: LayerGraph) => void;
   updateLayerSignals: (layerId: string, signals: Record<string, number>) => void;
   updateInputSettings: (layerId: string, portKey: string, updates: Partial<PortSettings>) => void;
   
+  // High-level mutations with auto-wiring
+  setSource: (layerId: string, source: AnySource) => void;
+  addEffect: (layerId: string, effect: AnyEffect) => void;
+  removeEffect: (layerId: string, effectId: string) => void;
+  addModulator: (layerId: string, id: string, mod: any) => void;
+  updateModulatorGlobal: (id: string, updates: any) => void;
+  removeModulator: (layerId: string, id: string) => void;
+  
   // Inter-layer routing
   addInterLayerEdge: (edge: InterLayerEdge) => void;
   removeInterLayerEdge: (id: string) => void;
+
+  // Selection
+  setActiveLayerId: (id: string | null) => void;
 }
 
 export type StoreState = EngineState & EngineActions & {
   resolution: { width: number; height: number };
   globalAudioMuted: boolean;
   interLayerEdges: InterLayerEdge[];
+  isGlobalPaused: boolean;
+  globalResetSignal: number;
+  projectName: string;
+  authorName: string;
+  setIsGlobalPaused: (paused: boolean) => void;
+  triggerGlobalReset: () => void;
+  setProjectName: (name: string) => void;
+  setAuthorName: (name: string) => void;
 };
 
 export const useEngineStore = create<StoreState>((set) => ({
@@ -46,6 +67,15 @@ export const useEngineStore = create<StoreState>((set) => ({
   interLayerEdges: [],
   canvasWidth: 1920,
   canvasHeight: 1080,
+  isGlobalPaused: false,
+  globalResetSignal: 0,
+  projectName: 'Untitled Project',
+  authorName: 'User',
+
+  setProjectName: (name) => set({ projectName: name }),
+  setAuthorName: (name) => set({ authorName: name }),
+  setIsGlobalPaused: (paused) => set({ isGlobalPaused: paused }),
+  triggerGlobalReset: () => set((state) => ({ globalResetSignal: state.globalResetSignal + 1 })),
 
   setResolution: (width: number, height: number) =>
     set(() => ({ resolution: { width, height } })),
@@ -56,7 +86,7 @@ export const useEngineStore = create<StoreState>((set) => ({
   addLayer: (layer) =>
     set((state) => ({
       layers: { ...state.layers, [layer.id]: layer },
-      layerOrder: [...state.layerOrder, layer.id],
+      layerOrder: [layer.id, ...state.layerOrder],
     })),
   
   updateLayer: (id, updates) =>
@@ -84,6 +114,18 @@ export const useEngineStore = create<StoreState>((set) => ({
       newOrder.splice(toIndex, 0, moved);
       return { layerOrder: newOrder };
     }),
+
+  loadProject: (project) =>
+    set(() => ({
+      layers: project.layers,
+      layerOrder: project.layerOrder,
+      resolution: project.resolution,
+      globalAudioMuted: project.globalAudioMuted,
+      interLayerEdges: project.interLayerEdges,
+      projectName: project.projectName || 'Untitled Project',
+      authorName: project.authorName || 'User',
+      activeLayerId: project.layerOrder[0] || null,
+    })),
 
   reorderEffect: (layerId, fromIndex, toIndex) =>
     set((state) => {
@@ -114,6 +156,97 @@ export const useEngineStore = create<StoreState>((set) => ({
       return { layers: { ...state.layers, [layerId]: { ...layer, inputSettings: settings } } };
     }),
 
+  setSource: (layerId, source) =>
+    set((state) => {
+      const layer = state.layers[layerId];
+      if (!layer) return {};
+      const nextLayer = { ...layer, source };
+      const nextEdges = buildAutoEdges(nextLayer, layer.graph);
+      return { 
+        layers: { 
+          ...state.layers, 
+          [layerId]: { ...nextLayer, graph: { ...layer.graph, edges: nextEdges } } 
+        } 
+      };
+    }),
+
+  addEffect: (layerId, effect) =>
+    set((state) => {
+      const layer = state.layers[layerId];
+      if (!layer) return {};
+      const nextLayer = { ...layer, effects: [...layer.effects, effect] };
+      const nextEdges = buildAutoEdges(nextLayer, layer.graph);
+      return { 
+        layers: { 
+          ...state.layers, 
+          [layerId]: { ...nextLayer, graph: { ...layer.graph, edges: nextEdges } } 
+        } 
+      };
+    }),
+
+  removeEffect: (layerId, effectId) =>
+    set((state) => {
+      const layer = state.layers[layerId];
+      if (!layer) return {};
+      const nextLayer = { ...layer, effects: layer.effects.filter(e => e.id !== effectId) };
+      const nextEdges = buildAutoEdges(nextLayer, layer.graph);
+      return { 
+        layers: { 
+          ...state.layers, 
+          [layerId]: { ...nextLayer, graph: { ...layer.graph, edges: nextEdges } } 
+        } 
+      };
+    }),
+
+  addModulator: (layerId, id, mod) =>
+    set((state) => {
+      const layer = state.layers[layerId];
+      if (!layer) return {};
+      const nextLayer = { ...layer, modulators: { ...layer.modulators, [id]: mod } };
+      const nextEdges = buildAutoEdges(nextLayer, layer.graph);
+      return { 
+        layers: { 
+          ...state.layers, 
+          [layerId]: { ...nextLayer, graph: { ...layer.graph, edges: nextEdges } } 
+        } 
+      };
+    }),
+
+  updateModulatorGlobal: (id, updates) =>
+    set((state) => {
+      const nextLayers = { ...state.layers };
+      let changed = false;
+      Object.entries(nextLayers).forEach(([layerId, layer]) => {
+        if (layer.modulators && layer.modulators[id]) {
+          nextLayers[layerId] = {
+            ...layer,
+            modulators: {
+              ...layer.modulators,
+              [id]: { ...layer.modulators[id], ...updates }
+            }
+          };
+          changed = true;
+        }
+      });
+      return changed ? { layers: nextLayers } : {};
+    }),
+
+  removeModulator: (layerId, id) =>
+    set((state) => {
+      const layer = state.layers[layerId];
+      if (!layer) return {};
+      const nextModulators = { ...layer.modulators };
+      delete nextModulators[id];
+      const nextLayer = { ...layer, modulators: nextModulators };
+      const nextEdges = buildAutoEdges(nextLayer, layer.graph);
+      return { 
+        layers: { 
+          ...state.layers, 
+          [layerId]: { ...nextLayer, graph: { ...layer.graph, edges: nextEdges } } 
+        } 
+      };
+    }),
+
 
   addInterLayerEdge: (edge) =>
     set((state) => ({ interLayerEdges: [...state.interLayerEdges, edge] })),
@@ -122,4 +255,6 @@ export const useEngineStore = create<StoreState>((set) => ({
     set((state) => ({
       interLayerEdges: state.interLayerEdges.filter(e => e.id !== id)
     })),
+
+  setActiveLayerId: (id) => set({ activeLayerId: id }),
 }));

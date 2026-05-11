@@ -1,6 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
 import { useEngineStore } from '../state/store';
 import { VideoFileSource, ImageFileSource, ColorRGBEffect } from '../state/types';
+import { createDefaultSource, createDefaultEffect, createDefaultModulator } from '../state/moduleFactory';
+import { exportProject, importProject } from '../utils/projectPersistence';
+import { FoundationalPanel } from './NodeGraph/FoundationalPanel';
 import './Sidebar.css';
 
 // ─── Module Bank Data ─────────────────────────────────────────────────────────
@@ -10,7 +13,7 @@ type ModuleEntry = {
   glyph: string;
   label: string;
   tooltip: string;
-  category: 'Sources' | 'Effects' | 'Utility';
+  category: 'Sources' | 'Effects' | 'Utility' | 'Audio';
   moduleType: string; // passed in dataTransfer when dragging to rack
 };
 
@@ -23,9 +26,9 @@ const ALL_MODULES: ModuleEntry[] = [
   { id: 'ImageURL',       glyph: '🔗', label: 'Img URL',   tooltip: 'Image from URL',          category: 'Sources', moduleType: 'source:ImageLoader'    },
   { id: 'ShapeGen',       glyph: '⬜', label: 'Shape',     tooltip: 'Shape Generator',         category: 'Sources', moduleType: 'source:ShapeGenerator' },
   { id: 'NoiseSource',    glyph: '🌫️', label: 'Noise Gen',  tooltip: '2D Procedural Noise',    category: 'Sources', moduleType: 'source:NoiseSource'    },
-  { id: 'AudioInput',     glyph: '🎤', label: 'Audio In',  tooltip: 'Live Audio Input',        category: 'Sources', moduleType: 'source:AudioInput'     },
-  { id: 'AudioFile',      glyph: '🎵', label: 'Audio File',tooltip: 'Local Audio File',       category: 'Sources', moduleType: 'source:AudioFile'      },
-  { id: 'SystemAudio',    glyph: '🔊', label: 'Sys Audio', tooltip: 'System Audio Capture',    category: 'Sources', moduleType: 'source:SystemAudio'    },
+  { id: 'AudioInput',     glyph: '🎤', label: 'Audio In',  tooltip: 'Live Audio Input',        category: 'Audio',   moduleType: 'source:AudioInput'     },
+  { id: 'AudioFile',      glyph: '🎵', label: 'Audio File',tooltip: 'Local Audio File',       category: 'Audio',   moduleType: 'source:AudioFile'      },
+  { id: 'SystemAudio',    glyph: '🔊', label: 'Sys Audio', tooltip: 'System Audio Capture',    category: 'Audio',   moduleType: 'source:SystemAudio'    },
   // Effects
   { id: 'Transform2D',    glyph: '↔️', label: 'Transform', tooltip: 'Transform 2D',            category: 'Effects', moduleType: 'effect:Transform2D'    },
   { id: 'Spawn',          glyph: '✨', label: 'Spawn',     tooltip: 'Triggered Object Emitter', category: 'Utility', moduleType: 'effect:Spawn'          },
@@ -40,8 +43,12 @@ const ALL_MODULES: ModuleEntry[] = [
   { id: 'TriggerPad',     glyph: '🔘', label: 'Trig Pad',  tooltip: 'Click-to-trigger Pulse',  category: 'Utility', moduleType: 'modulator:TriggerPad'  },
   { id: 'LayerOut',       glyph: '⎆', label: 'Layer Out', tooltip: 'Send signal to other layer', category: 'Utility', moduleType: 'effect:InterLayerOutput' },
   { id: 'LayerIn',        glyph: '⎆', label: 'Layer In',  tooltip: 'Receive signal from other layer', category: 'Utility', moduleType: 'effect:InterLayerInput' },
+  { id: 'AudioAnalyzer',  glyph: '📊', label: 'Analyzer',  tooltip: 'Peak level to modulation',   category: 'Audio',   moduleType: 'effect:AudioAnalyzer' },
   { id: 'Path',           glyph: '🛤️', label: 'Path',      tooltip: 'Trajectory Generator',    category: 'Utility', moduleType: 'effect:Path'           },
   { id: 'Noise',          glyph: '🎲', label: 'Noise',     tooltip: 'Stochastic Signal Gen',   category: 'Utility', moduleType: 'modulator:Noise'        },
+  { id: 'Inverter',       glyph: '⇅', label: 'Inverter',  tooltip: 'Polarity/Color Inversion', category: 'Utility', moduleType: 'effect:Inverter'         },
+  { id: 'LogicGate',      glyph: '⊦', label: 'Logic',     tooltip: 'Signal Comparison (AND/OR/XOR)', category: 'Utility', moduleType: 'effect:LogicGate'       },
+  { id: 'TriggeredGate',  glyph: 'Gate', label: 'Trig Gate', tooltip: 'Signal Gating / Routing',      category: 'Utility', moduleType: 'effect:TriggeredGate'   },
 ];
 
 const DEFAULT_BANK_IDS = ALL_MODULES.map(m => m.id);
@@ -122,18 +129,32 @@ const getLayerContextualName = (layer: any) => {
 interface SidebarProps {
   activeLayerId: string | null;
   onSelectLayer: (id: string) => void;
+  // Foundational props
+  activeLayer: any;
+  sourceCtx: any;
 }
 
-export function Sidebar({ activeLayerId, onSelectLayer }: SidebarProps) {
-  const {
-    layers, layerOrder, resolution, setResolution,
-    addLayer, removeLayer, reorderLayer, updateLayer,
-    globalAudioMuted, setGlobalAudioMuted,
-    interLayerEdges, addInterLayerEdge, removeInterLayerEdge
-  } = useEngineStore();
+export function Sidebar({ activeLayerId, onSelectLayer, activeLayer, sourceCtx }: SidebarProps) {
+  const layers = useEngineStore(s => s.layers);
+  const layerOrder = useEngineStore(s => s.layerOrder);
+  const resolution = useEngineStore(s => s.resolution);
+  const setResolution = useEngineStore(s => s.setResolution);
+  const addLayer = useEngineStore(s => s.addLayer);
+  const removeLayer = useEngineStore(s => s.removeLayer);
+  const reorderLayer = useEngineStore(s => s.reorderLayer);
+  const updateLayer = useEngineStore(s => s.updateLayer);
+  const addEffect = useEngineStore(s => s.addEffect);
+  const addModulator = useEngineStore(s => s.addModulator);
+  const globalAudioMuted = useEngineStore(s => s.globalAudioMuted);
+  const setGlobalAudioMuted = useEngineStore(s => s.setGlobalAudioMuted);
+  const interLayerEdges = useEngineStore(s => s.interLayerEdges);
+  const addInterLayerEdge = useEngineStore(s => s.addInterLayerEdge);
+  const removeInterLayerEdge = useEngineStore(s => s.removeInterLayerEdge);
+  const isGlobalPaused = useEngineStore(s => s.isGlobalPaused);
+  const setIsGlobalPaused = useEngineStore(s => s.setIsGlobalPaused);
+  const triggerGlobalReset = useEngineStore(s => s.triggerGlobalReset);
 
-  const [ghostSidebarJack, setGhostSidebarJack] = useState<{
-    layerId: string;
+  const [ghostSidebarJack, setGhostSidebarJack] = useState<{    layerId: string;
     effectId: string;
     portIdx: number;
     type: 'in' | 'out';
@@ -289,12 +310,80 @@ export function Sidebar({ activeLayerId, onSelectLayer }: SidebarProps) {
 
   const visibleModules = ALL_MODULES.filter(m => bankIds.includes(m.id));
   const hiddenModules  = ALL_MODULES.filter(m => !bankIds.includes(m.id));
-  const CATEGORIES: Array<'Sources' | 'Effects' | 'Utility'> = ['Sources', 'Effects', 'Utility'];
+  const CATEGORIES: Array<'Sources' | 'Effects' | 'Utility' | 'Audio'> = ['Sources', 'Effects', 'Utility', 'Audio'];
 
   const layerCount = Object.keys(layers).length;
 
+  const projectName = useEngineStore(s => s.projectName);
+  const authorName = useEngineStore(s => s.authorName);
+  const setProjectName = useEngineStore(s => s.setProjectName);
+  const setAuthorName = useEngineStore(s => s.setAuthorName);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      try {
+        const json = JSON.parse(ev.target?.result as string);
+        await importProject(json);
+      } catch (err) {
+        alert("Failed to load project: " + err);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = ''; // Reset for next time
+  };
+
   return (
     <div className="sidebar">
+      {/* ── Section 0: Project ── */}
+      <SbSection title="Project">
+        <div className="sb-resolution-row">
+          <label>Name</label>
+          <input 
+            type="text" 
+            value={projectName} 
+            onChange={e => setProjectName(e.target.value)}
+            style={{ flex: 1, background: '#222', color: '#fff', border: '1px solid #444', fontSize: 11, padding: '2px 4px' }}
+          />
+        </div>
+        <div className="sb-resolution-row">
+          <label>Author</label>
+          <input 
+            type="text" 
+            value={authorName} 
+            onChange={e => setAuthorName(e.target.value)}
+            style={{ flex: 1, background: '#222', color: '#fff', border: '1px solid #444', fontSize: 11, padding: '2px 4px' }}
+          />
+        </div>
+        <div className="sb-resolution-row" style={{ marginTop: 8 }}>
+          <button 
+            onClick={() => exportProject()}
+            style={{ flex: 1, background: '#1a3a5f', color: '#4a9eff', border: '1px solid currentColor', borderRadius: 3, cursor: 'pointer', fontSize: 10, padding: '4px 0' }}
+          >
+            💾 SAVE PROJECT (.terp)
+          </button>
+        </div>
+        <div className="sb-resolution-row">
+          <button 
+            onClick={() => fileInputRef.current?.click()}
+            style={{ flex: 1, background: '#222', color: '#ccc', border: '1px solid #444', borderRadius: 3, cursor: 'pointer', fontSize: 10, padding: '4px 0' }}
+          >
+            📂 OPEN PROJECT
+          </button>
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            style={{ display: 'none' }} 
+            accept=".terp,application/json"
+            onChange={handleImport}
+          />
+        </div>
+      </SbSection>
+
       {/* ── Section A: Canvas & Global ── */}
       <SbSection title="Canvas">
         <div className="sb-resolution-row">
@@ -309,6 +398,10 @@ export function Sidebar({ activeLayerId, onSelectLayer }: SidebarProps) {
             <optgroup label="HD (16:9)">
               <option value="1920x1080">1920 × 1080 (1080p)</option>
               <option value="1280x720">1280 × 720 (720p)</option>
+            </optgroup>
+            <optgroup label="Workstation (16:10)">
+              <option value="1920x1200">1920 × 1200 (WUXGA)</option>
+              <option value="1280x800">1280 × 800 (WXGA)</option>
             </optgroup>
             <optgroup label="SD (4:3)">
               <option value="1024x768">1024 × 768</option>
@@ -340,6 +433,45 @@ export function Sidebar({ activeLayerId, onSelectLayer }: SidebarProps) {
           >
             {globalAudioMuted ? '🔇 Muted' : '🔊 Active'}
           </button>
+        </div>
+        <div className="sb-resolution-row">
+          <label>Transport</label>
+          <div style={{ display: 'flex', gap: 4, flex: 1 }}>
+            <button
+              onClick={() => setIsGlobalPaused(!isGlobalPaused)}
+              title={isGlobalPaused ? 'Resume all' : 'Pause all (freeze)'}
+              style={{
+                flex: 1,
+                background: isGlobalPaused ? '#a50' : '#222',
+                color: isGlobalPaused ? '#fff' : '#ccc',
+                border: '1px solid #444',
+                borderRadius: 3,
+                fontSize: 10,
+                padding: '2px 0',
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                fontWeight: isGlobalPaused ? 'bold' : 'normal'
+              }}
+            >
+              {isGlobalPaused ? '▶ RESUME' : '⏸ PAUSE'}
+            </button>
+            <button
+              onClick={() => triggerGlobalReset()}
+              title="Reset all LFOs and Media to start"
+              style={{
+                background: '#222',
+                color: '#ccc',
+                border: '1px solid #444',
+                borderRadius: 3,
+                fontSize: 10,
+                padding: '2px 8px',
+                cursor: 'pointer',
+                fontFamily: 'inherit'
+              }}
+            >
+              ⏮ RESET
+            </button>
+          </div>
         </div>
       </SbSection>
 
@@ -468,7 +600,7 @@ export function Sidebar({ activeLayerId, onSelectLayer }: SidebarProps) {
                               onPointerUp={(e) => {
                                 e.stopPropagation();
                                 if (ghostSidebarJack && ghostSidebarJack.type === 'out' && ghostSidebarJack.layerId !== id) {
-                                  addInterLayerEdge({
+                                  const newEdge = {
                                     id: `ile_${Date.now()}`,
                                     fromLayerId: ghostSidebarJack.layerId,
                                     fromEffectId: ghostSidebarJack.effectId,
@@ -476,7 +608,8 @@ export function Sidebar({ activeLayerId, onSelectLayer }: SidebarProps) {
                                     toLayerId: id,
                                     toEffectId: inModule!.id,
                                     toPortIdx: i
-                                  });
+                                  };
+                                  addInterLayerEdge(newEdge);
                                 }
                                 setGhostSidebarJack(null);
                               }}
@@ -531,7 +664,12 @@ export function Sidebar({ activeLayerId, onSelectLayer }: SidebarProps) {
           return (
             <div className="bank-category" key={cat}>
               <div className="bank-category-divider">
-                <span className="bank-category-label">{cat}</span>
+                <span className="bank-category-label" style={{ 
+                  color: cat === 'Sources' ? '#f5c518' : 
+                         cat === 'Effects' ? '#d918f5' : 
+                         cat === 'Utility' ? '#f58c18' : 
+                         cat === 'Audio' ? '#18e4f5' : '#555' 
+                }}>{cat}</span>
                 <div className="bank-category-line" />
               </div>
               <div className="bank-icon-grid">
@@ -541,6 +679,22 @@ export function Sidebar({ activeLayerId, onSelectLayer }: SidebarProps) {
                     className="bank-icon"
                     draggable
                     onDragStart={e => handleModuleDragStart(e, mod)}
+                    onClick={() => {
+                      if (!activeLayerId) return;
+                      const [category, type] = mod.moduleType.split(':');
+                      const newId = `${type.toLowerCase()}_${Date.now()}`;
+                      
+                      if (category === 'source') {
+                        const newSource = createDefaultSource(type);
+                        useEngineStore.getState().setSource(activeLayerId, newSource);
+                      } else if (category === 'effect') {
+                        const newEffect = createDefaultEffect(type, newId);
+                        addEffect(activeLayerId, newEffect);
+                      } else if (category === 'modulator') {
+                        const newMod = createDefaultModulator(type);
+                        addModulator(activeLayerId, newId, newMod);
+                      }
+                    }}
                     onContextMenu={e => handleModuleRightClick(e, mod.id)}
                     title={mod.tooltip}
                   >
@@ -583,6 +737,17 @@ export function Sidebar({ activeLayerId, onSelectLayer }: SidebarProps) {
             </div>
           );
         })}
+      </SbSection>
+      
+      <SbSection title="Foundational" className="foundational">
+        <FoundationalPanel 
+          nodeId={activeLayer ? 'source' : null}
+          source={activeLayer?.source || null}
+          sourceCtx={sourceCtx as any}
+          effect={null}
+          effectCtx={null}
+          layerName={activeLayer?.name}
+        />
       </SbSection>
 
       {/* Context Menu (portal-ish via fixed positioning) */}

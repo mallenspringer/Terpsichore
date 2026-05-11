@@ -15,8 +15,11 @@ export const PORT_DEFS: Record<string, PortDef[]> = {
   WebcamCapture:   [{ id: 'video_out', label: 'Video Out', direction: 'out', signalType: 'video', priority: 0 }],
   LFO: [
     { id: 'modulation_out', label: 'LFO Out',  direction: 'out', signalType: 'modulation', priority: 0, bipolar: true },
-    { id: 'sync_out',       label: 'Sync Out', direction: 'out', signalType: 'trigger',    priority: 1 },
-    { id: 'sync_in',        label: 'Sync In',  direction: 'in',  signalType: 'trigger',    priority: 1 }
+    { id: 'frequency_cv',   label: 'Freq CV',  direction: 'in',  signalType: 'modulation', priority: 1 },
+    { id: 'amplitude_cv',   label: 'Amp CV',   direction: 'in',  signalType: 'modulation', priority: 2 },
+    { id: 'offset_cv',      label: 'Offs CV',  direction: 'in',  signalType: 'modulation', priority: 3 },
+    { id: 'sync_out',       label: 'Sync Out', direction: 'out', signalType: 'trigger',    priority: 4 },
+    { id: 'sync_in',        label: 'Sync In',  direction: 'in',  signalType: 'trigger',    priority: 5 }
   ],
   TriggerPad: [
     { id: 'trigger_out', label: 'Trig Out', direction: 'out', signalType: 'trigger', priority: 0 },
@@ -26,6 +29,7 @@ export const PORT_DEFS: Record<string, PortDef[]> = {
     { id: 'modulation_out', label: 'Noise Out', direction: 'out', signalType: 'modulation', priority: 0, bipolar: true },
     { id: 'frequency_cv',   label: 'Freq CV',  direction: 'in',  signalType: 'modulation', priority: 1 },
     { id: 'amplitude_cv',   label: 'Amp CV',   direction: 'in',  signalType: 'modulation', priority: 2 },
+    { id: 'offset_cv',      label: 'Offs CV',  direction: 'in',  signalType: 'modulation', priority: 3 },
   ],
   NoiseSource: [
     { id: 'video_out',      label: 'Video Out', direction: 'out', signalType: 'video', priority: 0 },
@@ -101,15 +105,23 @@ export const PORT_DEFS: Record<string, PortDef[]> = {
     { id: 'audio_in', label: 'Audio In', direction: 'in', signalType: 'audio' },
     { id: 'out', label: 'Peak Level', direction: 'out', signalType: 'modulation' },
   ],
+  Inverter: [
+    { id: 'video_in',   label: 'Video In',   direction: 'in',  signalType: 'video' },
+    { id: 'video_out',  label: 'Video Out',  direction: 'out', signalType: 'video', priority: 0 },
+    { id: 'cv_in',      label: 'CV In',      direction: 'in',  signalType: 'modulation' },
+    { id: 'cv_out',     label: 'CV Out',     direction: 'out', signalType: 'modulation', priority: 1 },
+    { id: 'trigger_in', label: 'Trigger',    direction: 'in',  signalType: 'trigger' },
+    { id: 'mix',        label: 'Mix',        direction: 'in',  signalType: 'modulation' },
+  ],
   InterLayerOutput: [
-    { id: 'in_0', label: 'Global Out 1', direction: 'in', signalType: 'generic' },
-    { id: 'in_1', label: 'Global Out 2', direction: 'in', signalType: 'generic' },
-    { id: 'in_2', label: 'Global Out 3', direction: 'in', signalType: 'generic' },
+    { id: 'in_0', label: 'Lvl 1', direction: 'in', signalType: 'generic' },
+    { id: 'in_1', label: 'Lvl 2', direction: 'in', signalType: 'generic' },
+    { id: 'in_2', label: 'Lvl 3', direction: 'in', signalType: 'generic' },
   ],
   InterLayerInput: [
-    { id: 'out_0', label: 'Global In 1', direction: 'out', signalType: 'generic' },
-    { id: 'out_1', label: 'Global In 2', direction: 'out', signalType: 'generic' },
-    { id: 'out_2', label: 'Global In 3', direction: 'out', signalType: 'generic' },
+    { id: 'out_0', label: 'Lvl 1', direction: 'out', signalType: 'generic' },
+    { id: 'out_1', label: 'Lvl 2', direction: 'out', signalType: 'generic' },
+    { id: 'out_2', label: 'Lvl 3', direction: 'out', signalType: 'generic' },
   ],
   ColorRGB: [
     { id: 'video_in',  label: 'Video In', direction: 'in',  signalType: 'video' },
@@ -138,6 +150,16 @@ export const PORT_DEFS: Record<string, PortDef[]> = {
     { id: 'b_in',      label: 'Blue In',   direction: 'in',  signalType: 'video' },
     { id: 'video_out', label: 'Composite', direction: 'out', signalType: 'video', priority: 0 },
   ],
+  LogicGate: [
+    { id: 'in_a', label: 'In A', direction: 'in', signalType: 'trigger' },
+    { id: 'in_b', label: 'In B', direction: 'in', signalType: 'trigger' },
+    { id: 'out',  label: 'Out',  direction: 'out', signalType: 'trigger', priority: 0 },
+  ],
+  TriggeredGate: [
+    { id: 'sig_in',     label: 'Sig In',  direction: 'in',  signalType: 'generic' },
+    { id: 'trigger_in', label: 'Trigger', direction: 'in',  signalType: 'trigger' },
+    { id: 'sig_out',    label: 'Sig Out', direction: 'out', signalType: 'generic', priority: 0 },
+  ],
   Path: [
     { id: 'trajectory_out', label: 'Trajectory', direction: 'out', signalType: 'trajectory', priority: 0 },
     { id: 'modulation_out', label: 'Value Out',  direction: 'out', signalType: 'modulation', priority: 1 },
@@ -162,6 +184,7 @@ export const SIGNAL_COLORS: Record<SignalType, string> = {
   blue:       '#4444ff',
   midi:       '#39ff14', // Workstation Green
   trajectory: '#18f58c', // Mint Green
+  generic:    '#888888', // Gray
 };
 
 export const SOURCE_WIRE_COLOR: Record<string, string> = {
@@ -237,4 +260,6 @@ export const MODULE_DISPLAY_NAMES: Record<string, string> = {
   InterLayerInput: 'Layer In',
   LumaSplitter: 'Luma Split',
   Path: 'Path',
+  LogicGate: 'Logic Gate',
+  TriggeredGate: 'Trig Gate',
 };

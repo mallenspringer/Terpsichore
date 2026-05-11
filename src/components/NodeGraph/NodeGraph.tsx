@@ -6,6 +6,7 @@ import {
   VideoFileSource, ImageFileSource,
   SignalType
 } from '../../state/types';
+import { createDefaultSource, createDefaultEffect, createDefaultModulator } from '../../state/moduleFactory';
 import { SOURCE_ROWS, EFFECT_ROWS, SourceCtx, EffectCtx } from './moduleControls';
 import { PORT_DEFS, SIGNAL_COLORS, SOURCE_WIRE_COLOR, getPrimaryOutput, MODULE_DISPLAY_NAMES } from './portDefs';
 import { ModuleNode, NodeUIState, useNodeLayout, GhostEdge } from './ModuleNode';
@@ -16,93 +17,7 @@ const NODE_W = 220;
 const NODE_GAP = 50;
 const OUTPUT_ID = '__output__';
 
-// ── Auto-wiring ───────────────────────────────────────────────────────────────
-
-function buildAutoEdges(layer: LayerState, existingGraph?: LayerGraph): GraphEdge[] {
-  const nodes = [
-    ...(layer.source.type !== 'None' ? [{ id: 'source', type: layer.source.type }] : []),
-    ...layer.effects.map(ef => ({ id: ef.id, type: ef.type })),
-    ...Object.entries(layer.modulators || {}).map(([id, mod]) => ({ id, type: mod.type })),
-  ];
-
-  if (nodes.length === 0) return [];
-
-  // Track type counts to implement the "no auto-route for duplicates" rule
-  const typeCounts: Record<string, number> = {};
-  const nodesWithCounts = nodes.map(n => {
-    const count = (typeCounts[n.type] || 0) + 1;
-    typeCounts[n.type] = count;
-    return { ...n, isDuplicate: count > 1 };
-  });
-
-  const manualEdges = (existingGraph?.edges ?? []).filter(e => !e.isAuto);
-  const disconnectedPorts = existingGraph?.disconnectedPorts ?? [];
-  const isPortOccupied = (toNodeId: string, toPortId: string) => 
-    manualEdges.some(e => e.toNodeId === toNodeId && e.toPort === toPortId) ||
-    disconnectedPorts.includes(`${toNodeId}.${toPortId}`);
-
-  const manualOutputTarget = existingGraph?.manualOutputTarget;
-  const manualStillExists = manualOutputTarget && nodes.some(n => n.id === manualOutputTarget);
-
-  const lastNode = nodes[nodes.length - 1];
-  const outputTarget = (() => {
-    if (!manualStillExists) return lastNode?.id;
-    const manualIdx = nodes.findIndex(n => n.id === manualOutputTarget);
-    if (manualIdx < nodes.length - 1) return lastNode.id;
-    return manualOutputTarget;
-  })();
-
-  const autoEdges: GraphEdge[] = [];
-  
-  // Identify video nodes that ARE NOT duplicates (except source which is always allowed)
-  const videoNodes = nodesWithCounts.filter(n => {
-    if (n.id === 'source') return true;
-    if (n.isDuplicate) return false;
-    const defs = PORT_DEFS[n.type] || [];
-    return defs.some(p => p.signalType === 'video');
-  });
-
-  // Chain edges: videoNode[i] → videoNode[i+1]
-  for (let i = 0; i < videoNodes.length - 1; i++) {
-    const from = videoNodes[i];
-    const to = videoNodes[i + 1];
-    const fromPort = getPrimaryOutput(from.type);
-    const toPort = PORT_DEFS[to.type]?.find(p => p.direction === 'in' && p.signalType === 'video');
-    
-    if (fromPort && toPort && !isPortOccupied(to.id, toPort.id)) {
-      autoEdges.push({
-        id: `auto_${from.id}_${to.id}`,
-        fromNodeId: from.id,
-        fromPort: fromPort.id,
-        toNodeId: to.id,
-        toPort: toPort.id,
-        signalType: 'video',
-        isAuto: true,
-      });
-    }
-  }
-
-  // Output edge
-  const lastVideoNode = videoNodes[videoNodes.length - 1];
-  const outSrcNode = videoNodes.find(n => n.id === outputTarget) ?? lastVideoNode;
-  const outPort = outSrcNode ? getPrimaryOutput(outSrcNode.type) : null;
-  
-  if (outPort && !isPortOccupied(OUTPUT_ID, 'composite_in')) {
-    autoEdges.push({
-      id: 'auto_to_output',
-      fromNodeId: outSrcNode.id,
-      fromPort: outPort.id,
-      toNodeId: OUTPUT_ID,
-      toPort: 'composite_in',
-      signalType: 'video',
-      isAuto: true,
-    });
-  }
-
-  return [...autoEdges, ...manualEdges];
-}
-
-// ── Edge color ────────────────────────────────────────────────────────────────
+// ── NodeGraph Component ───────────────────────────────────────────────────────
 
 function edgeColor(edge: GraphEdge, layer: LayerState): string {
   if (edge.signalType) return SIGNAL_COLORS[edge.signalType] || '#f5c518';
@@ -126,7 +41,8 @@ function defaultX(index: number) {
 // ── NodeGraph Component ───────────────────────────────────────────────────────
 
 interface NodeGraphProps {
-  layer: LayerState | null;
+  layerId: string | null;
+  layer?: LayerState | null;
   videoProgress: { currentTime: number; duration: number };
   onSeek: React.ChangeEventHandler<HTMLInputElement>;
   onSeekStart?: () => void;
@@ -136,8 +52,18 @@ interface NodeGraphProps {
   setLinkedScales: (s: Record<string, boolean>) => void;
 }
 
-export function NodeGraph({ layer, videoProgress, onSeek, onSeekStart, onSeekEnd, cameras, linkedScales, setLinkedScales }: NodeGraphProps) {
-  const { updateLayer, updateLayerGraph } = useEngineStore();
+export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, onSeekStart, onSeekEnd, cameras, linkedScales, setLinkedScales }: NodeGraphProps) {
+  const storeLayer = useEngineStore(s => layerId ? s.layers[layerId] : null);
+  const layer = propLayer ?? storeLayer;
+
+  const updateLayer = useEngineStore(s => s.updateLayer);
+  const updateLayerGraph = useEngineStore(s => s.updateLayerGraph);
+  const setSource = useEngineStore(s => s.setSource);
+  const addEffect = useEngineStore(s => s.addEffect);
+  const removeEffect = useEngineStore(s => s.removeEffect);
+  const addModulator = useEngineStore(s => s.addModulator);
+  const removeModulator = useEngineStore(s => s.removeModulator);
+
   const graphRef = useRef<HTMLDivElement>(null);
 
   const { getNodeState, updateNodeState } = useNodeLayout(layer?.id ?? null);
@@ -148,29 +74,50 @@ export function NodeGraph({ layer, videoProgress, onSeek, onSeekStart, onSeekEnd
   const [hoveredPortId, setHoveredPortId] = useState<string | null>(null);
 
   // ── Zoom & Pan State ────────────────────────────────────────────────────────
-  const [transform, setTransform] = useState({ x: 0, y: 0, k: 1.0 });
-  const transformRef = useRef(transform);
-  useEffect(() => { transformRef.current = transform; }, [transform]);
+  const [zoom, setZoom] = useState(1.0);
+  const zoomRef = useRef(zoom);
+  useEffect(() => { zoomRef.current = zoom; }, [zoom]);
 
-  const applyConstraints = useCallback((newTransform: { x: number, y: number, k: number }) => {
-    if (!graphRef.current) return newTransform;
-    const { width, height } = graphRef.current.getBoundingClientRect();
-    
-    // 1. Zoom limits
-    const k = Math.min(Math.max(newTransform.k, 0.15), 2.0);
-    
-    // 2. Pan limits
-    // We want to keep at least a portion of the "content" visible.
-    // Let's assume a virtual world size or base it on node positions.
-    // For now, let's use a generous but finite range.
-    // Top-left limit: don't let the user pan too far right/down (x, y > some buffer)
-    // Bottom-right limit: don't let them pan too far left/up
-    
-    const margin = 100 * k;
-    const x = Math.min(Math.max(newTransform.x, -2000 * k + width - margin), 500 * k);
-    const y = Math.min(Math.max(newTransform.y, -2000 * k + height - margin), 500 * k);
+  // Initial setup: scroll to top-left and position output node
+  useEffect(() => {
+    const el = graphRef.current;
+    if (el && layerId) {
+      // Start in the top left corner
+      el.scrollLeft = 0;
+      el.scrollTop = 0;
 
-    return { x, y, k };
+      // Check if OUTPUT_ID has a saved position by checking against a dummy default
+      const currentState = getNodeState(OUTPUT_ID, { x: -9999, y: -9999 });
+      if (currentState.x === -9999) {
+        // No saved layout exists yet. Spawn it in the top right of the visible area.
+        // We use clientWidth to get the actual visible width of the graph area,
+        // subtracting 300px to ensure the whole module is visible.
+        // We also cap it at 1000px so it doesn't spawn too far right on ultrawide monitors.
+        const spawnX = Math.min(el.clientWidth - 300, 1000);
+        updateNodeState(OUTPUT_ID, { x: spawnX, y: 20 });
+      }
+    }
+  }, [layerId, getNodeState, updateNodeState]);
+
+  const applyZoom = useCallback((nextK: number, mouseX: number, mouseY: number) => {
+    const el = graphRef.current;
+    if (!el) return;
+
+    const k = Math.min(Math.max(nextK, 0.15), 2.0);
+    const ratio = k / zoomRef.current;
+
+    // Adjust scroll to keep mouse over the same world point
+    const worldX = (el.scrollLeft + mouseX) / zoomRef.current;
+    const worldY = (el.scrollTop + mouseY) / zoomRef.current;
+
+    setZoom(k);
+    
+    // We must wait for the next frame or use a trick because setting zoom 
+    // changes the scrollable range. 
+    requestAnimationFrame(() => {
+      el.scrollLeft = worldX * k - mouseX;
+      el.scrollTop = worldY * k - mouseY;
+    });
   }, []);
 
   useEffect(() => {
@@ -178,25 +125,26 @@ export function NodeGraph({ layer, videoProgress, onSeek, onSeekStart, onSeekEnd
     if (!el) return;
 
     const onWheel = (e: WheelEvent) => {
-      e.preventDefault();
       const rect = el.getBoundingClientRect();
       const mouseX = e.clientX - rect.left;
       const mouseY = e.clientY - rect.top;
 
-      const zoomSpeed = 0.001;
-      const delta = -e.deltaY * zoomSpeed;
-      const nextK = transformRef.current.k * Math.exp(delta);
-      
-      const ratio = nextK / transformRef.current.k;
-      const nextX = mouseX - (mouseX - transformRef.current.x) * ratio;
-      const nextY = mouseY - (mouseY - transformRef.current.y) * ratio;
-
-      setTransform(applyConstraints({ x: nextX, y: nextY, k: nextK }));
+      if (e.ctrlKey) {
+        // Zoom behavior (override default)
+        e.preventDefault();
+        const zoomSpeed = 0.001;
+        const delta = -e.deltaY * zoomSpeed;
+        const nextK = zoomRef.current * Math.exp(delta);
+        applyZoom(nextK, mouseX, mouseY);
+      } else {
+        // Natural browser scroll! 
+        // We don't call e.preventDefault() so the scrollbars work normally.
+      }
     };
 
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
-  }, [applyConstraints]);
+  }, [applyZoom, layerId]);
 
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
     // Pan with middle click or Space + left click
@@ -205,16 +153,14 @@ export function NodeGraph({ layer, videoProgress, onSeek, onSeekStart, onSeekEnd
 
     const startX = e.clientX;
     const startY = e.clientY;
-    const initialTransform = { ...transformRef.current };
+    const startScrollLeft = el.scrollLeft;
+    const startScrollTop = el.scrollTop;
 
     const onMove = (me: PointerEvent) => {
       const dx = me.clientX - startX;
       const dy = me.clientY - startY;
-      setTransform(applyConstraints({
-        ...initialTransform,
-        x: initialTransform.x + dx,
-        y: initialTransform.y + dy
-      }));
+      el.scrollLeft = startScrollLeft - dx;
+      el.scrollTop = startScrollTop - dy;
     };
 
     const onUp = () => {
@@ -248,83 +194,20 @@ export function NodeGraph({ layer, videoProgress, onSeek, onSeekStart, onSeekEnd
   layerRef.current = layer;
 
   // ── Derive current graph edges ──────────────────────────────────────────────
-
-  const graph = layer?.graph;
-  const edges = layer ? buildAutoEdges(layer, graph) : [];
-
-  // Keep graph in sync when layer changes
-  useEffect(() => {
-    if (!layer) return;
-    const newEdges = buildAutoEdges(layer, layer.graph);
-    updateLayerGraph(layer.id, { ...layer.graph, edges: newEdges });
-  }, [layer?.effects?.length, layer?.source.type, layer?.id]);
+  const edges = layer?.graph?.edges ?? [];
 
   // ── Source / Effect handlers ────────────────────────────────────────────────
 
   const handleRemoveSource = useCallback(() => {
     if (!layer) return;
-    const nextLayer = { ...layer, source: { type: 'None' } as AnySource };
-    const newEdges = buildAutoEdges(nextLayer, layer.graph);
-    
-    useEngineStore.getState().updateLayer(layer.id, {
-      source: { type: 'None' },
-      graph: {
-        ...layer.graph,
-        edges: newEdges,
-        manualOutputTarget: layer.graph?.manualOutputTarget === 'source' ? undefined : layer.graph?.manualOutputTarget
-      }
-    });
-  }, [layer]);
+    setSource(layer.id, { type: 'None' } as AnySource);
+  }, [layer, setSource]);
 
   const handleSetSource = useCallback((type: string) => {
     if (!layer) return;
-    let newSource: AnySource;
-    if (type === 'ShapeGenerator') {
-      newSource = { 
-        type, 
-        shapeType: "polygon", 
-        sides: 5, 
-        roundness: 0, 
-        convexity: 0, 
-        rotation: 0, 
-        strokeWidth: 0, 
-        fillColor: [0.3, 0.8, 0.4, 1.0], 
-        x: 0,
-        y: 0,
-        scale: 1.0,
-        tiling: [1, 1], 
-        tilingMode: 'repeat', 
-        edgeSoftness: 0.05 
-      };
-    } else if (type === 'SignalProcessor') {
-      newSource = { type, operation: 'multiply', operandA: 1.0, operandB: 1.0 };
-    } else if (type === 'VideoURL') {
-      newSource = { type, videoUrl: "https://vjs.zencdn.net/v/oceans.mp4", playbackSpeed: 1.0, loop: true, playState: 'pause', objectFit: 'cover', volume: 1.0, audioMuted: true };
-    } else if (type === 'VideoFile') {
-      newSource = { type, fileUrl: "", fileName: "No file selected", playbackSpeed: 1.0, loop: true, playState: 'pause', objectFit: 'cover', volume: 1.0, audioMuted: true };
-    } else if (type === 'WebcamCapture') {
-      newSource = { type, deviceId: "", objectFit: 'cover' };
-    } else if (type === 'ImageFile') {
-      newSource = { type, fileUrl: "", fileName: "No file selected", objectFit: 'cover' };
-    } else if (type === 'AudioInput') {
-      newSource = { type, deviceId: "", volume: 1.0, muted: false };
-    } else if (type === 'AudioFile') {
-      newSource = { type, fileUrl: "", fileName: "No file selected", volume: 1.0, muted: false, loop: true, playState: 'pause' };
-    } else if (type === 'SystemAudio') {
-      newSource = { type, volume: 1.0, muted: false };
-    } else if (type === 'NoiseSource') {
-      newSource = { type, noiseType: 'perlin', scale: 2.0, evolution: 1.0, octaves: 4, persistence: 0.5, seed: 123, brightness: 0, contrast: 1, flowSpeed: 1.0, autoAnimate: true };
-    } else {
-      newSource = { type: 'ImageLoader', imageUrl: "/logo.png", objectFit: 'cover' } as any;
-    }
-    const nextLayer = { ...layer, source: newSource };
-    const newEdges = buildAutoEdges(nextLayer, layer.graph);
-
-    updateLayer(layer.id, { 
-      source: newSource,
-      graph: { ...layer.graph, edges: newEdges }
-    });
-  }, [layer, updateLayer]);
+    const newSource = createDefaultSource(type);
+    setSource(layer.id, newSource);
+  }, [layer, setSource]);
 
   const handleSourceChange = useCallback((key: string, value: any) => {
     if (!layer) return;
@@ -359,61 +242,27 @@ export function NodeGraph({ layer, videoProgress, onSeek, onSeekStart, onSeekEnd
 
   const handleRemoveEffect = useCallback((effectId: string) => {
     if (!layer) return;
-    const newEffects = layer.effects.filter(ef => ef.id !== effectId);
-    const newEdges = buildAutoEdges({ ...layer, effects: newEffects }, layer.graph);
-    updateLayer(layer.id, { 
-      effects: newEffects,
-      graph: { ...layer.graph, edges: newEdges }
-    });
-  }, [layer, updateLayer]);
+    removeEffect(layer.id, effectId);
+  }, [layer, removeEffect]);
 
   const handleRemoveModulator = useCallback((modId: string) => {
     if (!layer) return;
-    const nextModulators = { ...layer.modulators };
-    delete nextModulators[modId];
-    const newEdges = buildAutoEdges({ ...layer, modulators: nextModulators }, layer.graph);
-    updateLayer(layer.id, { 
-      modulators: nextModulators,
-      graph: { ...layer.graph, edges: newEdges }
-    });
-  }, [layer, updateLayer]);
+    removeModulator(layer.id, modId);
+  }, [layer, removeModulator]);
 
   const handleAddModulator = useCallback((type: string) => {
     if (!layer) return;
     const newId = `mod_${Date.now()}`;
-    let newMod: AnySource;
-    if (type === 'LFO') {
-      newMod = { type, waveform: 'sine', frequency: 0.1, speedRange: 'low', amplitude: 1.0, offset: 0, bipolar: true } as any;
-    } else if (type === 'TriggerPad') {
-      newMod = { type, isPressed: false, keyMapping: 'none', useEnvelope: false, attack: 0.1, release: 0.5 } as any;
-    } else if (type === 'Noise') {
-      newMod = { type, noiseType: 'white', frequency: 1.0, amplitude: 1.0, octaves: 4, persistence: 0.5, bipolar: true } as any;
-    } else {
-      newMod = { type: 'TriggerPad', isPressed: false, keyMapping: 'none', useEnvelope: false, attack: 0.1, release: 0.5 } as any;
-    }
-    updateLayer(layer.id, { 
-      modulators: { ...layer.modulators, [newId]: newMod }
-    });
-  }, [layer, updateLayer]);
+    const newMod = createDefaultModulator(type);
+    addModulator(layer.id, newId, newMod);
+  }, [layer, addModulator]);
 
   const handleAddEffect = useCallback((type: AnyEffect['type']) => {
     if (!layer) return;
     const newId = `effect_${Date.now()}`;
-    let newEffect: AnyEffect;
-    if (type === 'Transform2D') newEffect = { id: newId, type, translateX: 0, translateY: 0, scaleX: 1, scaleY: 1, rotation: 0, spin: 0 };
-    else if (type === 'ColorAdjust') newEffect = { id: newId, type, hue: 0, saturation: 1, contrast: 1, brightness: 0, invert: false };
-    else if (type === 'LumaKey') newEffect = { id: newId, type, threshold: 0.5, tolerance: 0.1, invertKey: false };
-    else if (type === 'AudioAnalyzer') newEffect = { id: newId, type, smoothing: 0.5 };
-    else if (type === 'InterLayerOutput') newEffect = { id: newId, type, portCount: 1 };
-    else if (type === 'InterLayerInput') newEffect = { id: newId, type, portCount: 1 };
-    else if (type === 'ColorRGB') newEffect = { id: newId, type, r: 0.5, g: 0.5, b: 0.5, rMode: 'add', gMode: 'add', bMode: 'add' };
-    else if (type === 'LumaSplitter') newEffect = { id: newId, type, threshold1: 0.33, threshold2: 0.66, softness: 0.1 };
-    else if (type === 'Spawn') newEffect = { id: newId, type, x: 0, y: 0, scale: 0.5, rotation: 0, maxCount: 20, lifetime: 2.0, fadeOut: true, randomPos: 0.0, randomScale: 0.0, coordinateMode: 'normalized' } as any;
-    else if (type === 'RGBMixer') newEffect = { id: newId, type, rLevel: 1, gLevel: 1, bLevel: 1 };
-    else if (type === 'Path') newEffect = { id: newId, type, mode: 'physics', speed: 1.0, strength: 1.0, frequency: 1.0, drift: 0.0 };
-    else newEffect = { id: newId, type: 'SimpleFeedback', feedbackAmount: 0.9, zoom: 0.95, angle: 0.05 };
-    updateLayer(layer.id, { effects: [...layer.effects, newEffect] });
-  }, [layer, updateLayer]);
+    const newEffect = createDefaultEffect(type, newId);
+    addEffect(layer.id, newEffect);
+  }, [layer, addEffect]);
 
   // ── Ghost edge drag ─────────────────────────────────────────────────────────
 
@@ -426,7 +275,9 @@ export function NodeGraph({ layer, videoProgress, onSeek, onSeekStart, onSeekEnd
     const handleWindowPointerMove = (e: PointerEvent) => {
       if (!graphRef.current) return;
       const rect = graphRef.current.getBoundingClientRect();
-      const { x, y, k } = transformRef.current;
+      const k = zoomRef.current;
+      const x = -graphRef.current.scrollLeft;
+      const y = -graphRef.current.scrollTop;
       
       // Convert screen to world
       const x2 = (e.clientX - rect.left - x) / k;
@@ -524,19 +375,23 @@ export function NodeGraph({ layer, videoProgress, onSeek, onSeekStart, onSeekEnd
   const handleRemoveEdge = useCallback((edgeId: string) => {
     if (!layer) return;
     const currentEdges = layer.graph?.edges ?? [];
-    const removedEdge = currentEdges.find(e => e.id === edgeId) || edges.find(e => e.id === edgeId);
+    const removedEdge = currentEdges.find(e => e.id === edgeId);
     if (!removedEdge) return;
 
     const newEdges = currentEdges.filter(e => e.id !== edgeId);
     const disconnectedPorts = [...(layer.graph?.disconnectedPorts ?? [])];
     
-    if (removedEdge.isAuto) {
-      disconnectedPorts.push(`${removedEdge.toNodeId}.${removedEdge.toPort}`);
+    // If it was auto, or if we want to prevent auto-routing from re-adding it
+    if (removedEdge.isAuto || removedEdge.signalType === 'video') {
+      const portKey = `${removedEdge.toNodeId}.${removedEdge.toPort}`;
+      if (!disconnectedPorts.includes(portKey)) {
+        disconnectedPorts.push(portKey);
+      }
     }
 
     const manualOutputTarget = (removedEdge.toNodeId === OUTPUT_ID) ? undefined : layer.graph?.manualOutputTarget;
     updateLayerGraph(layer.id, { edges: newEdges, manualOutputTarget, disconnectedPorts });
-  }, [layer, edges, updateLayerGraph]);
+  }, [layer, updateLayerGraph]);
 
   const handleInputJackPointerDown = useCallback((nodeId: string, portId: string, e: React.PointerEvent) => {
     if (!layer || !graphRef.current) return;
@@ -689,17 +544,8 @@ export function NodeGraph({ layer, videoProgress, onSeek, onSeekStart, onSeekEnd
 
   if (!layer) {
     return (
-      <div className="node-graph-bar">
-        <div className="foundational-panel">
-          <div className="foundational-panel-header">
-            <span className="fp-dot" style={{ background: '#333' }} />
-            Foundational
-          </div>
-          <div className="fp-empty">Select a layer to begin</div>
-        </div>
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2a2a2a', fontSize: 12 }}>
-          No layer selected
-        </div>
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#444', fontSize: 13, letterSpacing: 1 }}>
+        SELECT A LAYER TO VIEW GRAPH
       </div>
     );
   }
@@ -718,28 +564,6 @@ export function NodeGraph({ layer, videoProgress, onSeek, onSeekStart, onSeekEnd
   return (
     <div className="node-graph-bar">
       {/* ── Foundational Panel ── */}
-      {(() => {
-        const outEdge = edges.find(e => e.toNodeId === OUTPUT_ID);
-        const fId = outEdge?.fromNodeId ?? null;
-        const fEffect = layer.effects.find(e => e.id === fId) ?? null;
-        const fEffectCtx: EffectCtx | null = fEffect ? {
-          effect: fEffect,
-          onUpdate: (upd) => handleUpdateEffect(fEffect.id, upd),
-          linkedScales,
-          setLinkedScales,
-        } : null;
-
-        return (
-          <FoundationalPanel
-            nodeId={fId}
-            source={fId === 'source' ? layer.source : null}
-            sourceCtx={fId === 'source' ? sourceCtx : null}
-            effect={fEffect}
-            effectCtx={fEffectCtx}
-            layerName={layer.name}
-          />
-        );
-      })()}
 
       {/* ── Graph Canvas ── */}
       <div
@@ -753,7 +577,7 @@ export function NodeGraph({ layer, videoProgress, onSeek, onSeekStart, onSeekEnd
         <div 
           className="graph-canvas-inner"
           style={{
-            transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.k})`,
+            transform: `scale(${zoom})`,
             transformOrigin: '0 0'
           }}
         >
@@ -830,10 +654,9 @@ export function NodeGraph({ layer, videoProgress, onSeek, onSeekStart, onSeekEnd
                 onLayoutChange={u => updateNodeState('source', u)}
                 onRemove={handleRemoveSource}
                 graphRef={graphRef}
-                signalValues={layer.signalValues}
                 inputSettings={layer.inputSettings}
                 hoveredPortId={hoveredPortId}
-                zoom={transform.k}
+                zoom={zoom}
               />
             );
           })()}
@@ -867,10 +690,9 @@ export function NodeGraph({ layer, videoProgress, onSeek, onSeekStart, onSeekEnd
                 onLayoutChange={(u) => updateNodeState(effect.id, u)}
                 onRemove={() => handleRemoveEffect(effect.id)}
                 graphRef={graphRef}
-                signalValues={layer.signalValues}
                 inputSettings={layer.inputSettings}
                 hoveredPortId={hoveredPortId}
-                zoom={transform.k}
+                zoom={zoom}
               />
             );
           })}
@@ -883,6 +705,10 @@ export function NodeGraph({ layer, videoProgress, onSeek, onSeekStart, onSeekEnd
               source: mod,
               onChange: (key, val) => {
                 const nextMods = { ...layer.modulators, [modId]: { ...mod, [key]: val } };
+                updateLayer(layer.id, { modulators: nextMods });
+              },
+              onUpdate: (upd) => {
+                const nextMods = { ...layer.modulators, [modId]: { ...mod, ...upd } };
                 updateLayer(layer.id, { modulators: nextMods });
               }
             };
@@ -905,10 +731,9 @@ export function NodeGraph({ layer, videoProgress, onSeek, onSeekStart, onSeekEnd
                 onLayoutChange={(u) => updateNodeState(modId, u)}
                 onRemove={() => handleRemoveModulator(modId)}
                 graphRef={graphRef}
-                signalValues={layer.signalValues}
                 inputSettings={layer.inputSettings}
                 hoveredPortId={hoveredPortId}
-                zoom={transform.k}
+                zoom={zoom}
               />
             );
           })}
@@ -936,10 +761,9 @@ export function NodeGraph({ layer, videoProgress, onSeek, onSeekStart, onSeekEnd
                   onPositionChange={(_, x, y) => updateNodeState(OUTPUT_ID, { x, y })}
                   onLayoutChange={u => updateNodeState(OUTPUT_ID, u)}
                   graphRef={graphRef}
-                  signalValues={layer.signalValues}
                   inputSettings={layer.inputSettings}
                   hoveredPortId={hoveredPortId}
-                  zoom={transform.k}
+                  zoom={zoom}
                 />
               </div>
             );
@@ -952,18 +776,23 @@ export function NodeGraph({ layer, videoProgress, onSeek, onSeekStart, onSeekEnd
             </div>
           )}
 
-          {/* Drop overlay */}
           <div className={`graph-drop-overlay ${dropOver ? 'visible' : ''}`}>
             Drop module here
           </div>
         </div>
+      </div>
 
-        {/* ── Zoom Controls HUD ── */}
-        <div className="graph-zoom-hud">
-          <button className="zoom-reset-btn" onClick={() => setTransform({ x: 0, y: 0, k: 1.0 })} title="Reset Zoom">
-            {Math.round(transform.k * 100)}%
-          </button>
-        </div>
+      {/* ── Zoom Controls HUD (Anchored to node-graph-bar) ── */}
+      <div className="graph-zoom-hud">
+        <button className="zoom-reset-btn" onClick={() => applyZoom(1.0, 0, 0)} title="Reset Zoom">
+          {Math.round(zoom * 100)}%
+        </button>
+        <button className="zoom-step-btn" onClick={() => applyZoom(zoom * 1.15, 0, 0)} title="Zoom In">
+          +
+        </button>
+        <button className="zoom-step-btn" onClick={() => applyZoom(zoom / 1.15, 0, 0)} title="Zoom Out">
+          -
+        </button>
       </div>
     </div>
   );

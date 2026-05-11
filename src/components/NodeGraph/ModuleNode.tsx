@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { PORT_DEFS, SIGNAL_COLORS, getShortLabel } from './portDefs';
 import { ControlRowDef, RowCtx, EffectCtx } from './moduleControls';
 import { AnySource, AnyEffect, SignalType, SpawnEffect } from '../../state/types';
@@ -6,7 +6,15 @@ import { useEngineStore } from '../../state/store';
 
 // ── Mini Components ─────────────────────────────────────────────────────────
 
-function Knob({ value, onChange, size = 16, color = '#555' }: { value: number, onChange: (v: number) => void, size?: number, color?: string }) {
+function Knob({ value, onChange, min = 0, max = 1, resetValue = 1, size = 16, color = '#555' }: { 
+  value: number, 
+  onChange: (v: number) => void, 
+  min?: number, 
+  max?: number, 
+  resetValue?: number,
+  size?: number, 
+  color?: string 
+}) {
   const [isDragging, setIsDragging] = useState(false);
   const lastY = useRef(0);
 
@@ -21,7 +29,7 @@ function Knob({ value, onChange, size = 16, color = '#555' }: { value: number, o
     if (!isDragging) return;
     const dy = lastY.current - e.clientY;
     lastY.current = e.clientY;
-    const next = Math.max(0, Math.min(1, value + dy * 0.01));
+    const next = Math.max(min, Math.min(max, value + dy * (max - min) * 0.01));
     if (next !== value) onChange(next);
   };
 
@@ -32,10 +40,11 @@ function Knob({ value, onChange, size = 16, color = '#555' }: { value: number, o
 
   const handleDoubleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    onChange(0); // Reset to 0
+    onChange(resetValue); 
   };
 
-  const rotation = (value * 270) - 135; // -135 to 135 deg
+  const normalized = (value - min) / (max - min || 1);
+  const rotation = (normalized * 270) - 135; // -135 to 135 deg
 
   return (
     <div 
@@ -85,9 +94,12 @@ function saveLayout(layerId: string, layout: Record<string, NodeUIState>) {
 }
 
 export function useNodeLayout(layerId: string | null) {
-  const [layout, setLayout] = useState<Record<string, NodeUIState>>(() =>
-    layerId ? loadLayout(layerId) : {}
-  );
+  const [layout, setLayout] = useState<Record<string, NodeUIState>>({});
+  
+  useEffect(() => {
+    if (layerId) setLayout(loadLayout(layerId));
+    else setLayout({});
+  }, [layerId]);
 
   const getNodeState = useCallback((nodeId: string, defaultState: Partial<NodeUIState>): NodeUIState => {
     const base = {
@@ -110,6 +122,38 @@ export function useNodeLayout(layerId: string | null) {
   }, [layerId]);
 
   return { getNodeState, updateNodeState };
+}
+
+// ── Signal Meter Component ───────────────────────────────────────────────────
+
+function SignalMeter({ layerId, nodeId, portId, bipolar, color }: { 
+  layerId: string, 
+  nodeId: string, 
+  portId: string, 
+  bipolar: boolean,
+  color: string 
+}) {
+  const settingsKey = `${nodeId}.${portId}`;
+  const val = useEngineStore(s => s.layers[layerId]?.signalValues?.[settingsKey] ?? 0);
+
+  return (
+    <div className="patchbay-meter-container">
+      <div className="patchbay-meter-bar">
+        <div 
+          className={`patchbay-meter-fill ${bipolar ? 'bipolar-fill' : ''}`}
+          style={{ 
+            width: `${Math.min(100, Math.abs(bipolar ? (val / 2) * 100 : (val / 2) * 100))}%`,
+            left: bipolar ? (val < 0 ? `${50 - Math.min(50, Math.abs((val / 2) * 50))}%` : '50%') : '0',
+          }}
+        />
+      </div>
+      <div className="patchbay-meter-overlay" style={{ color }}>
+        <span className="lcd-number">
+          {val >= 0 ? '+' : ''}{val.toFixed(2)}
+        </span>
+      </div>
+    </div>
+  );
 }
 
 // ── Ghost Edge State ──────────────────────────────────────────────────────────
@@ -143,7 +187,6 @@ interface ModuleNodeProps {
   onLayoutChange: (updates: Partial<NodeUIState>) => void;
   onRemove?: () => void;
   graphRef: React.RefObject<HTMLDivElement | null>;
-  signalValues?: Record<string, number>;
   inputSettings?: Record<string, any>; // PortSettings
   layerId: string;
   hoveredPortId?: string | null;
@@ -155,7 +198,7 @@ export function ModuleNode({
   isOutput, patchbayOpen, ghostSignalType,
   onPortPointerDown, onInputJackPointerDown, onPatchbayDrop,
   onPositionChange, onLayoutChange, onRemove, graphRef,
-  signalValues, inputSettings, hoveredPortId, zoom
+  inputSettings, hoveredPortId, zoom
 }: ModuleNodeProps) {
   const rawPorts = PORT_DEFS[moduleType] || [];
   
@@ -246,8 +289,21 @@ export function ModuleNode({
     setRowDragOver(null);
   };
 
-  const portColor = (signalType: string) =>
-    SIGNAL_COLORS[signalType as keyof typeof SIGNAL_COLORS] || '#888';
+  const portColor = (portId: string, signalType: string, direction: string) => {
+    let effectiveType = signalType;
+    if (signalType === 'generic') {
+      const currentLayer = useEngineStore.getState().layers[layerId];
+      const edges = currentLayer?.graph?.edges ?? [];
+      if (direction === 'out') {
+        const inputEdge = edges.find(e => e.toNodeId === nodeId && e.toPort === 'sig_in');
+        if (inputEdge) effectiveType = inputEdge.signalType || 'generic';
+      } else {
+        const inputEdge = edges.find(e => e.toNodeId === nodeId && e.toPort === portId);
+        if (inputEdge) effectiveType = inputEdge.signalType || 'generic';
+      }
+    }
+    return SIGNAL_COLORS[effectiveType as keyof typeof SIGNAL_COLORS] || '#888';
+  };
 
   const handlePortDown = (e: React.PointerEvent, portId: string, signalType: string, direction: string) => {
     if (direction !== 'out') return;
@@ -263,8 +319,10 @@ export function ModuleNode({
   const handleJackPointerUp = (e: React.PointerEvent, portId: string, signalType: string) => {
     e.stopPropagation();
     if (!ghostSignalType) return;
-    const compatible = (ghostSignalType === signalType) || 
-                       (ghostSignalType !== 'video' && signalType !== 'video') ||
+    const isGeneric = signalType === 'generic' || ghostSignalType === 'generic';
+    const compatible = isGeneric ||
+                       (ghostSignalType === signalType) || 
+                       (ghostSignalType !== 'video' && signalType !== 'video' && ghostSignalType !== 'audio' && signalType !== 'audio') ||
                        (ghostSignalType === 'video' && signalType === 'modulation');
     if (!compatible) return; // incompatible
     onPatchbayDrop(nodeId, portId);
@@ -304,15 +362,17 @@ export function ModuleNode({
             {inputs.map(port => {
               const eCtx = rowCtx as EffectCtx;
               const isLinked = (moduleType === 'Transform2D' && port.id === 'scaleY') && (eCtx.linkedScales?.[nodeId] ?? true);
-              
               const effectivePortId = isLinked ? 'scaleX' : port.id;
               const settingsKey = `${nodeId}.${effectivePortId}`;
               const settings = inputSettings?.[settingsKey] || { amount: 1.0, bipolar: false };
-              const val = signalValues?.[settingsKey] ?? 0;
               
               
-              const compatible = (ghostSignalType === port.signalType) || 
-                                 (ghostSignalType !== 'video' && port.signalType !== 'video' && ghostSignalType !== undefined) ||
+              // Smart adoption for generic ports: 
+              // If we are dragging, and either side is generic, it's compatible.
+              const isGeneric = port.signalType === 'generic' || ghostSignalType === 'generic';
+              const compatible = isGeneric ||
+                                 (ghostSignalType === port.signalType) || 
+                                 (ghostSignalType !== 'video' && port.signalType !== 'video' && ghostSignalType !== 'audio' && port.signalType !== 'audio' && ghostSignalType !== undefined) ||
                                  (ghostSignalType === 'video' && port.signalType === 'modulation');
               const isTargeted = patchbayOpen && compatible;
               const isHovered = hoveredPortId === port.id;
@@ -327,8 +387,8 @@ export function ModuleNode({
                     <div 
                       className="port-dot patchbay-jack-dot"
                       style={{ 
-                        color: portColor(port.signalType), 
-                        backgroundColor: isHovered ? portColor(port.signalType) : 'transparent',
+                        color: portColor(port.id, port.signalType, port.direction), 
+                        backgroundColor: isHovered ? portColor(port.id, port.signalType, port.direction) : 'transparent',
                         opacity: (patchbayOpen && !compatible) ? 0.3 : 1 
                       }}
                       onPointerDown={e => {
@@ -348,7 +408,9 @@ export function ModuleNode({
                         <div className="patchbay-amount-knob-container">
                           <Knob 
                             value={settings.amount} 
-                            color={portColor(port.signalType)}
+                            max={2.0}
+                            resetValue={1.0}
+                            color={portColor(port.id, port.signalType, port.direction)}
                             onChange={(v) => useEngineStore.getState().updateInputSettings(layerId, settingsKey, { amount: v })} 
                           />
                         </div>
@@ -383,22 +445,13 @@ export function ModuleNode({
                   </div>
                   
                   {nodeState.patchbayExpanded && (
-                    <div className="patchbay-meter-container">
-                      <div className="patchbay-meter-bar">
-                        <div 
-                          className={`patchbay-meter-fill ${settings.bipolar ? 'bipolar-fill' : ''}`}
-                          style={{ 
-                            width: `${Math.min(100, Math.abs(settings.bipolar ? val * 50 : val * 100))}%`,
-                            left: settings.bipolar ? (val < 0 ? `${50 - Math.min(50, Math.abs(val * 50))}%` : '50%') : '0',
-                          }}
-                        />
-                      </div>
-                      <div className="patchbay-meter-overlay" style={{ color: portColor(port.signalType) }}>
-                        <span className="lcd-number">
-                          {val >= 0 ? '+' : ''}{val.toFixed(2)}
-                        </span>
-                      </div>
-                    </div>
+                    <SignalMeter 
+                      layerId={layerId}
+                      nodeId={nodeId}
+                      portId={effectivePortId}
+                      bipolar={settings.bipolar}
+                      color={portColor(port.id, port.signalType, port.direction)}
+                    />
                   )}
                 </div>
               );
@@ -434,7 +487,7 @@ export function ModuleNode({
                 <div key={port.id} className="port-dot-wrap port-in">
                   <div
                     className="port-dot"
-                    style={{ color: portColor(port.signalType), cursor: 'crosshair' }}
+                    style={{ color: portColor(port.id, port.signalType, port.direction), cursor: 'crosshair' }}
                     data-port-id={port.id}
                     data-node-id={nodeId}
                     title={port.label}
@@ -473,7 +526,7 @@ export function ModuleNode({
               <div key={port.id} className="port-dot-wrap port-out">
                 <div
                   className="port-dot"
-                  style={{ color: portColor(port.signalType), cursor: 'crosshair' }}
+                  style={{ color: portColor(port.id, port.signalType, port.direction), cursor: 'crosshair' }}
                   data-port-id={port.id}
                   data-node-id={nodeId}
                   title={port.label}

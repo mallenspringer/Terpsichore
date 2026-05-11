@@ -11,18 +11,19 @@ import { AudioEngine } from '../state/AudioEngine';
 import { LumaSplitterWGSL } from './shaders/LumaSplitter';
 import { RGBMixerWGSL } from './shaders/RGBMixer';
 import { SpawnWGSL, SpawnVertexWGSL } from './shaders/Spawn';
+import { NoiseSourceVertexWGSL, NoiseSourceFragmentWGSL } from './shaders/NoiseSource';
+import { InverterWGSL } from './shaders/Inverter';
+import { TriggeredGateWGSL } from './shaders/TriggeredGate';
+
+import { PORT_DEFS } from '../components/NodeGraph/portDefs';
+import { SignalDispatcher } from '../state/SignalDispatcher';
 import { 
   ShapeGeneratorSource, Transform2DEffect, ColorAdjustEffect, LumaKeyEffect, 
   SimpleFeedbackEffect, ColorRGBEffect, LumaSplitterEffect, RGBMixerEffect, 
   VideoURLSource, VideoFileSource, WebcamCaptureSource, ImageLoaderSource, ImageFileSource, 
-  LFOModulatorSource, TriggerPadSource, SignalProcessorSource, SpawnEffect, PathEffect,
-  NoiseModulatorSource, NoiseVideoSource,
+  SpawnEffect, PathEffect, NoiseVideoSource, InverterEffect, TriggeredGateEffect,
   LayerState
 } from '../state/types';
-
-import { NoiseSourceVertexWGSL, NoiseSourceFragmentWGSL } from './shaders/NoiseSource';
-
-import { PORT_DEFS } from '../components/NodeGraph/portDefs';
 
 interface SpawnedObject {
   id: string;
@@ -71,6 +72,8 @@ export class Renderer {
   private lumaAnalysisTexture!: GPUTexture;
   private blitPipeline!: GPURenderPipeline;
   private rgbMixerPipeline!: GPURenderPipeline;
+  private inverterPipeline!: GPURenderPipeline;
+  private triggeredGatePipeline!: GPURenderPipeline;
 
   private mediaTextures: Record<string, GPUTexture> = {};
   private nodeTextures: Map<string, GPUTexture> = new Map();
@@ -108,7 +111,6 @@ export class Renderer {
       console.warn(`WebGPU device was lost: ${info.message}`);
       if (info.reason !== 'destroyed') {
         // Attempt recovery or notify user
-        console.log("Attempting to re-initialize Renderer...");
         this.initialize();
       }
     });
@@ -176,7 +178,7 @@ export class Renderer {
     const contrast = this.getEffectiveParam(layer, nodeId, 'contrast_cv', ns.contrast ?? 1, timeSec);
 
     const uniformData = new Float32Array([
-      ns.noiseType === 'perlin' ? 0 : (ns.noiseType === 'worley' ? 1 : (ns.noiseType === 'white' ? 2 : 3)),
+      ns.noiseType === 'fbm' ? 0 : (ns.noiseType === 'worley' ? 1 : (ns.noiseType === 'white' ? 2 : 3)),
       scale,
       evolution,
       octaves,
@@ -369,6 +371,12 @@ export class Renderer {
       },
       primitive,
     });
+    
+    this.triggeredGatePipeline = this.device.createRenderPipeline({ 
+      layout, vertex, 
+      fragment: { module: this.device.createShaderModule({ code: TriggeredGateWGSL }), entryPoint: 'fs_main', targets }, 
+      primitive 
+    });
 
     this.lumaSplitPipeline = this.device.createRenderPipeline({
       layout, vertex,
@@ -492,6 +500,7 @@ export class Renderer {
       },
       primitive
     });
+    this.inverterPipeline = this.device.createRenderPipeline({ layout, vertex, fragment: { module: this.device.createShaderModule({ code: InverterWGSL }), entryPoint: 'fs_main', targets }, primitive });
   }
 
   private getStorageBuffer(key: string, size: number): GPUBuffer {
@@ -525,25 +534,22 @@ export class Renderer {
 
     // Organic loop trigger - only when playing and NOT manually seeking
     if (src.playState === 'play' && src.loop && !layerIsSeeking && !isNaN(vid.duration) && vid.duration > 0.1 && vid.currentTime >= loopEnd && isOrganicPlayback && lastTime < loopEnd) {
-      console.log(`[Renderer] Organic Loop Triggered on layer ${layerId}. currentTime: ${vid.currentTime.toFixed(3)}, loopEnd: ${loopEnd.toFixed(3)}, loopStart: ${loopStart.toFixed(3)}`);
       vid.currentTime = loopStart;
     }
 
     // EOF fallback (if user scrubs outside the loop flags and hits the absolute end of the file)
     if (src.playState === 'play' && src.loop && !layerIsSeeking && !isNaN(vid.duration) && vid.duration > 0.1 && vid.currentTime >= vid.duration - 0.05) {
-      console.log(`[Renderer] EOF Loop Triggered on layer ${layerId}. currentTime: ${vid.currentTime.toFixed(3)}, duration: ${vid.duration.toFixed(3)}, loopStart: ${loopStart.toFixed(3)}`);
       vid.currentTime = loopStart;
       vid.play().catch(() => {});
     }
 
-    if (src.playState === 'play' && vid.paused && !layerIsSeeking && vid.currentTime < (vid.duration || Infinity) - 0.05) {
+    if (src.playState === 'play' && vid.paused && !layerIsSeeking && vid.currentTime < (vid.duration || Infinity) - 0.05 && !useEngineStore.getState().isGlobalPaused) {
       vid.play().catch(() => {});
     }
     if (src.playState === 'pause' && !vid.paused) vid.pause();
     if (src.playState === 'stop') {
       if (!vid.paused) vid.pause();
       if (!layerIsSeeking && Math.abs(vid.currentTime - loopStart) > 0.01) {
-        console.log(`[Renderer] Stop State Reset on layer ${layerId}. setting currentTime to loopStart: ${loopStart}`);
         vid.currentTime = loopStart;
       }
     }
@@ -588,7 +594,7 @@ export class Renderer {
         vid.style.height = '1px';
         document.body.appendChild(vid);
         vid.onerror = () => console.error(`Video Error on Layer ${layerId}:`, vid.error?.message, "Code:", vid.error?.code);
-        vid.onloadedmetadata = () => console.log(`[Renderer] Metadata Loaded for Layer ${layerId}: duration=${vid.duration}, size=${vid.videoWidth}x${vid.videoHeight}`);
+        vid.onloadedmetadata = () => {};
         this.videoElements[layerId] = vid;
         
         // Register with AudioEngine for signal dispatching
@@ -597,13 +603,12 @@ export class Renderer {
       }
       if (source.type === 'VideoURL') {
         const src = source as VideoURLSource;
-        if (vid.__lastSrc !== src.videoUrl && !vid.srcObject) {
+        if (src.videoUrl && vid.__lastSrc !== src.videoUrl && !vid.srcObject) {
           vid.pause();
           vid.srcObject = null;
           vid.crossOrigin = 'anonymous';
           vid.src = src.videoUrl;
           vid.__lastSrc = src.videoUrl;
-          console.log(`[Renderer] Loading VideoURL on layer ${layerId}: ${src.videoUrl}`);
           vid.load();
         }
         this.applyVideoState(vid, src, src.audioMuted || (source as any)._layerAudioMuted, layerId);
@@ -615,7 +620,6 @@ export class Renderer {
           vid.removeAttribute('crossOrigin');
           vid.src = src.fileUrl;
           vid.__lastSrc = src.fileUrl;
-          console.log(`[Renderer] Loading VideoFile on layer ${layerId}: ${src.fileUrl}`);
           vid.load();
         }
         this.applyVideoState(vid, src, src.audioMuted || (source as any)._layerAudioMuted, layerId);
@@ -652,7 +656,7 @@ export class Renderer {
         ? (source as ImageLoaderSource).imageUrl 
         : (source as ImageFileSource).fileUrl;
       
-      if (!this.imageElements[layerId] || this.imageElements[layerId].src !== srcUrl) {
+      if (srcUrl && (!this.imageElements[layerId] || this.imageElements[layerId].src !== srcUrl)) {
         const img = new Image();
         if (source.type === 'ImageLoader') img.crossOrigin = 'anonymous';
         img.src = srcUrl;
@@ -670,12 +674,12 @@ export class Renderer {
         this.audioElements[layerId] = aud;
       }
       const src = source as any;
-      if (aud.src !== src.fileUrl) {
+      if (src.fileUrl && aud.src !== src.fileUrl) {
         aud.src = src.fileUrl;
         aud.load();
         AudioEngine.getInstance().registerMediaElement(layerId, aud);
       }
-      if (src.playState === 'play' && aud.paused) aud.play().catch(e => console.error("Audio Play Error:", e));
+      if (src.playState === 'play' && aud.paused && !useEngineStore.getState().isGlobalPaused) aud.play().catch(e => console.error("Audio Play Error:", e));
       else if (src.playState === 'pause' && !aud.paused) aud.pause();
       else if (src.playState === 'stop') { aud.pause(); aud.currentTime = 0; }
       
@@ -719,151 +723,27 @@ export class Renderer {
     return null;
   }
 
-  private calculateSignalValue(layer: LayerState, nodeId: string, portId: string, timeSec: number, depth = 0): number {
-    if (depth > 10) return 0; // Prevent recursion
-    
-    // 1. Check if there's an incoming edge to this port
-    const edges = layer.graph?.edges || [];
-    const incoming = edges.find(e => e.toNodeId === nodeId && e.toPort === portId);
-    
-    if (incoming) {
-      // Recursively resolve the source of this signal
-      return this.calculateSignalValue(layer, incoming.fromNodeId, incoming.fromPort, timeSec, depth + 1);
-    }
-
-    // 2. If no incoming edge, resolve the "Native" value of the node
-    const source = (nodeId === 'source') ? layer.source : layer.modulators[nodeId];
-    if (!source) {
-      // Might be an effect parameter
-      const effect = layer.effects.find(e => e.id === nodeId);
-      return (effect as any)?.[portId] ?? 0;
-    }
-
-    if (source.type === 'LFO') {
-      const ports = PORT_DEFS[source.type] || [];
-      const portDef = ports.find(p => p.id === portId);
-      if (portDef?.direction === 'out') {
-        const stateKey = `${layer.id}.${nodeId}`;
-        const lfoState = this.lfoStates.get(stateKey);
-        
-        if (portId === 'sync_out') {
-          return lfoState?.syncPulse ? 1.0 : 0.0;
-        }
-
-        const lfo = source as LFOModulatorSource;
-        const phase = lfoState?.phase ?? 0;
-        let val = 0;
-        switch (lfo.waveform) {
-          case 'sine': val = Math.sin(phase * Math.PI * 2); break;
-          case 'square': val = phase < 0.5 ? 1 : -1; break;
-          case 'triangle': val = Math.abs(phase * 2 - 1) * 2 - 1; break;
-          case 'saw': val = phase * 2 - 1; break;
-          case 'random': 
-            const seed = Math.floor(phase * 1000);
-            val = (Math.sin(seed * 12.9898 + 78.233) * 43758.5453) % 1;
-            break;
-        }
-        val = val * lfo.amplitude + lfo.offset;
-        if (!lfo.bipolar) val = (val + 1) * 0.5;
-        return val;
-      }
-    }
-
-    if (source.type === 'Noise') {
-      const ports = PORT_DEFS[source.type] || [];
-      const portDef = ports.find(p => p.id === portId);
-      if (portDef?.direction === 'out') {
-        const stateKey = `${layer.id}.${nodeId}`;
-        const nState = this.noiseStates.get(stateKey);
-        return nState?.value ?? 0;
-      }
-    }
-
-    if (source.type === 'TriggerPad') {
-      const ports = PORT_DEFS[source.type] || [];
-      const portDef = ports.find(p => p.id === portId);
-      if (portDef?.direction === 'out') {
-        const stateKey = `${layer.id}.${nodeId}`;
-        const tState = this.triggerStates.get(stateKey);
-        return tState?.value ?? 0;
-      }
-    }
-
-    if (source.type === 'SignalProcessor') {
-      const sp = source as SignalProcessorSource;
-      
-      const aEdge = edges.find(e => e.toNodeId === nodeId && e.toPort === 'in_a');
-      const a = aEdge 
-        ? this.calculateSignalValue(layer, aEdge.fromNodeId, aEdge.fromPort, timeSec, depth + 1)
-        : sp.operandA;
-
-      const bEdge = edges.find(e => e.toNodeId === nodeId && e.toPort === 'in_b');
-      const b = bEdge 
-        ? this.calculateSignalValue(layer, bEdge.fromNodeId, bEdge.fromPort, timeSec, depth + 1)
-        : sp.operandB;
-      
-      switch (sp.operation) {
-        case 'add': return a + b;
-        case 'subtract': return a - b;
-        case 'multiply': return a * b;
-        case 'divide': return b !== 0 ? a / b : 0;
-        case 'min': return Math.min(a, b);
-        case 'max': return Math.max(a, b);
-        default: return a;
-      }
-    }
-
-    return (source as any)[portId] ?? 0;
-  }
-
-  private getEffectiveParam(layer: LayerState, nodeId: string, paramId: string, baseValue: number, timeSec: number): number {
+  private getEffectiveParam(layer: LayerState, nodeId: string, paramId: string, baseValue: number, _timeSec: number): number {
     let finalValue = baseValue;
 
-    // 1. Resolve modulation via graph
+    // Resolve modulation via the signalValues calculated by the SignalDispatcher
     const edges = layer.graph?.edges || [];
-    let modVal = 0;
     let foundEdge = edges.find(e => e.toNodeId === nodeId && e.toPort === paramId);
 
     // Special Case: Linked Scales for Transform2D
     if (paramId === 'scaleY' && !foundEdge) {
-      const effect = layer.effects.find(e => e.id === nodeId);
       const isLinked = layer.linkedScales?.[nodeId] ?? true;
+      const effect = layer.effects.find(e => e.id === nodeId);
       if (effect?.type === 'Transform2D' && isLinked) {
-        // Look for scaleX edge instead
         foundEdge = edges.find(e => e.toNodeId === nodeId && e.toPort === 'scaleX');
-        if (foundEdge) {
-           // console.log(`[Renderer] Linking scaleY to scaleX for ${nodeId}`);
-        }
       }
     }
 
     if (foundEdge) {
-      // Find the port settings (amount, bipolar)
-      const portKey = `${nodeId}.${foundEdge.toPort}`;
-      const settings = layer.inputSettings?.[portKey] || { amount: 1.0, bipolar: false };
-      
-      modVal = this.calculateSignalValue(layer, foundEdge.fromNodeId, foundEdge.fromPort, timeSec);
-      
-      // --- Range Conversion ---
-      // 1. Get Source Range
-      const fromSource = (foundEdge.fromNodeId === 'source') ? layer.source : layer.modulators[foundEdge.fromNodeId];
-      let sourceIsBipolar = false;
-      if (fromSource) {
-        const fromPortDef = (PORT_DEFS[fromSource.type] || []).find(p => p.id === foundEdge.fromPort);
-        sourceIsBipolar = (fromSource.type === 'LFO') ? (fromSource as any).bipolar : (fromPortDef as any)?.bipolar ?? false;
-      }
-
-      // 2. Perform Mapping
-      if (settings.bipolar && !sourceIsBipolar) {
-        // Map 0..1 -> -1..1
-        modVal = modVal * 2.0 - 1.0;
-      } else if (!settings.bipolar && sourceIsBipolar) {
-        // Map -1..1 -> 0..1
-        modVal = modVal * 0.5 + 0.5;
-      }
-      
-      // apply amount
-      finalValue += (modVal * settings.amount);
+      // Look up the pre-calculated signal value
+      const inputSignalKey = `${nodeId}.${foundEdge.toPort}`;
+      const modVal = layer.signalValues?.[inputSignalKey] ?? 0;
+      finalValue += modVal;
     }
 
     return finalValue;
@@ -935,294 +815,113 @@ export class Renderer {
 
   private frameCount = 0;
   private lastFrameTime = 0;
-  private lfoStates = new Map<string, { phase: number; lastSyncVal: number; syncPulse: boolean }>();
-  private triggerStates = new Map<string, { value: number; lastRemoteSync: number }>();
   private spawnStates = new Map<string, SpawnedObject[]>();
   private lastTriggerVals = new Map<string, number>();
-  private noiseStates = new Map<string, { value: number; b0: number; b1: number; b2: number; b3: number; b4: number; b5: number; b6: number; brown: number; seed: number; t: number }>();
+
+  private accumulatedTimeSec = 0;
+  private lastRenderRealTime = performance.now();
+  private lastResetSignal = 0;
+  private wasPaused = false;
   
   private render() {
     const state = useEngineStore.getState();
     const commandEncoder = this.device.createCommandEncoder();
-    const timeSec = (performance.now() - this.startTime) / 1000.0;
-    const delta = this.lastFrameTime > 0 ? timeSec - this.lastFrameTime : 0;
+    
+    const now = performance.now();
+    const deltaSec = (now - this.lastRenderRealTime) / 1000.0;
+    this.lastRenderRealTime = now;
+
+    // Handle Reset
+    if (state.globalResetSignal !== this.lastResetSignal) {
+      this.lastResetSignal = state.globalResetSignal;
+      this.accumulatedTimeSec = 0;
+      Object.entries(this.videoElements).forEach(([layerId, v]) => { 
+        const layer = state.layers[layerId];
+        const loopStart = (layer?.source as any)?.loopStart ?? 0;
+        v.currentTime = loopStart; 
+      });
+      Object.entries(this.audioElements).forEach(([layerId, a]) => { 
+        const layer = state.layers[layerId];
+        const loopStart = (layer?.source as any)?.loopStart ?? 0;
+        a.currentTime = loopStart; 
+      });
+    }
+
+    if (!state.isGlobalPaused) {
+      this.accumulatedTimeSec += deltaSec;
+      
+      // If we just unpaused, play media
+      if (this.wasPaused) {
+         Object.values(this.videoElements).forEach(v => v.play().catch(e=>e));
+         Object.values(this.audioElements).forEach(a => a.play().catch(e=>e));
+         this.wasPaused = false;
+      }
+    } else {
+      // If we just paused, pause media
+      if (!this.wasPaused) {
+         Object.values(this.videoElements).forEach(v => v.pause());
+         Object.values(this.audioElements).forEach(a => a.pause());
+         this.wasPaused = true;
+      }
+    }
+
+    const timeSec = this.accumulatedTimeSec;
     this.lastFrameTime = timeSec;
     this.frameCount++;
 
-    const orderedLayers = (state.layerOrder.length > 0 ? state.layerOrder : Object.keys(state.layers))
+    // --- SIGNAL ENGINE SYNC ---
+    SignalDispatcher.getInstance().execute();
+
+    const orderedLayers = [...(state.layerOrder.length > 0 ? state.layerOrder : Object.keys(state.layers))]
+      .reverse()
       .map(id => state.layers[id])
       .filter(layer => layer && !layer.muted);
 
-    // --- SIGNAL PRE-PASS ---
+    // --- RENDER & LOGIC PASS ---
     orderedLayers.forEach(layer => {
-      const sortedIds = this.sortNodes(layer);
-      sortedIds.forEach(nodeId => {
-        const source = (nodeId === 'source') ? (layer.source || { type: 'None' }) : (layer.modulators ? layer.modulators[nodeId] : undefined);
-        if (!source || (source as any).type !== 'LFO') return;
-        
-        const lfo = source as LFOModulatorSource;
-        const stateKey = `${layer.id}.${nodeId}`;
-        let lfoState = this.lfoStates.get(stateKey);
-        if (!lfoState) {
-          lfoState = { phase: 0, lastSyncVal: 0, syncPulse: false };
-          this.lfoStates.set(stateKey, lfoState);
-        }
-
-        // Check Sync In
-        const syncInVal = this.calculateSignalValue(layer, nodeId, 'sync_in', timeSec);
-        const isTriggered = syncInVal > 0.5 && lfoState.lastSyncVal <= 0.5;
-        lfoState.lastSyncVal = syncInVal;
-
-        if (isTriggered) {
-          lfoState.phase = 0;
-          lfoState.syncPulse = true; // Emit sync on reset too
-        } else {
-          // Normal accumulation
-          const prevPhase = lfoState.phase;
-          lfoState.phase = (lfoState.phase + lfo.frequency * delta) % 1.0;
-          lfoState.syncPulse = lfoState.phase < prevPhase; // Wrapped around
-        }
-      });
-      
-      // --- NOISE PRE-PASS ---
-      sortedIds.forEach(nodeId => {
-        const source = (nodeId === 'source') ? (layer.source || { type: 'None' }) : (layer.modulators ? layer.modulators[nodeId] : undefined);
-        if (!source || (source as any).type !== 'Noise') return;
-        
-        const noise = source as NoiseModulatorSource;
-        const stateKey = `${layer.id}.${nodeId}`;
-        let nState = this.noiseStates.get(stateKey);
-        if (!nState) {
-          nState = { value: 0, b0: 0, b1: 0, b2: 0, b3: 0, b4: 0, b5: 0, b6: 0, brown: 0, seed: Math.random() * 1000, t: 0 };
-          this.noiseStates.set(stateKey, nState);
-        }
-
-        const freq = this.getEffectiveParam(layer, nodeId, 'frequency_cv', noise.frequency, timeSec);
-        const amp = this.getEffectiveParam(layer, nodeId, 'amplitude_cv', noise.amplitude, timeSec);
-        
-        nState.t += delta * freq;
-        
-        let raw = 0;
-        switch (noise.noiseType) {
-          case 'white':
-            raw = Math.random() * 2 - 1;
-            break;
-          case 'pink': {
-            // Paul Kellet's refined method
-            const white = Math.random() * 2 - 1;
-            nState.b0 = 0.99886 * nState.b0 + white * 0.0555179;
-            nState.b1 = 0.99332 * nState.b1 + white * 0.0750312;
-            nState.b2 = 0.96900 * nState.b2 + white * 0.1538520;
-            nState.b3 = 0.86650 * nState.b3 + white * 0.3104856;
-            nState.b4 = 0.55000 * nState.b4 + white * 0.5329522;
-            nState.b5 = -0.7616 * nState.b5 - white * 0.0168980;
-            raw = nState.b0 + nState.b1 + nState.b2 + nState.b3 + nState.b4 + nState.b5 + nState.b6 + white * 0.5362;
-            nState.b6 = white * 0.115926;
-            raw *= 0.11; // normalization
-            break;
-          }
-          case 'brownian': {
-            const white = Math.random() * 2 - 1;
-            nState.brown = (nState.brown + (white * 0.1)) / 1.02; // Leaky integrator
-            raw = nState.brown * 3.5;
-            break;
-          }
-          case 'value': {
-            const t = nState.t;
-            const i = Math.floor(t);
-            const f = t - i;
-            const hash = (n: number) => {
-              const x = Math.sin(n + nState.seed) * 43758.5453;
-              return (x - Math.floor(x)) * 2 - 1;
-            };
-            const a = hash(i);
-            const b = hash(i + 1);
-            const u = f * f * (3.0 - 2.0 * f); // smoothstep
-            raw = a + (b - a) * u;
-            break;
-          }
-          case 'perlin': {
-            const t = nState.t;
-            const hash = (n: number) => {
-              const x = Math.sin(n + nState.seed) * 43758.5453;
-              return (x - Math.floor(x)) * 2 - 1;
-            };
-            const noise1d = (x: number) => {
-              const i = Math.floor(x);
-              const f = x - i;
-              const u = f * f * (3.0 - 2.0 * f);
-              const g0 = hash(i);
-              const g1 = hash(i + 1);
-              return (g0 * f + g1 * (f - 1.0)) * 2; // approximation of 1d gradient noise
-            };
-            
-            let val = 0;
-            let weight = 1.0;
-            let scale = 1.0;
-            for (let j = 0; j < noise.octaves; j++) {
-              val += noise1d(t * scale) * weight;
-              weight *= noise.persistence;
-              scale *= 2.0;
-            }
-            raw = val;
-            break;
-          }
-        }
-
-        let final = raw * amp;
-        if (!noise.bipolar) final = (final + 1) * 0.5;
-        nState.value = final;
-      });
-
-      // TriggerPad Pre-pass
-      sortedIds.forEach(nodeId => {
-        const source = (nodeId === 'source') ? (layer.source || { type: 'None' }) : (layer.modulators ? layer.modulators[nodeId] : undefined);
-        if (!source || (source as any).type !== 'TriggerPad') return;
-
-        const tp = source as TriggerPadSource;
-        const stateKey = `${layer.id}.${nodeId}`;
-        let tState = this.triggerStates.get(stateKey);
-        if (!tState) {
-          tState = { value: 0, lastRemoteSync: 0 };
-          this.triggerStates.set(stateKey, tState);
-        }
-
-        // 1. Resolve Active State (Manual Button/Key OR Remote Input)
-        const remoteSync = this.calculateSignalValue(layer, nodeId, 'trigger_in', timeSec);
-        
-        const settings = layer.inputSettings?.[`${nodeId}.trigger_in`];
-        const isBipolar = settings?.bipolar ?? false;
-        
-        const isRemoteActive = isBipolar ? Math.abs(remoteSync) > 0.5 : remoteSync > 0.5;
-        const isActive = tp.isPressed || isRemoteActive;
-
-        // 2. Process Envelope
-        if (!tp.useEnvelope) {
-          tState.value = isActive ? 1.0 : 0.0;
-        } else {
-          if (isActive) {
-            // Attack
-            if (tp.attack <= 0) tState.value = 1.0;
-            else tState.value = Math.min(1.0, tState.value + (delta / tp.attack));
-          } else {
-            // Release
-            if (tp.release <= 0) tState.value = 0.0;
-          }
-        }
-      });
-
-      // --- SPAWN PRE-PASS ---
-      layer.effects.forEach(effect => {
-        if (effect.type !== 'Spawn') return;
+      // 1. Spawn Logic (Updated to use SignalDispatcher values)
+      layer.effects.filter(e => e.type === 'Spawn').forEach(effect => {
         const sp = effect as SpawnEffect;
         const stateKey = `${layer.id}.${effect.id}`;
         let activeSpawns = this.spawnStates.get(stateKey) || [];
 
-        // 1. Check Trigger
-        const triggerVal = this.calculateSignalValue(layer, effect.id, 'trigger_in', timeSec);
-        const lastTrigger = this.lastTriggerVals.get(stateKey) || 0;
-        this.lastTriggerVals.set(stateKey, triggerVal);
+        // Resolve triggers and resets from signalValues
+        const triggerInVal = layer.signalValues?.[`${effect.id}.trigger_in`] ?? 0;
+        const lastVal = this.lastTriggerVals.get(stateKey) ?? 0;
+        const isTriggered = triggerInVal > 0.5 && lastVal <= 0.5;
+        this.lastTriggerVals.set(stateKey, triggerInVal);
 
-        const settings = layer.inputSettings?.[`${effect.id}.trigger_in`];
-        const isBipolar = settings?.bipolar ?? false;
+        const resetVal = layer.signalValues?.[`${effect.id}.reset_in`] ?? 0;
+        if (resetVal > 0.5) activeSpawns = [];
 
-        const isTriggered = isBipolar 
-          ? ( (triggerVal > 0.5 && lastTrigger <= 0.5) || (triggerVal < -0.5 && lastTrigger >= -0.5) )
-          : (triggerVal > 0.5 && lastTrigger <= 0.5);
-
-        // 2. Check Reset
-        const resetVal = this.calculateSignalValue(layer, effect.id, 'reset_in', timeSec);
-        if (resetVal > 0.5) {
-          activeSpawns = [];
-        }
-
-        // 3. Birth new object
         if (isTriggered) {
-          const width = this.canvas.width;
-          const height = this.canvas.height;
-
           let modX = this.getEffectiveParam(layer, effect.id, 'x', sp.x, timeSec);
           let modY = this.getEffectiveParam(layer, effect.id, 'y', sp.y, timeSec);
           const modScale = this.getEffectiveParam(layer, effect.id, 'scale', sp.scale, timeSec);
           const modRot = this.getEffectiveParam(layer, effect.id, 'rotation', sp.rotation, timeSec);
 
-          let rx = (Math.random() * 2 - 1) * sp.randomPos;
-          let ry = (Math.random() * 2 - 1) * sp.randomPos;
+          const rx = ((Math.random() * 2 - 1) * sp.randomPos) / (sp.coordinateMode === 'pixel' ? this.canvas.width : 1);
+          const ry = ((Math.random() * 2 - 1) * sp.randomPos) / (sp.coordinateMode === 'pixel' ? this.canvas.height : 1);
           const rs = (Math.random() * 2 - 1) * (sp.randomScale || 0);
 
-          if (sp.coordinateMode === 'pixel') {
-            // Convert pixels to normalized (-1 to 1)
-            // Pixel 0,0 is top-left
-            modX = (modX / width) * 2 - 1;
-            modY = (modY / height) * -2 + 1;
-            // Random pos in pixels too
-            rx = (rx * width * 0.5) / width; // Actually this is the same as normalized?
-            // Wait, if sp.randomPos is e.g. 100 pixels:
-            rx = ((Math.random() * 2 - 1) * sp.randomPos) / width;
-            ry = ((Math.random() * 2 - 1) * sp.randomPos * -1) / height;
-          }
-          
-          const newObj: SpawnedObject = {
+          activeSpawns.unshift({
             id: `spawn_${Date.now()}_${Math.random()}`,
-            birthX: modX,
-            birthY: modY,
-            birthScale: modScale,
-            birthRotation: modRot,
-            randomX: rx,
-            randomY: ry,
-            randomScale: rs,
-            birthTime: timeSec,
-            lifetime: sp.lifetime,
-            alpha: 1.0
-          };
-          activeSpawns.unshift(newObj);
-          if (activeSpawns.length > sp.maxCount) {
-            activeSpawns.pop();
-          }
+            birthX: modX, birthY: modY, birthScale: modScale, birthRotation: modRot,
+            randomX: rx, randomY: ry, randomScale: rs,
+            birthTime: timeSec, lifetime: sp.lifetime, alpha: 1.0
+          });
+          if (activeSpawns.length > sp.maxCount) activeSpawns.pop();
         }
 
-        // 4. Update Aging
         activeSpawns = activeSpawns.filter(obj => {
           const age = timeSec - obj.birthTime;
           if (age >= obj.lifetime) return false;
-          
-          if (sp.fadeOut) {
-            obj.alpha = 1.0 - (age / obj.lifetime);
-          } else {
-            obj.alpha = 1.0;
-          }
+          obj.alpha = sp.fadeOut ? 1.0 - (age / obj.lifetime) : 1.0;
           return true;
         });
-
         this.spawnStates.set(stateKey, activeSpawns);
       });
     });
-
-    // Update signal values for UI (Throttled)
-    if (this.frameCount % 5 === 0) {
-      orderedLayers.forEach(layer => {
-        const signalValues: Record<string, number> = {};
-        const nodes = [
-          'source',
-          ...layer.effects.map(e => e.id),
-          ...Object.keys(layer.modulators || {})
-        ];
-        nodes.forEach(nodeId => {
-          const type = nodeId === 'source' 
-            ? (layer.source?.type || 'None') 
-            : (layer.modulators?.[nodeId]?.type || layer.effects.find(e => e.id === nodeId)?.type);
-            
-          if (!type || type === 'None') return;
-          const ports = PORT_DEFS[type] || [];
-          ports.forEach(p => {
-            if (p.direction === 'out' || p.signalType === 'modulation' || p.signalType === 'trigger') {
-              signalValues[`${nodeId}.${p.id}`] = this.calculateSignalValue(layer, nodeId, p.id, timeSec);
-            }
-          });
-        });
-        useEngineStore.getState().updateLayerSignals(layer.id, signalValues);
-      });
-    }
 
     // Check for canvas resize
     if (this.masterFBO && (this.masterFBO.width !== this.canvas.width || this.masterFBO.height !== this.canvas.height)) {
@@ -1460,6 +1159,19 @@ export class Renderer {
               new Uint32Array(buf)[2] = ef.invertKey ? 1 : 0;
               this.device.queue.writeBuffer(uniformBuffer, 0, buf);
               entries = [{ binding: 0, resource: { buffer: uniformBuffer } }, { binding: 1, resource: inputTex.createView() }, { binding: 2, resource: this.sampler }];
+            } else if (effect.type === 'Inverter') {
+              pipeline = this.inverterPipeline;
+              const ef = effect as InverterEffect;
+              const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 16);
+              const videoModeIdx = ef.videoMode === 'luma' ? 1.0 : (ef.videoMode === 'chroma' ? 2.0 : 0.0);
+              const mixVal = Math.max(0, Math.min(1, this.getEffectiveParam(layer, ef.id, 'mix', ef.mix, timeSec)));
+              this.device.queue.writeBuffer(uniformBuffer, 0, new Float32Array([
+                mixVal,
+                videoModeIdx,
+                ef.active ? 1.0 : 0.0,
+                0 
+              ]));
+              entries = [{ binding: 0, resource: { buffer: uniformBuffer } }, { binding: 1, resource: inputTex.createView() }, { binding: 2, resource: this.sampler }];
             } else if (effect.type === 'SimpleFeedback') {
               pipeline = this.feedbackPipeline;
               const ef = effect as SimpleFeedbackEffect;
@@ -1486,6 +1198,15 @@ export class Renderer {
               const gIn = this.getTextureForNode(nodeId, 'g_in')?.createView() ?? inputTex.createView();
               const bIn = this.getTextureForNode(nodeId, 'b_in')?.createView() ?? inputTex.createView();
               entries = [{ binding: 0, resource: { buffer: uniformBuffer } }, { binding: 1, resource: rIn }, { binding: 2, resource: gIn }, { binding: 3, resource: bIn }, { binding: 4, resource: this.sampler }];
+            } else if (effect.type === 'TriggeredGate') {
+              pipeline = this.triggeredGatePipeline;
+              const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 32);
+              const gateOpen = SignalDispatcher.getInstance().getGateState(layer.id, nodeId);
+              this.device.queue.writeBuffer(uniformBuffer, 0, new Float32Array([
+                gateOpen ? 1.0 : 0.0, 0, 0, 0,
+                0, 0, 0, 0
+              ]));
+              entries = [{ binding: 0, resource: { buffer: uniformBuffer } }, { binding: 1, resource: inputTex.createView() }, { binding: 2, resource: this.sampler }];
             }
 
             if (pipeline) {

@@ -10,6 +10,7 @@ export class AudioEngine {
   
   // A shared Float32Array to read frequency/time data (avoids garbage collection overhead)
   private dataArray: Float32Array;
+  private _masterMuted = false;
 
   private constructor() {
     this.context = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -57,7 +58,6 @@ export class AudioEngine {
       this.analyzers.set(id, analyzer);
       this.layerGains.set(id, layerGain);
       
-      console.log(`[AudioEngine] Registered element ${id}`);
     } catch (e) {
       console.error(`[AudioEngine] Failed to register element ${id}`, e);
     }
@@ -78,8 +78,11 @@ export class AudioEngine {
   }
 
   public setMasterMute(muted: boolean) {
+    this._masterMuted = muted;
     this.masterGain.gain.setTargetAtTime(muted ? 0 : 1, this.context.currentTime, 0.01);
   }
+
+  public get masterMuted() { return this._masterMuted; }
 
   public unregisterMediaElement(id: string) {
     const source = this.sources.get(id);

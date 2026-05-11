@@ -8,7 +8,7 @@ import {
   NoiseModulatorSource, NoiseVideoSource,
   Transform2DEffect, ColorAdjustEffect, LumaKeyEffect, SimpleFeedbackEffect,
   InterLayerOutputEffect, InterLayerInputEffect, ColorRGBEffect, LumaSplitterEffect,
-  SpawnEffect, RGBMixerEffect, PathEffect
+  SpawnEffect, RGBMixerEffect, PathEffect, LogicGateEffect, TriggeredGateEffect
 } from '../../state/types';
 
 // ── Context types ──────────────────────────────────────────────────────────────
@@ -16,12 +16,16 @@ import {
 export interface SourceCtx {
   source: AnySource;
   onChange: (key: string, value: any) => void;
+  onUpdate?: (updates: Partial<AnySource>) => void;
   videoProgress?: { currentTime: number; duration: number };
   onSeek?: React.ChangeEventHandler<HTMLInputElement>;
   onSeekStart?: () => void;
   onSeekEnd?: () => void;
   onFileChange?: React.ChangeEventHandler<HTMLInputElement>;
   cameras?: MediaDeviceInfo[];
+  layerOpacity?: number;
+  layerBlendMode?: 'add' | 'screen' | 'multiply' | 'normal';
+  onLayerUpdate?: (updates: any) => void;
 }
 
 export interface EffectCtx {
@@ -44,6 +48,7 @@ export interface ControlRowDef {
 const src = <T extends AnySource>(ctx: RowCtx) => (ctx as SourceCtx).source as T;
 const eff = <T extends AnyEffect>(ctx: RowCtx) => (ctx as EffectCtx).effect as T;
 const chg = (ctx: RowCtx) => (ctx as SourceCtx).onChange;
+const sup = (ctx: RowCtx) => (ctx as SourceCtx).onUpdate;
 const upd = (ctx: RowCtx) => (ctx as EffectCtx).onUpdate;
 
 const Slider = ({ label, min, max, step, value, onChange, resetValue = 0 }: {
@@ -435,15 +440,38 @@ export const SOURCE_ROWS: Record<string, ControlRowDef[]> = {
             <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} onDragStart={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
               <span className="rack-row-label">Range</span>
               <div style={{ display: 'flex', gap: 4 }}>
-                <button className={`mode-toggle ${isLow ? 'active' : ''}`} onClick={() => chg(ctx)('speedRange', 'low')}>LOW</button>
-                <button className={`mode-toggle ${!isLow ? 'active' : ''}`} onClick={() => chg(ctx)('speedRange', 'high')}>HIGH</button>
+                <button 
+                  className={`mode-toggle ${isLow ? 'active' : ''}`} 
+                  style={{ minWidth: 24, padding: '0 4px' }} 
+                  onClick={() => {
+                    const u = sup(ctx);
+                    if (u) u({ speedRange: 'low', frequency: Math.min(lfo.frequency, 4.0) });
+                    else {
+                      chg(ctx)('speedRange', 'low');
+                      if (lfo.frequency > 4.0) chg(ctx)('frequency', 4.0);
+                    }
+                  }}
+                >L</button>
+                <button 
+                  className={`mode-toggle ${!isLow ? 'active' : ''}`} 
+                  style={{ minWidth: 24, padding: '0 4px' }} 
+                  onClick={() => {
+                    const u = sup(ctx);
+                    const snapped = Math.max(1.0, Math.round(lfo.frequency));
+                    if (u) u({ speedRange: 'high', frequency: snapped });
+                    else {
+                      chg(ctx)('speedRange', 'high');
+                      chg(ctx)('frequency', snapped);
+                    }
+                  }}
+                >H</button>
               </div>
             </div>
             <Slider 
-              label={`Rate (${isLow ? 'Hz' : 'kHz'??'Hz'})`} 
-              min={isLow ? 0.001 : 0.1} 
-              max={isLow ? 1.0 : 40.0} 
-              step={isLow ? 0.001 : 0.1} 
+              label={`Rate (${isLow ? 'Hz' : 'Hz'})`} 
+              min={isLow ? 0.1 : 1.0} 
+              max={isLow ? 4.0 : 60.0} 
+              step={isLow ? 0.01 : 1.0} 
               value={lfo.frequency} 
               onChange={v => chg(ctx)('frequency', v)} 
             />
@@ -507,10 +535,10 @@ export const SOURCE_ROWS: Record<string, ControlRowDef[]> = {
       }
     },
     { id: 'attack', label: 'Atk',
-      render: ctx => src<TriggerPadSource>(ctx).useEnvelope ? <Slider label="Attack (s)" min={0} max={5} step={0.01} value={src<TriggerPadSource>(ctx).attack} onChange={v => chg(ctx)('attack', v)} /> : null
+      render: ctx => src<TriggerPadSource>(ctx).useEnvelope ? <Slider label="Attack (s)" min={0} max={5} step={0.01} value={src<TriggerPadSource>(ctx).attack ?? 0.01} onChange={v => chg(ctx)('attack', v)} /> : null
     },
     { id: 'release', label: 'Rel',
-      render: ctx => src<TriggerPadSource>(ctx).useEnvelope ? <Slider label="Release (s)" min={0} max={5} step={0.01} value={src<TriggerPadSource>(ctx).release} onChange={v => chg(ctx)('release', v)} /> : null
+      render: ctx => src<TriggerPadSource>(ctx).useEnvelope ? <Slider label="Release (s)" min={0} max={5} step={0.01} value={src<TriggerPadSource>(ctx).release ?? 0.1} onChange={v => chg(ctx)('release', v)} /> : null
     }
   ],
   Noise: [
@@ -820,6 +848,21 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
         value={eff<any>(ctx).smoothing ?? 0}
         onChange={v => upd(ctx)({ smoothing: v })} />
     },
+    { id: 'sensitivity', label: 'Sensitivity',
+      render: ctx => <Slider label="Sensitivity" min={0.1} max={10} step={0.1}
+        resetValue={1.0}
+        value={eff<any>(ctx).sensitivity ?? 1.0}
+        onChange={v => upd(ctx)({ sensitivity: v })} />
+    },
+    { id: 'logarithmic', label: 'Log Scale',
+      render: ctx => (
+        <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} onDragStart={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <span className="rack-row-label">Perceived Vol (Log)</span>
+          <input type="checkbox" checked={eff<any>(ctx).logarithmic}
+            onChange={e => { e.stopPropagation(); upd(ctx)({ logarithmic: e.target.checked }); }} />
+        </div>
+      )
+    },
   ],
 
   BipolarConverter: [
@@ -1038,6 +1081,114 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
     { id: 'rLevel', label: 'R Level', render: ctx => <Slider label="Red" min={0} max={2} step={0.01} resetValue={1} value={eff<RGBMixerEffect>(ctx).rLevel} onChange={v => upd(ctx)({ rLevel: v })} /> },
     { id: 'gLevel', label: 'G Level', render: ctx => <Slider label="Green" min={0} max={2} step={0.01} resetValue={1} value={eff<RGBMixerEffect>(ctx).gLevel} onChange={v => upd(ctx)({ gLevel: v })} /> },
     { id: 'bLevel', label: 'B Level', render: ctx => <Slider label="Blue" min={0} max={2} step={0.01} resetValue={1} value={eff<RGBMixerEffect>(ctx).bLevel} onChange={v => upd(ctx)({ bLevel: v })} /> },
+  ],
+
+  Inverter: [
+    { id: 'active', label: 'Active',
+      render: ctx => (
+        <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} onDragStart={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <span className="rack-row-label">Active</span>
+          <input type="checkbox" checked={eff<InverterEffect>(ctx).active}
+            onChange={e => { e.stopPropagation(); upd(ctx)({ active: e.target.checked }); }} />
+        </div>
+      )
+    },
+    { id: 'videoMode', label: 'Video Mode',
+      render: ctx => (
+        <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} onDragStart={e => e.stopPropagation()}>
+          <span className="rack-row-label">Video Mode</span>
+          <select value={eff<InverterEffect>(ctx).videoMode} 
+            onChange={e => { e.stopPropagation(); upd(ctx)({ videoMode: e.target.value as any }); }}>
+            <option value="rgb">Full RGB</option>
+            <option value="luma">Luma Only</option>
+            <option value="chroma">Chroma Only</option>
+          </select>
+        </div>
+      )
+    },
+    { id: 'cvMode', label: 'CV Mode',
+      render: ctx => (
+        <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} onDragStart={e => e.stopPropagation()}>
+          <span className="rack-row-label">CV Mode</span>
+          <select value={eff<InverterEffect>(ctx).cvMode} 
+            onChange={e => { e.stopPropagation(); upd(ctx)({ cvMode: e.target.value as any }); }}>
+            <option value="unipolar">1.0 - X (Uni)</option>
+            <option value="bipolar">-X (Bi)</option>
+          </select>
+        </div>
+      )
+    },
+    { id: 'triggerMode', label: 'Trig Mode',
+      render: ctx => (
+        <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} onDragStart={e => e.stopPropagation()}>
+          <span className="rack-row-label">Trig Mode</span>
+          <select value={eff<InverterEffect>(ctx).triggerMode} 
+            onChange={e => { e.stopPropagation(); upd(ctx)({ triggerMode: e.target.value as any }); }}>
+            <option value="latch">Latching</option>
+            <option value="momentary">Momentary</option>
+          </select>
+        </div>
+      )
+    },
+    { id: 'mix', label: 'Mix',
+      render: ctx => <Slider label="Mix" min={0} max={1} step={0.01}
+        value={eff<InverterEffect>(ctx).mix} onChange={v => upd(ctx)({ mix: v })} />
+    },
+  ],
+  LogicGate: [
+    { id: 'mode', label: 'Mode',
+      render: ctx => (
+        <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} onDragStart={e => e.stopPropagation()}>
+          <span className="rack-row-label">Operator</span>
+          <select value={eff<LogicGateEffect>(ctx).mode} 
+            onChange={e => { e.stopPropagation(); upd(ctx)({ mode: e.target.value as any }); }}>
+            <option value="and">AND</option>
+            <option value="or">OR</option>
+            <option value="xor">XOR</option>
+            <option value="nand">NAND</option>
+            <option value="nor">NOR</option>
+          </select>
+        </div>
+      )
+    },
+    { id: 'thresholdA', label: 'Thresh A',
+      render: ctx => <Slider label="Thresh A" min={0} max={1} step={0.01} resetValue={0.5}
+        value={eff<LogicGateEffect>(ctx).thresholdA} onChange={v => upd(ctx)({ thresholdA: v })} />
+    },
+    { id: 'thresholdB', label: 'Thresh B',
+      render: ctx => <Slider label="Thresh B" min={0} max={1} step={0.01} resetValue={0.5}
+        value={eff<LogicGateEffect>(ctx).thresholdB} onChange={v => upd(ctx)({ thresholdB: v })} />
+    },
+  ],
+  TriggeredGate: [
+    { id: 'gateMode', label: 'Trigger',
+      render: ctx => (
+        <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} onDragStart={e => e.stopPropagation()}>
+          <span className="rack-row-label">Trigger</span>
+          <select value={eff<TriggeredGateEffect>(ctx).gateMode} 
+            onChange={e => { e.stopPropagation(); upd(ctx)({ gateMode: e.target.value as any }); }}>
+            <option value="momentary">Momentary</option>
+            <option value="latch">Latching</option>
+          </select>
+        </div>
+      )
+    },
+    { id: 'defaultState', label: 'Default',
+      render: ctx => (
+        <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} onDragStart={e => e.stopPropagation()}>
+          <span className="rack-row-label">Default</span>
+          <select value={eff<TriggeredGateEffect>(ctx).defaultState} 
+            onChange={e => { e.stopPropagation(); upd(ctx)({ defaultState: e.target.value as any }); }}>
+            <option value="off">Normally Closed (Off)</option>
+            <option value="on">Normally Open (On)</option>
+          </select>
+        </div>
+      )
+    },
+    { id: 'threshold', label: 'Threshold',
+      render: ctx => <Slider label="Threshold" min={0} max={1} step={0.01} resetValue={0.5}
+        value={eff<TriggeredGateEffect>(ctx).threshold} onChange={v => upd(ctx)({ threshold: v })} />
+    },
   ],
 
   Path: [
