@@ -1,4 +1,4 @@
-import { AnySource, AnyEffect, SourceType, EffectType } from './types';
+import { AnySource, AnyEffect } from './types';
 
 export function createDefaultSource(type: string): AnySource {
   switch (type) {

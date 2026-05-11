@@ -21,7 +21,7 @@ import {
   ShapeGeneratorSource, Transform2DEffect, ColorAdjustEffect, LumaKeyEffect, 
   SimpleFeedbackEffect, ColorRGBEffect, LumaSplitterEffect, RGBMixerEffect, 
   VideoURLSource, VideoFileSource, WebcamCaptureSource, ImageLoaderSource, ImageFileSource, 
-  SpawnEffect, PathEffect, NoiseVideoSource, InverterEffect, TriggeredGateEffect,
+  SpawnEffect, PathEffect, NoiseVideoSource, InverterEffect,
   LayerState
 } from '../state/types';
 
@@ -74,6 +74,9 @@ export class Renderer {
   private rgbMixerPipeline!: GPURenderPipeline;
   private inverterPipeline!: GPURenderPipeline;
   private triggeredGatePipeline!: GPURenderPipeline;
+  
+  // Isolated layouts to prevent 'Minimum Binding Size' collisions
+  private effectLayouts: Map<string, GPUBindGroupLayout> = new Map();
 
   private mediaTextures: Record<string, GPUTexture> = {};
   private nodeTextures: Map<string, GPUTexture> = new Map();
@@ -89,7 +92,7 @@ export class Renderer {
   private isRunning = false;
   private _isDestroyed = false;
   private animationFrameId: number = 0;
-  private startTime = performance.now();
+  public startTime = performance.now();
   public isSeeking: Record<string, boolean> = {};
 
   constructor(canvas: HTMLCanvasElement) {
@@ -377,6 +380,9 @@ export class Renderer {
       fragment: { module: this.device.createShaderModule({ code: TriggeredGateWGSL }), entryPoint: 'fs_main', targets }, 
       primitive 
     });
+    
+    
+
 
     this.lumaSplitPipeline = this.device.createRenderPipeline({
       layout, vertex,
@@ -392,6 +398,7 @@ export class Renderer {
       },
       primitive
     });
+    this.effectLayouts.set('LumaSplitter', this.lumaSplitPipeline.getBindGroupLayout(0));
 
     this.lumaAnalysisPipeline = this.device.createRenderPipeline({
       layout: this.device.createPipelineLayout({
@@ -501,6 +508,17 @@ export class Renderer {
       primitive
     });
     this.inverterPipeline = this.device.createRenderPipeline({ layout, vertex, fragment: { module: this.device.createShaderModule({ code: InverterWGSL }), entryPoint: 'fs_main', targets }, primitive });
+
+    // Capture auto-generated layouts
+    this.effectLayouts.set('Transform2D', this.transformPipeline.getBindGroupLayout(0));
+    this.effectLayouts.set('ColorAdjust', this.colorAdjustPipeline.getBindGroupLayout(0));
+    this.effectLayouts.set('LumaKey', this.lumaKeyPipeline.getBindGroupLayout(0));
+    this.effectLayouts.set('Inverter', this.inverterPipeline.getBindGroupLayout(0));
+    this.effectLayouts.set('SimpleFeedback', this.feedbackPipeline.getBindGroupLayout(0));
+    this.effectLayouts.set('RGBMixer', this.rgbMixerPipeline.getBindGroupLayout(0));
+    this.effectLayouts.set('TriggeredGate', this.triggeredGatePipeline.getBindGroupLayout(0));
+    this.effectLayouts.set('ColorRGB', this.colorRGBPipeline.getBindGroupLayout(0));
+    this.effectLayouts.set('LumaSplitter', this.lumaSplitPipeline.getBindGroupLayout(0));
   }
 
   private getStorageBuffer(key: string, size: number): GPUBuffer {
@@ -1065,11 +1083,12 @@ export class Renderer {
           const effect = layer.effects.find(e => e.id === nodeId);
           if (!effect) return;
 
-          const incomingEdges = layer.graph?.edges.filter(e => e.toNodeId === nodeId && e.signalType === 'video') || [];
+          const incomingEdges = layer.graph?.edges.filter(e => e.toNodeId === nodeId && (e.signalType === 'video' || e.toPort === 'sig_in')) || [];
           const inputTex = (incomingEdges.length > 0) ? this.getTextureForNode(incomingEdges[0].fromNodeId, incomingEdges[0].fromPort) : this.ensureTexture('__dummy__');
           if (!inputTex) return;
 
-          const target = this.ensureTexture(nodeId, 'video_out');
+          const targetPort = effect.type === 'TriggeredGate' ? 'sig_out' : 'video_out';
+          const target = this.ensureTexture(nodeId, targetPort);
           let pipeline: GPURenderPipeline | null = null;
           let entries: GPUBindGroupEntry[] = [];
 
@@ -1097,7 +1116,8 @@ export class Renderer {
                 { view: bTex.createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' },
               ]
             });
-            const bg = this.device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries });
+            const layout = this.effectLayouts.get(effect.type) || pipeline.getBindGroupLayout(0);
+            const bg = this.device.createBindGroup({ layout, entries });
             pass.setPipeline(pipeline); pass.setBindGroup(0, bg); pass.draw(3); pass.end();
           } else if (effect.type === 'LumaSplitter') {
             pipeline = this.lumaSplitPipeline;
@@ -1120,7 +1140,8 @@ export class Renderer {
                 { view: highTex.createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' },
               ]
             });
-            const bg = this.device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries });
+            const layout = this.effectLayouts.get(effect.type) || pipeline.getBindGroupLayout(0);
+            const bg = this.device.createBindGroup({ layout, entries });
             pass.setPipeline(pipeline); pass.setBindGroup(0, bg); pass.draw(3); pass.end();
           } else {
             if (effect.type === 'Transform2D') {
@@ -1200,25 +1221,25 @@ export class Renderer {
               entries = [{ binding: 0, resource: { buffer: uniformBuffer } }, { binding: 1, resource: rIn }, { binding: 2, resource: gIn }, { binding: 3, resource: bIn }, { binding: 4, resource: this.sampler }];
             } else if (effect.type === 'TriggeredGate') {
               pipeline = this.triggeredGatePipeline;
-              const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 32);
+              const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 16); // Only 1 f32 (padded to 16 for alignment)
               const gateOpen = SignalDispatcher.getInstance().getGateState(layer.id, nodeId);
               this.device.queue.writeBuffer(uniformBuffer, 0, new Float32Array([
-                gateOpen ? 1.0 : 0.0, 0, 0, 0,
-                0, 0, 0, 0
+                gateOpen ? 1.0 : 0.0, 0, 0, 0
               ]));
               entries = [{ binding: 0, resource: { buffer: uniformBuffer } }, { binding: 1, resource: inputTex.createView() }, { binding: 2, resource: this.sampler }];
             }
 
             if (pipeline) {
               const pass = commandEncoder.beginRenderPass({ colorAttachments: [{ view: target.createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' }] });
-              const bg = this.device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries });
+              const layout = this.effectLayouts.get(effect.type) || pipeline.getBindGroupLayout(0);
+              const bg = this.device.createBindGroup({ layout, entries });
               pass.setPipeline(pipeline); pass.setBindGroup(0, bg); pass.draw(3); pass.end();
             }
           }
         }
       });
 
-      const outEdges = (layer.graph?.edges || []).filter(e => e.toNodeId === '__output__' && e.signalType === 'video');
+      const outEdges = (layer.graph?.edges || []).filter(e => e.toNodeId === '__output__' && (e.signalType === 'video' || e.signalType === 'generic'));
       if (outEdges.length > 0) {
         const lastTex = this.getTextureForNode(outEdges[0].fromNodeId, outEdges[0].fromPort);
         if (lastTex) {

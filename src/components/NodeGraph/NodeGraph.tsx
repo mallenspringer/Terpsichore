@@ -153,14 +153,16 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
 
     const startX = e.clientX;
     const startY = e.clientY;
-    const startScrollLeft = el.scrollLeft;
-    const startScrollTop = el.scrollTop;
+    const startScrollLeft = graphRef.current?.scrollLeft ?? 0;
+    const startScrollTop = graphRef.current?.scrollTop ?? 0;
 
     const onMove = (me: PointerEvent) => {
       const dx = me.clientX - startX;
       const dy = me.clientY - startY;
-      el.scrollLeft = startScrollLeft - dx;
-      el.scrollTop = startScrollTop - dy;
+      if (graphRef.current) {
+        graphRef.current.scrollLeft = startScrollLeft - dx;
+        graphRef.current.scrollTop = startScrollTop - dy;
+      }
     };
 
     const onUp = () => {

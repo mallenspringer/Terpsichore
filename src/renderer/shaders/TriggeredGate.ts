@@ -1,8 +1,6 @@
 export const TriggeredGateWGSL = `
 struct Params {
-  gate_active: f32,
-  padding: vec3<f32>,
-  padding2: vec4<f32>
+  gate_active: f32
 };
 
 @group(0) @binding(0) var<uniform> params: Params;
