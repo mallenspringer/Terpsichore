@@ -11,12 +11,12 @@ export function createDefaultSource(type: string): AnySource {
         convexity: 0,
         rotation: 0,
         strokeWidth: 0,
-        fillColor: [0.3, 0.8, 0.4, 1.0],
+        strokeMode: 'classic',
+        strokeThreshold: 0.1,
+        fillColor: [1.0, 1.0, 1.0, 1.0],
         x: 0,
         y: 0,
         scale: 1.0,
-        tiling: [1, 1],
-        tilingMode: 'repeat',
         edgeSoftness: 0.05
       };
     case 'SignalProcessor':

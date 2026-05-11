@@ -8,7 +8,7 @@ import {
   NoiseModulatorSource, NoiseVideoSource,
   Transform2DEffect, ColorAdjustEffect, LumaKeyEffect, SimpleFeedbackEffect,
   InterLayerOutputEffect, InterLayerInputEffect, ColorRGBEffect, LumaSplitterEffect,
-  SpawnEffect, RGBMixerEffect, PathEffect, LogicGateEffect, TriggeredGateEffect
+  SpawnEffect, RGBMixerEffect, PathEffect, LogicGateEffect, TriggeredGateEffect, InverterEffect
 } from '../../state/types';
 
 // ── Context types ──────────────────────────────────────────────────────────────
@@ -145,33 +145,36 @@ export const SOURCE_ROWS: Record<string, ControlRowDef[]> = {
       }
     },
     { id: 'strokeWidth', label: 'Stroke',
-      render: ctx => <Slider label="Stroke Width" min={0} max={1} step={0.01}
-        value={src<ShapeGeneratorSource>(ctx).strokeWidth ?? 0}
-        onChange={v => chg(ctx)('strokeWidth', v)} />
+      render: ctx => {
+        const s = src<ShapeGeneratorSource>(ctx);
+        const mode = s.strokeMode ?? 'classic';
+        return (
+          <div className="rack-row-content" style={{ gap: 4 }}>
+            <Slider label="Stroke Width" min={0} max={1} step={0.01}
+              value={s.strokeWidth ?? 0}
+              onChange={v => chg(ctx)('strokeWidth', v)} />
+            <button
+              className={`patchbay-bipolar-toggle ${mode === 'hollow' ? 'active' : ''}`}
+              style={{ width: 16, height: 16, fontSize: 10, padding: 0, border: '1px solid #444', background: mode === 'hollow' ? '#88cc00' : '#222', color: mode === 'hollow' ? '#000' : '#aaa', cursor: 'pointer', borderRadius: 2 }}
+              title={mode === 'hollow' ? 'Mode 2: Hollow Out' : 'Mode 1: Classic (Gate)'}
+              onPointerDown={e => e.stopPropagation()}
+              onClick={e => { e.stopPropagation(); chg(ctx)('strokeMode', mode === 'classic' ? 'hollow' : 'classic'); }}
+            >
+              {mode === 'hollow' ? '◎' : '◩'}
+            </button>
+            <input type="number" value={s.strokeThreshold ?? 0.1} 
+              title={mode === 'classic' ? 'Gate Threshold' : 'Hollow Threshold'}
+              onChange={e => chg(ctx)('strokeThreshold', parseFloat(e.target.value) || 0)}
+              step={0.01} min={0} max={1}
+              style={{ width: 35, background: '#111', color: '#88cc00', border: '1px solid #333', fontSize: 9, padding: '0 2px' }} />
+          </div>
+        );
+      }
     },
     { id: 'edgeSoftness', label: 'Softness',
       render: ctx => <Slider label="Edge Softness" min={0} max={1} step={0.01}
         value={src<ShapeGeneratorSource>(ctx).edgeSoftness}
         onChange={v => chg(ctx)('edgeSoftness', v)} />
-    },
-    { id: 'tilingX', label: 'Tile X',
-      render: ctx => <Slider label="Tile X" min={1} max={50} step={1} value={src<ShapeGeneratorSource>(ctx).tiling?.[0] ?? 1} onChange={v => chg(ctx)('tiling', [v, src<ShapeGeneratorSource>(ctx).tiling?.[1] ?? 1])} />
-    },
-    { id: 'tilingY', label: 'Tile Y',
-      render: ctx => <Slider label="Tile Y" min={1} max={50} step={1} value={src<ShapeGeneratorSource>(ctx).tiling?.[1] ?? 1} onChange={v => chg(ctx)('tiling', [src<ShapeGeneratorSource>(ctx).tiling?.[0] ?? 1, v])} />
-    },
-    { id: 'tilingMode', label: 'Mode',
-      render: ctx => (
-        <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} onDragStart={e => e.stopPropagation()}>
-          <span className="rack-row-label">Tiling</span>
-          <select value={src<ShapeGeneratorSource>(ctx).tilingMode ?? 'repeat'} 
-            onChange={e => { e.stopPropagation(); chg(ctx)('tilingMode', e.target.value); }}>
-            <option value="repeat">Repeat</option>
-            <option value="mirror">Mirror</option>
-            <option value="clamp">Clamp</option>
-          </select>
-        </div>
-      )
     },
   ],
 

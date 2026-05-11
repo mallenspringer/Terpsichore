@@ -13,12 +13,12 @@ export interface ShapeGeneratorSource {
   convexity: number;     // 0.1 to 1.0 (star amount)
   rotation: number;      // 0 to 360
   strokeWidth: number;   // 0.0 for fill, > 0 for outline
+  strokeMode: 'classic' | 'hollow';
+  strokeThreshold: number; // 0.0 to 1.0
   x: number;
   y: number;
   scale: number;
   fillColor: [number, number, number, number];
-  tiling: [number, number];
-  tilingMode: 'repeat' | 'mirror' | 'clamp';
   edgeSoftness: number;
 }
 

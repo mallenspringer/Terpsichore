@@ -7,6 +7,7 @@ export interface PortDef {
   signalType: SignalType;
   priority?: number; // lower = higher priority for auto-connection
   bipolar?: boolean; // native range of the output
+  disableBipolar?: boolean; // hide bipolar switch for this input
 }
 
 export const PORT_DEFS: Record<string, PortDef[]> = {
@@ -47,7 +48,8 @@ export const PORT_DEFS: Record<string, PortDef[]> = {
     { id: 'roundness',   label: 'Roundness',   direction: 'in',  signalType: 'modulation' },
     { id: 'convexity',   label: 'Convexity',   direction: 'in',  signalType: 'modulation' },
     { id: 'rotation',    label: 'Rotation',    direction: 'in',  signalType: 'modulation' },
-    { id: 'strokeWidth', label: 'Stroke',      direction: 'in',  signalType: 'modulation' },
+    { id: 'strokeWidth', label: 'Stroke',      direction: 'in',  signalType: 'modulation', disableBipolar: true },
+    { id: 'edgeSoftness',label: 'Softness',    direction: 'in',  signalType: 'modulation' },
     { id: 'x',           label: 'X-Pos',       direction: 'in',  signalType: 'modulation' },
     { id: 'y',           label: 'Y-Pos',       direction: 'in',  signalType: 'modulation' },
     { id: 'scale',       label: 'Scale',       direction: 'in',  signalType: 'modulation' },

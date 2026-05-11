@@ -832,7 +832,6 @@ export class Renderer {
   }
 
   private frameCount = 0;
-  private lastFrameTime = 0;
   private spawnStates = new Map<string, SpawnedObject[]>();
   private lastTriggerVals = new Map<string, number>();
 
@@ -884,7 +883,6 @@ export class Renderer {
     }
 
     const timeSec = this.accumulatedTimeSec;
-    this.lastFrameTime = timeSec;
     this.frameCount++;
 
     // --- SIGNAL ENGINE SYNC ---
@@ -1014,31 +1012,36 @@ export class Renderer {
 
           if (layer.source.type === 'ShapeGenerator') {
             const src = layer.source as ShapeGeneratorSource;
-            const uniformBuffer = this.getUniformBuffer(`${layer.id}.source.uniforms`, 96);
-            const buf = new ArrayBuffer(96);
+            const uniformBuffer = this.getUniformBuffer(`${layer.id}.source.uniforms`, 80);
+            const buf = new ArrayBuffer(80);
             
             const shapeTypeMap: Record<string, number> = { rectangle: 0, ellipse: 1, polygon: 2 };
-            new Uint32Array(buf)[0] = shapeTypeMap[src.shapeType] || 0;
+            const u32 = new Uint32Array(buf);
+            u32[0] = shapeTypeMap[src.shapeType] || 0;
+            u32[1] = src.strokeMode === 'hollow' ? 1 : 0;
             
             const f32 = new Float32Array(buf);
+            f32[2] = src.strokeThreshold ?? 0.1;
             f32.set(src.fillColor, 4); // index 4..7
-            f32[8] = this.getEffectiveParam(layer, 'source', 'tilingX', src.tiling?.[0] ?? 1, timeSec);
-            f32[9] = this.getEffectiveParam(layer, 'source', 'tilingY', src.tiling?.[1] ?? 1, timeSec);
             
-            const u32 = new Uint32Array(buf);
-            const tilingModeMap: Record<string, number> = { repeat: 0, mirror: 1, clamp: 2 };
-            u32[10] = tilingModeMap[src.tilingMode] ?? 0;
+            f32[8] = this.getEffectiveParam(layer, 'source', 'edgeSoftness', src.edgeSoftness, timeSec);
             
-            f32[11] = this.getEffectiveParam(layer, 'source', 'edgeSoftness', src.edgeSoftness, timeSec);
-            f32[12] = this.getEffectiveParam(layer, 'source', 'sides', src.sides ?? 3, timeSec);
-            f32[13] = this.getEffectiveParam(layer, 'source', 'roundness', src.roundness ?? 0, timeSec);
-            f32[14] = this.getEffectiveParam(layer, 'source', 'convexity', src.convexity ?? 0, timeSec);
-            f32[15] = this.getEffectiveParam(layer, 'source', 'rotation', src.rotation ?? 0, timeSec);
-            f32[16] = this.getEffectiveParam(layer, 'source', 'strokeWidth', src.strokeWidth ?? 0, timeSec);
-            f32[17] = this.canvas.width / this.canvas.height;
-            f32[18] = this.getEffectiveParam(layer, 'source', 'x', src.x ?? 0, timeSec);
-            f32[19] = this.getEffectiveParam(layer, 'source', 'y', src.y ?? 0, timeSec);
-            f32[20] = this.getEffectiveParam(layer, 'source', 'scale', src.scale ?? 1, timeSec);
+            const rawSidesSig = useEngineStore.getState().layers[layer.id]?.signalValues?.['source.sides'] ?? 0;
+            const mappedSidesSig = Math.sign(rawSidesSig) * Math.pow(Math.abs(rawSidesSig), 2) * 29;
+            f32[9] = Math.max(3, (src.sides ?? 3) + mappedSidesSig);
+            
+            f32[10] = this.getEffectiveParam(layer, 'source', 'roundness', src.roundness ?? 0, timeSec);
+            f32[11] = this.getEffectiveParam(layer, 'source', 'convexity', src.convexity ?? 0, timeSec);
+            
+            const rawRotSig = useEngineStore.getState().layers[layer.id]?.signalValues?.['source.rotation'] ?? 0;
+            f32[12] = (src.rotation ?? 0) + rawRotSig * 360.0;
+            
+            f32[13] = this.getEffectiveParam(layer, 'source', 'strokeWidth', src.strokeWidth ?? 0, timeSec);
+            f32[14] = this.canvas.width / this.canvas.height;
+            f32[15] = this.getEffectiveParam(layer, 'source', 'scale', src.scale ?? 1, timeSec);
+            
+            f32[16] = this.getEffectiveParam(layer, 'source', 'x', src.x ?? 0, timeSec);
+            f32[17] = this.getEffectiveParam(layer, 'source', 'y', src.y ?? 0, timeSec);
 
             this.device.queue.writeBuffer(uniformBuffer, 0, buf);
             const bindGroup = this.device.createBindGroup({ layout: this.shapePipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: uniformBuffer } }] });

@@ -1,9 +1,10 @@
 export const ShapeGeneratorWGSL = `
 struct Uniforms {
   shapeType: u32, // 0 = rect, 1 = ellipse, 2 = polygon
+  strokeMode: u32, // 0 = classic, 1 = hollow
+  strokeThreshold: f32,
+  pad3: u32,
   fillColor: vec4<f32>,
-  tiling: vec2<f32>,
-  tilingMode: u32, 
   edgeSoftness: f32,
   sides: f32,
   roundness: f32,
@@ -11,9 +12,10 @@ struct Uniforms {
   rotation: f32,
   strokeWidth: f32,
   aspect: f32,
-  offset: vec2<f32>,
   scale: f32,
-  padding: f32,
+  offset: vec2<f32>,
+  pad4: f32,
+  pad5: f32,
 };
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -32,14 +34,6 @@ fn rotate(p: vec2<f32>, angle: f32) -> vec2<f32> {
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
   var uv = in.uv;
-  
-  if (uniforms.tilingMode == 0u) {
-    uv = fract(uv * uniforms.tiling);
-  } else if (uniforms.tilingMode == 1u) {
-    uv = abs(fract(uv * uniforms.tiling * 0.5 - 0.5) * 2.0 - 1.0);
-  } else {
-    uv = uv * uniforms.tiling;
-  }
 
   // Center and Aspect Correction
   var p = (uv * 2.0 - 1.0);
@@ -87,10 +81,21 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
   var shape_alpha: f32 = 0.0;
   let softness = max(0.001, uniforms.edgeSoftness);
-  if (uniforms.strokeWidth <= 0.0) {
+  let threshold = uniforms.strokeThreshold;
+
+  if (uniforms.strokeWidth <= threshold) {
+    // Below threshold = Solid Fill
     shape_alpha = 1.0 - smoothstep(0.0, softness, d);
   } else {
-    let half_stroke = uniforms.strokeWidth * 0.5;
+    var actual_stroke = uniforms.strokeWidth;
+    if (uniforms.strokeMode == 1u) {
+      // Hollow Mode: scale from fattest to thinnest
+      let range = 1.0 - threshold;
+      let progress = clamp((uniforms.strokeWidth - threshold) / max(0.001, range), 0.0, 1.0);
+      actual_stroke = mix(1.0, 0.001, progress);
+    }
+    
+    let half_stroke = actual_stroke * 0.5;
     let stroke_d = abs(d) - half_stroke;
     shape_alpha = 1.0 - smoothstep(0.0, softness, stroke_d);
   }

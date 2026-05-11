@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { PORT_DEFS, SIGNAL_COLORS, getShortLabel } from './portDefs';
 import { ControlRowDef, RowCtx, EffectCtx } from './moduleControls';
-import { AnySource, AnyEffect, SignalType, SpawnEffect } from '../../state/types';
+import { SpawnEffect } from '../../state/types';
 import { useEngineStore } from '../../state/store';
 
 // ── Mini Components ─────────────────────────────────────────────────────────
@@ -126,28 +126,81 @@ export function useNodeLayout(layerId: string | null) {
 
 // ── Signal Meter Component ───────────────────────────────────────────────────
 
-function SignalMeter({ layerId, nodeId, portId, bipolar, color }: { 
+function SignalMeter({ layerId, nodeId, portId, bipolar, color, threshold, onThresholdChange }: { 
   layerId: string, 
   nodeId: string, 
   portId: string, 
   bipolar: boolean,
-  color: string 
+  color: string,
+  threshold?: number,
+  onThresholdChange?: (v: number) => void
 }) {
   const settingsKey = `${nodeId}.${portId}`;
   const val = useEngineStore(s => s.layers[layerId]?.signalValues?.[settingsKey] ?? 0);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [isDragging, setIsDragging] = useState(false);
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if (!onThresholdChange) return;
+    e.stopPropagation();
+    setIsDragging(true);
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    updateFromPointer(e);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!isDragging || !onThresholdChange) return;
+    updateFromPointer(e);
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    if (!isDragging) return;
+    setIsDragging(false);
+    (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+  };
+
+  const updateFromPointer = (e: React.PointerEvent) => {
+    if (!containerRef.current || !onThresholdChange) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const nx = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    // If bipolar, the positive threshold maps from 0.5 to 1.0 (or we just map 0-1 across the whole bar)
+    // The user's threshold is 0..1. The marker is at `bipolar ? 50 + t*50 : t*100`.
+    // So to reverse it:
+    let newT = bipolar ? (nx - 0.5) * 2 : nx;
+    newT = Math.max(0, Math.min(1, newT)); // threshold is strictly 0..1
+    onThresholdChange(newT);
+  };
 
   return (
-    <div className="patchbay-meter-container">
+    <div className="patchbay-meter-container" 
+         ref={containerRef}
+         onPointerDown={handlePointerDown}
+         onPointerMove={handlePointerMove}
+         onPointerUp={handlePointerUp}
+         style={{ cursor: onThresholdChange ? 'ew-resize' : 'default' }}>
       <div className="patchbay-meter-bar">
         <div 
           className={`patchbay-meter-fill ${bipolar ? 'bipolar-fill' : ''}`}
           style={{ 
-            width: `${Math.min(100, Math.abs(bipolar ? (val / 2) * 100 : (val / 2) * 100))}%`,
-            left: bipolar ? (val < 0 ? `${50 - Math.min(50, Math.abs((val / 2) * 50))}%` : '50%') : '0',
+            width: `${Math.min(100, Math.abs(bipolar ? val * 50 : val * 100))}%`,
+            left: bipolar ? (val < 0 ? 'auto' : '50%') : '0',
+            right: bipolar && val < 0 ? '50%' : 'auto',
           }}
         />
+        {threshold !== undefined && (
+          <div style={{
+            position: 'absolute',
+            top: 0, bottom: 0,
+            left: `${bipolar ? 50 + threshold * 50 : threshold * 100}%`,
+            width: 3,
+            marginLeft: -1,
+            backgroundColor: isDragging ? '#f58c18' : 'white',
+            zIndex: 10,
+            boxShadow: '0 0 4px black'
+          }} />
+        )}
       </div>
-      <div className="patchbay-meter-overlay" style={{ color }}>
+      <div className="patchbay-meter-overlay" style={{ color, pointerEvents: 'none' }}>
         <span className="lcd-number">
           {val >= 0 ? '+' : ''}{val.toFixed(2)}
         </span>
@@ -432,14 +485,52 @@ export function ModuleNode({
                           </button>
                         )}
                         
-                        <button 
-                          className={`patchbay-bipolar-toggle ${settings.bipolar ? 'active' : ''}`}
-                          onPointerDown={e => e.stopPropagation()}
-                          onClick={(e) => { e.stopPropagation(); useEngineStore.getState().updateInputSettings(layerId, settingsKey, { bipolar: !settings.bipolar }); }}
-                          title="Toggle Bipolar (-1 to 1)"
-                        >
-                          ⩲
-                        </button>
+                        {!port.disableBipolar && (
+                          <button 
+                            className={`patchbay-bipolar-toggle ${settings.bipolar ? 'active' : ''}`}
+                            onPointerDown={e => e.stopPropagation()}
+                            onClick={(e) => { e.stopPropagation(); useEngineStore.getState().updateInputSettings(layerId, settingsKey, { bipolar: !settings.bipolar }); }}
+                            title="Toggle Bipolar (-1 to 1)"
+                          >
+                            ⩲
+                          </button>
+                        )}
+
+                        {moduleType === 'ShapeGenerator' && port.id === 'strokeWidth' && (rowCtx as any).source && (
+                          <>
+                            <button
+                              className={`patchbay-bipolar-toggle ${((rowCtx as any).source as import('../../state/types').ShapeGeneratorSource).strokeMode === 'hollow' ? 'active' : ''}`}
+                              style={{ border: '1px solid #444', background: ((rowCtx as any).source as import('../../state/types').ShapeGeneratorSource).strokeMode === 'hollow' ? '#88cc00' : '#222', color: ((rowCtx as any).source as import('../../state/types').ShapeGeneratorSource).strokeMode === 'hollow' ? '#000' : '#aaa' }}
+                              title={((rowCtx as any).source as import('../../state/types').ShapeGeneratorSource).strokeMode === 'hollow' ? 'Mode 2: Hollow Out' : 'Mode 1: Classic (Gate)'}
+                              onPointerDown={e => e.stopPropagation()}
+                              onClick={e => {
+                                e.stopPropagation();
+                                const current = ((rowCtx as any).source as import('../../state/types').ShapeGeneratorSource).strokeMode ?? 'classic';
+                                (rowCtx as any).onChange('strokeMode', current === 'classic' ? 'hollow' : 'classic');
+                              }}
+                            >
+                              {((rowCtx as any).source as import('../../state/types').ShapeGeneratorSource).strokeMode === 'hollow' ? '◎' : '◩'}
+                            </button>
+                            <div className="patchbay-amount-knob-container" title={((rowCtx as any).source as import('../../state/types').ShapeGeneratorSource).strokeMode === 'classic' ? 'Gate Threshold' : 'Hollow Threshold'}>
+                              <Knob 
+                                value={((rowCtx as any).source as import('../../state/types').ShapeGeneratorSource).strokeThreshold ?? 0.1}
+                                max={1.0}
+                                resetValue={0.1}
+                                color="#f58c18"
+                                onChange={(v) => (rowCtx as any).onChange('strokeThreshold', v)}
+                              />
+                            </div>
+                            <input type="number" value={((rowCtx as any).source as import('../../state/types').ShapeGeneratorSource).strokeThreshold ?? 0.1} 
+                              title={((rowCtx as any).source as import('../../state/types').ShapeGeneratorSource).strokeMode === 'classic' ? 'Gate Threshold' : 'Hollow Threshold'}
+                              onPointerDown={e => e.stopPropagation()}
+                              onChange={e => {
+                                e.stopPropagation();
+                                (rowCtx as any).onChange('strokeThreshold', parseFloat(e.target.value) || 0);
+                              }}
+                              step={0.01} min={0} max={1}
+                              style={{ width: 35, background: '#111', color: '#f58c18', border: '1px solid #333', fontSize: 9, padding: '0 2px' }} />
+                          </>
+                        )}
                       </>
                     )}
                   </div>
@@ -451,6 +542,8 @@ export function ModuleNode({
                       portId={effectivePortId}
                       bipolar={settings.bipolar}
                       color={portColor(port.id, port.signalType, port.direction)}
+                      threshold={moduleType === 'ShapeGenerator' && port.id === 'strokeWidth' && (rowCtx as any).source ? ((rowCtx as any).source as import('../../state/types').ShapeGeneratorSource).strokeThreshold ?? 0.1 : undefined}
+                      onThresholdChange={moduleType === 'ShapeGenerator' && port.id === 'strokeWidth' && (rowCtx as any).source ? (v) => (rowCtx as any).onChange('strokeThreshold', v) : undefined}
                     />
                   )}
                 </div>
