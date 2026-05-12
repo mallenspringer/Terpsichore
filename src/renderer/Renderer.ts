@@ -770,9 +770,10 @@ export class Renderer {
     }
 
     if (foundEdge) {
-      // Look up the pre-calculated signal value
+      // Look up the pre-calculated signal value from the dispatcher (bypasses store commit interval)
       const inputSignalKey = `${nodeId}.${foundEdge.toPort}`;
-      const modVal = layer.signalValues?.[inputSignalKey] ?? 0;
+      const latestSignals = SignalDispatcher.getInstance().getLatestSignals(layer.id);
+      const modVal = latestSignals[inputSignalKey] ?? 0;
       finalValue += modVal;
     }
 
@@ -1040,15 +1041,15 @@ export class Renderer {
             
             f32[8] = this.getEffectiveParam(layer, 'source', 'edgeSoftness', src.edgeSoftness, timeSec);
             
-            const rawSidesSig = useEngineStore.getState().layers[layer.id]?.signalValues?.['source.sides'] ?? 0;
+            const rawSidesSig = this.getEffectiveParam(layer, 'source', 'sides', 0, timeSec);
             const mappedSidesSig = Math.sign(rawSidesSig) * Math.pow(Math.abs(rawSidesSig), 2) * 29;
             f32[9] = Math.max(3, (src.sides ?? 3) + mappedSidesSig);
             
             f32[10] = this.getEffectiveParam(layer, 'source', 'roundness', src.roundness ?? 0, timeSec);
             f32[11] = this.getEffectiveParam(layer, 'source', 'convexity', src.convexity ?? 0, timeSec);
             
-            const rawRotSig = useEngineStore.getState().layers[layer.id]?.signalValues?.['source.rotation'] ?? 0;
-            f32[12] = (src.rotation ?? 0) + rawRotSig * 360.0;
+            const rotModVal = this.getEffectiveParam(layer, 'source', 'rotation', 0, timeSec);
+            f32[12] = (src.rotation ?? 0) + rotModVal * 360.0;
             
             f32[13] = this.getEffectiveParam(layer, 'source', 'strokeWidth', src.strokeWidth ?? 0, timeSec);
             f32[14] = this.canvas.width / this.canvas.height;

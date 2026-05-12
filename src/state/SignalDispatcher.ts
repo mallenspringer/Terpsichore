@@ -56,6 +56,7 @@ export class SignalDispatcher {
   private triggerPadStates = new Map<string, number>();
   private gateLatchStates = new Map<string, boolean>();
   private gateOpenStates = new Map<string, boolean>();
+  private latestSignals: Record<string, Record<string, number>> = {};
 
   private constructor() {}
 
@@ -68,6 +69,10 @@ export class SignalDispatcher {
 
   public getGateState(layerId: string, nodeId: string): boolean {
     return this.gateOpenStates.get(`${layerId}.${nodeId}`) ?? false;
+  }
+
+  public getLatestSignals(layerId: string): Record<string, number> {
+    return this.latestSignals[layerId] || {};
   }
 
 
@@ -538,6 +543,8 @@ export class SignalDispatcher {
       if (pipeline) {
         pipeline.forEach(fn => fn(ctx, dt));
       }
+
+      this.latestSignals[layerId] = ctx.signalValues;
 
       if (shouldCommitToUi) {
         state.updateLayerSignals(layer.id, ctx.signalValues);

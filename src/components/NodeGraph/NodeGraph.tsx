@@ -77,21 +77,21 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
   const zoomRef = useRef(zoom);
   useEffect(() => { zoomRef.current = zoom; }, [zoom]);
 
-  // Initial setup: scroll to top-left and position output node
+  // Initial setup: scroll to top-left ONLY when the layer actually changes
   useEffect(() => {
     const el = graphRef.current;
     if (el && layerId) {
-      // Start in the top left corner
       el.scrollLeft = 0;
       el.scrollTop = 0;
+    }
+  }, [layerId]);
 
-      // Check if OUTPUT_ID has a saved position by checking against a dummy default
+  // Position output node if it's new
+  useEffect(() => {
+    const el = graphRef.current;
+    if (el && layerId) {
       const currentState = getNodeState(OUTPUT_ID, { x: -9999, y: -9999 });
       if (currentState.x === -9999) {
-        // No saved layout exists yet. Spawn it in the top right of the visible area.
-        // We use clientWidth to get the actual visible width of the graph area,
-        // subtracting 300px to ensure the whole module is visible.
-        // We also cap it at 1000px so it doesn't spawn too far right on ultrawide monitors.
         const spawnX = Math.min(el.clientWidth - 300, 1000);
         updateNodeState(OUTPUT_ID, { x: spawnX, y: 20 });
       }
@@ -273,26 +273,31 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
     setPatchbayNode(null);
 
     const handleWindowPointerMove = (e: PointerEvent) => {
-      if (!graphRef.current) return;
-      const rect = graphRef.current.getBoundingClientRect();
+      const el = graphRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
       const k = zoomRef.current;
-      const x = -graphRef.current.scrollLeft;
-      const y = -graphRef.current.scrollTop;
+
+      // Autoscroll logic
+      const margin = 40;
+      if (e.clientX < rect.left + margin) el.scrollLeft -= 15;
+      else if (e.clientX > rect.right - margin) el.scrollLeft += 15;
+      if (e.clientY < rect.top + margin) el.scrollTop -= 15;
+      else if (e.clientY > rect.bottom - margin) el.scrollTop += 15;
       
-      // Convert screen to world
-      const x2 = (e.clientX - rect.left - x) / k;
-      const y2 = (e.clientY - rect.top - y) / k;
+      const x2 = (e.clientX - rect.left + el.scrollLeft) / k;
+      const y2 = (e.clientY - rect.top + el.scrollTop) / k;
       
       const updatedGhost = ghostEdgeRef.current ? { ...ghostEdgeRef.current, x2, y2 } : null;
       setGhostEdge(updatedGhost);
       ghostEdgeRef.current = updatedGhost;
 
       // We can use elementFromPoint because there's no capture layer blocking it
-      const el = document.elementFromPoint(e.clientX, e.clientY);
-      const nodeEl = el?.closest('[data-node-id]') as HTMLElement | null;
+      const hoverEl = document.elementFromPoint(e.clientX, e.clientY);
+      const nodeEl = hoverEl?.closest('[data-node-id]') as HTMLElement | null;
       const hoverId = nodeEl?.dataset.nodeId ?? null;
       
-      const jackEl = el?.closest('.patchbay-controls') as HTMLElement | null;
+      const jackEl = hoverEl?.closest('.patchbay-controls') as HTMLElement | null;
       const hoverPort = jackEl?.dataset.portId ?? null;
       
       setPatchbayNode(hoverId !== nodeId ? hoverId : null);

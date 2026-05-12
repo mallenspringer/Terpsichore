@@ -297,8 +297,42 @@ export function ModuleNode({
     window.addEventListener('pointerup', handleWindowPointerUp, { once: true });
   };
 
+  const scrollAnim = useRef<number | null>(null);
+
   const handleWindowPointerMove = (e: PointerEvent) => {
     if (!dragStart.current || !graphRef.current) return;
+    
+    // Autoscroll logic
+    const el = graphRef.current;
+    const rect = el.getBoundingClientRect();
+    const margin = 40;
+    
+    const doScroll = () => {
+      if (!dragStart.current || !graphRef.current) return;
+      let scrollDx = 0;
+      let scrollDy = 0;
+      
+      // We need to use the LATEST mouse position, but since this is an animation frame,
+      // we'll just check if the last 'e' we got is still in the zone.
+      // For simplicity, we can just do it in the move handler, but for continuous scroll
+      // we'd need a ref for current mouse pos. Let's do the move-triggered scroll first.
+      
+      if (e.clientX < rect.left + margin) scrollDx = -15;
+      else if (e.clientX > rect.right - margin) scrollDx = 15;
+      if (e.clientY < rect.top + margin) scrollDy = -15;
+      else if (e.clientY > rect.bottom - margin) scrollDy = 15;
+      
+      if (scrollDx !== 0 || scrollDy !== 0) {
+        el.scrollLeft += scrollDx;
+        el.scrollTop += scrollDy;
+        // Adjust dragStart so the delta calculation remains mouse-relative
+        dragStart.current.mx -= scrollDx;
+        dragStart.current.my -= scrollDy;
+      }
+    };
+    
+    doScroll();
+
     const dx = (e.clientX - dragStart.current.mx) / zoom;
     const dy = (e.clientY - dragStart.current.my) / zoom;
     const newX = Math.max(0, dragStart.current.nx + dx);
@@ -308,6 +342,7 @@ export function ModuleNode({
 
   const handleWindowPointerUp = () => {
     dragStart.current = null;
+    if (scrollAnim.current) cancelAnimationFrame(scrollAnim.current);
     window.removeEventListener('pointermove', handleWindowPointerMove);
   };
 
@@ -392,6 +427,7 @@ export function ModuleNode({
         <div className={`module-patchbay ${nodeState.patchbayExpanded ? 'expanded' : 'collapsed'}`}>
           <div 
             className="patchbay-toggle-tab"
+            onPointerDown={e => e.preventDefault()}
             onClick={(e) => { e.stopPropagation(); onLayoutChange({ patchbayExpanded: !nodeState.patchbayExpanded }); }}
             title={nodeState.patchbayExpanded ? "Collapse Patchbay" : "Expand Patchbay"}
           >
@@ -404,7 +440,7 @@ export function ModuleNode({
                 <span className="patchbay-header-title">SNAP</span>
                 <button 
                   className={`patchbay-global-latch ${((rowCtx as EffectCtx).effect as SpawnEffect).globalLatch ? 'active' : ''}`}
-                  onPointerDown={e => e.stopPropagation()}
+                  onPointerDown={e => { e.stopPropagation(); e.preventDefault(); }}
                   onClick={(e) => { e.stopPropagation(); (rowCtx as EffectCtx).onUpdate({ globalLatch: !((rowCtx as EffectCtx).effect as SpawnEffect).globalLatch } as any); }}
                   title="Global Birth Snapshot"
                 >
@@ -488,7 +524,7 @@ export function ModuleNode({
                         {!port.disableBipolar && (
                           <button 
                             className={`patchbay-bipolar-toggle ${settings.bipolar ? 'active' : ''}`}
-                            onPointerDown={e => e.stopPropagation()}
+                            onPointerDown={e => { e.stopPropagation(); e.preventDefault(); }}
                             onClick={(e) => { e.stopPropagation(); useEngineStore.getState().updateInputSettings(layerId, settingsKey, { bipolar: !settings.bipolar }); }}
                             title="Toggle Bipolar (-1 to 1)"
                           >
@@ -502,7 +538,7 @@ export function ModuleNode({
                               className={`patchbay-bipolar-toggle ${((rowCtx as any).source as import('../../state/types').ShapeGeneratorSource).strokeMode === 'hollow' ? 'active' : ''}`}
                               style={{ border: '1px solid #444', background: ((rowCtx as any).source as import('../../state/types').ShapeGeneratorSource).strokeMode === 'hollow' ? '#88cc00' : '#222', color: ((rowCtx as any).source as import('../../state/types').ShapeGeneratorSource).strokeMode === 'hollow' ? '#000' : '#aaa' }}
                               title={((rowCtx as any).source as import('../../state/types').ShapeGeneratorSource).strokeMode === 'hollow' ? 'Mode 2: Hollow Out' : 'Mode 1: Classic (Gate)'}
-                              onPointerDown={e => e.stopPropagation()}
+                              onPointerDown={e => { e.stopPropagation(); e.preventDefault(); }}
                               onClick={e => {
                                 e.stopPropagation();
                                 const current = ((rowCtx as any).source as import('../../state/types').ShapeGeneratorSource).strokeMode ?? 'classic';
@@ -562,11 +598,14 @@ export function ModuleNode({
           {!isOutput && (
             <>
               <button className="node-collapse-btn" title="Expand / collapse"
+                onPointerDown={e => e.preventDefault()}
                 onClick={(e) => { e.stopPropagation(); onLayoutChange({ expanded: !nodeState.expanded }); }}>
                 {nodeState.expanded ? '▲' : '▼'}
               </button>
               {onRemove && (
-                <button className="node-remove-btn" title="Remove" onClick={(e) => { e.stopPropagation(); onRemove(); }}>×</button>
+                <button className="node-remove-btn" title="Remove" 
+                  onPointerDown={e => e.preventDefault()}
+                  onClick={(e) => { e.stopPropagation(); onRemove(); }}>×</button>
               )}
             </>
           )}
@@ -607,6 +646,7 @@ export function ModuleNode({
               <button 
                 className={`node-mute-toggle ${isMuted ? 'muted' : ''}`}
                 title={isMuted ? 'Unmute module' : 'Mute module'}
+                onPointerDown={e => e.preventDefault()}
                 onClick={(e) => { e.stopPropagation(); (rowCtx as any).onChange(muteKey, !isMuted); }}
               >
                 {isMuted ? '🔇' : '🔊'}
