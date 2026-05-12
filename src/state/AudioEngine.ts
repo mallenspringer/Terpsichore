@@ -1,13 +1,13 @@
 export class AudioEngine {
   private static instance: AudioEngine;
-  
+
   public context: AudioContext;
   private sources: Map<string, MediaElementAudioSourceNode> = new Map();
   private analyzers: Map<string, AnalyserNode> = new Map();
   private moduleGains: Map<string, GainNode> = new Map();
   private layerGains: Map<string, GainNode> = new Map();
   private masterGain: GainNode;
-  
+
   // A shared Float32Array to read frequency/time data (avoids garbage collection overhead)
   private dataArray: Float32Array;
   private _masterMuted = false;
@@ -15,7 +15,7 @@ export class AudioEngine {
   private constructor() {
     this.context = new (window.AudioContext || (window as any).webkitAudioContext)();
     this.dataArray = new Float32Array(256); // 256 is the default fftSize/2
-    
+
     this.masterGain = this.context.createGain();
     this.masterGain.connect(this.context.destination);
   }
@@ -43,7 +43,7 @@ export class AudioEngine {
       const moduleGain = this.context.createGain();
       const analyzer = this.context.createAnalyser();
       const layerGain = this.context.createGain();
-      
+
       analyzer.fftSize = 512;
       analyzer.smoothingTimeConstant = 0.5;
 
@@ -57,7 +57,7 @@ export class AudioEngine {
       this.moduleGains.set(id, moduleGain);
       this.analyzers.set(id, analyzer);
       this.layerGains.set(id, layerGain);
-      
+
     } catch (e) {
       console.error(`[AudioEngine] Failed to register element ${id}`, e);
     }
@@ -109,8 +109,8 @@ export class AudioEngine {
     const analyzer = this.analyzers.get(id);
     if (!analyzer) return 0;
 
-    analyzer.getFloatTimeDomainData(this.dataArray);
-    
+    analyzer.getFloatTimeDomainData(this.dataArray as any);
+
     let max = 0;
     for (let i = 0; i < this.dataArray.length; i++) {
       const val = Math.abs(this.dataArray[i]);
@@ -118,7 +118,7 @@ export class AudioEngine {
         max = val;
       }
     }
-    
+
     // RMS might be better for perceived loudness, but peak is great for triggers
     return Math.min(1.0, max);
   }

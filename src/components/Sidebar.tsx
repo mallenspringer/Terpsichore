@@ -39,7 +39,6 @@ const ALL_MODULES: ModuleEntry[] = [
   { id: 'Pattern',        glyph: '▦', label: 'Pattern',   tooltip: 'Tiling & Grid Layout',    category: 'Effects', moduleType: 'effect:Pattern'         },
   { id: 'Kaleidoscope',   glyph: '✺', label: 'Kaleido',   tooltip: 'Radial Reflections',      category: 'Effects', moduleType: 'effect:Kaleidoscope'    },
   { id: 'LumaSplit',      glyph: '▤', label: 'LumaSplit', tooltip: 'Split by luminance bands', category: 'Utility', moduleType: 'effect:LumaSplitter'   },
-  { id: 'RGBMixer',      glyph: '▥', label: 'RGB Mixer', tooltip: 'Sum RGB channels to composite', category: 'Utility', moduleType: 'effect:RGBMixer'      },
   // Utility
   { id: 'LFO',            glyph: '〜', label: 'LFO',       tooltip: 'Modular LFO Source',      category: 'Utility', moduleType: 'modulator:LFO'         },
   { id: 'TriggerPad',     glyph: '🔘', label: 'Trig Pad',  tooltip: 'Click-to-trigger Pulse',  category: 'Utility', moduleType: 'modulator:TriggerPad'  },
@@ -750,7 +749,6 @@ export function Sidebar({ activeLayerId, onSelectLayer, activeLayer, sourceCtx }
           sourceCtx={sourceCtx as any}
           effect={null}
           effectCtx={null}
-          layerName={activeLayer?.name}
         />
       </SbSection>
 

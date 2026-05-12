@@ -29,7 +29,6 @@ describe('SignalDispatcher', () => {
     });
 
     // Reset store state before each test
-    const state = useEngineStore.getState();
     // Manual reset since we don't have a reset action yet
     useEngineStore.setState({
       layers: {
@@ -53,24 +52,25 @@ describe('SignalDispatcher', () => {
 
   it('should propagate signal from source to effect', () => {
     const state = useEngineStore.getState();
-    
+
     // 1. Setup a ShapeGenerator source and a Transform2D effect
-    const source: AnySource = { 
-      type: 'ShapeGenerator', 
-      shapeType: 'circle',
+    const source: AnySource = {
+      type: 'ShapeGenerator',
+      shapeType: 'polygon',
       fillColor: [1, 1, 1, 1],
-      x: 0, y: 0, scale: 1.0, 
-      sides: 4, roundness: 0, convexity: 0, rotation: 0, strokeWidth: 0, 
-      tiling: [1, 1], tilingMode: 'repeat', edgeSoftness: 0.1
+      x: 0, y: 0, scale: 1.0,
+      sides: 4, roundness: 0, convexity: 0, rotation: 0, strokeWidth: 0,
+      strokeMode: 'classic', strokeThreshold: 0.1,
+      edgeSoftness: 0.1
     };
-    const effect: AnyEffect = { 
-      id: 'effect_1', 
-      type: 'Transform2D', 
-      translateX: 0, translateY: 0, scaleX: 1, scaleY: 1, rotation: 0, spin: 0 
+    const effect: AnyEffect = {
+      id: 'effect_1',
+      type: 'Transform2D',
+      translateX: 0, translateY: 0, scaleX: 1, scaleY: 1, rotation: 0, spin: 0
     };
 
-    state.updateLayer('layer_1', { 
-      source, 
+    state.updateLayer('layer_1', {
+      source,
       effects: [effect],
       graph: {
         edges: [
@@ -104,18 +104,18 @@ describe('SignalDispatcher', () => {
 
   it('should handle modulation routing', () => {
     const state = useEngineStore.getState();
-    
+
     // Setup an LFO modulating an effect parameter
-    const lfo = { 
-      type: 'LFO', 
-      waveform: 'sine', 
-      frequency: 0, 
-      amplitude: 1.0, 
-      offset: 0.25, 
+    const lfo = {
+      type: 'LFO',
+      waveform: 'sine',
+      frequency: 0,
+      amplitude: 1.0,
+      offset: 0.25,
       bipolar: false,
       value: 0.75 // Manually set a value for the test
     };
-    
+
     state.updateLayer('layer_1', {
       modulators: { 'lfo_1': lfo as any },
       effects: [{ id: 'effect_1', type: 'ColorAdjust', hue: 0, saturation: 1, contrast: 1, brightness: 0, invert: false }],

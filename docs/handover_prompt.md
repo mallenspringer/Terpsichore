@@ -1,22 +1,22 @@
-# Handover Prompt for Terpsichore
+# Handover Prompt for Terpsichore (v0.2.0)
 
 Copy and paste the text below into your new session to continue work on the project.
 
 ---
 
-"I am working on **Terpsichore**, a high-performance modular VJ engine built with React, Zustand, and WebGPU (Tauri). We just completed a major architecture stabilization refactor.
+"I am working on **Terpsichore**, a high-performance modular VJ engine built with React, Zustand, and WebGPU. We just released **v0.2.0**, which stabilized the engine and graph UX.
 
 **Current Architecture:**
-1. **The Brain (Signal Engine)**: A centralized `SignalDispatcher` using a **2-pass execution model**. Pass 1 populates 'Fixed' outputs (Sources, Modulators, Inter-layer inputs); Pass 2 executes a JIT-compiled pipeline of edges.
-2. **The Muscle (Renderer)**: A lean WebGPU pipeline that reads `signalValues` directly from the layer state without internal logic.
-3. **The State Layer**: A Zustand store using **High-performance Selectors** to minimize re-renders. Graph auto-wiring is handled via event-driven store actions (`addEffect`, `setSource`, etc.), NOT `useEffect`.
-4. **The Safety Net**: A Vitest suite (using `jsdom`) located in `src/state/__tests__`. All core signal routing and graph mutations are unit-tested.
+1. **The Brain (Signal Engine 2.0)**: Centralized `SignalDispatcher` using a **High-Frequency Bypass**. It maintains a `latestSignals` cache that feeds the Renderer directly, bypassing React store latency.
+2. **The Muscle (Renderer)**: WebGPU pipeline consuming high-frequency signals via `getEffectiveParam()`. It handles complex texture blitting for modules like **Sample & Hold**.
+3. **The UX Layer**: A zoomed/scaled Node Graph with **Autoscroll** and **Focus-Prevention** logic to ensure stability in transformed containers.
+4. **The Dispatcher**: Uses a 2-pass JIT execution model for zero-latency CV propagation.
 
 **Active Mission:**
-We are stabilizing the **Inter-Layer Signal Routing** and fixing UI synchronization regressions. Our next goals are:
-1. **Fix NodeGraph Sync**: Resolve why `NodeGraph` stays in 'empty' state despite `activeLayerId` being set in the store.
-2. **Repair Module Creation**: Fix the "Click-to-Add" feature in `Sidebar.tsx` which currently creates uninteractable module headers.
-3. **Clean UI Redundancy**: Remove the duplicate "Layer" section in the bottom foundational bar created during the `App.tsx` refactor.
-4. **Validate Pipeline**: Verify signal flow from `Layer Out` -> `InterLayerBus` -> `Layer In` using `[SignalDispatcher] PIPELINE` logs.
+We are refining the control system and expanding module interactivity. Our next goals are:
+1. **Module Header Key Indicators**: Add visual indicators (colored dots) to module headers to show which key (1-0) is currently triggering/controlling them.
+2. **Multi-Assignment Support**: Allow a single module to be triggered by multiple keys (expanding the current 1:1 mapping).
+3. **Global Reset Expansion**: Refine the Global Reset signal so it can optionally clear S&H buffers or reset LFO phases across all layers.
+4. **Performance Check**: Verify the `latestSignals` cache memory usage over long sessions.
 
-Refer to `docs/logic_overview.md` for architecture details. Use `npm run build` to verify types and `npm run dev` to test the UI."
+Refer to `docs/logic_overview.md` and `docs/modules.md` for architecture details. Use `npm run dev` to start the environment."

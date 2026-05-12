@@ -26,8 +26,11 @@ describe('Inter-layer Signal Routing', () => {
         'layer_1': {
           id: 'layer_1',
           name: 'Source Layer',
+          opacity: 1,
+          blendMode: 'normal' as any,
+          audioMuted: false,
           source: { type: 'None' } as any,
-          effects: [{ id: 'out_mod', type: 'InterLayerOutput', portCount: 1 }],
+          effects: [{ id: 'out_mod', type: 'InterLayerOutput', portCount: 1 } as any],
           modulators: { 'lfo_1': { type: 'LFO', frequency: 0, amplitude: 1.0, offset: 0.8, value: 0.8 } as any },
           graph: {
             edges: [
@@ -48,8 +51,11 @@ describe('Inter-layer Signal Routing', () => {
         'layer_2': {
           id: 'layer_2',
           name: 'Target Layer',
+          opacity: 1,
+          blendMode: 'normal' as any,
+          audioMuted: false,
           source: { type: 'None' } as any,
-          effects: [{ id: 'in_mod', type: 'InterLayerInput', portCount: 1 }, { id: 'fx1', type: 'Transform2D' }],
+          effects: [{ id: 'in_mod', type: 'InterLayerInput', portCount: 1 } as any, { id: 'fx1', type: 'Transform2D', translateX: 0, translateY: 0, scaleX: 1, scaleY: 1, rotation: 0, spin: 0 } as any],
           modulators: {},
           graph: {
             edges: [
@@ -95,14 +101,14 @@ describe('Inter-layer Signal Routing', () => {
     const l2 = state.layers['layer_2'];
 
     // 1. Check if Layer Out received the signal from LFO
-    expect(l1.signalValues['out_mod.in_0']).toBe(0.8);
+    expect(l1?.signalValues?.['out_mod.in_0']).toBe(0.8);
     
     // 2. Check if Layer In received the signal from the bus
     // (Note: Since Layer 1 is processed before Layer 2 in the loop, 
     // it should propagate in the SAME frame!)
-    expect(l2.signalValues['in_mod.out_0']).toBe(0.8);
+    expect(l2?.signalValues?.['in_mod.out_0']).toBe(0.8);
     
     // 3. Check if the final effect received it
-    expect(l2.signalValues['fx1.scaleX']).toBe(0.8);
+    expect(l2?.signalValues?.['fx1.scaleX']).toBe(0.8);
   });
 });

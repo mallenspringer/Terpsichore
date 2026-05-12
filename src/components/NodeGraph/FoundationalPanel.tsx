@@ -8,10 +8,9 @@ interface FoundationalPanelProps {
   sourceCtx: SourceCtx | null;
   effect: AnyEffect | null;
   effectCtx: EffectCtx | null;
-  layerName?: string;
 }
 
-export function FoundationalPanel({ nodeId, source, sourceCtx, effect, effectCtx, layerName }: FoundationalPanelProps) {
+export function FoundationalPanel({ nodeId, source, sourceCtx, effect, effectCtx }: FoundationalPanelProps) {
   if (!nodeId || (!sourceCtx && !effectCtx)) {
     return (
       <div className="foundational-panel">

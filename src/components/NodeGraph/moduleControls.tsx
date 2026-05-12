@@ -8,7 +8,7 @@ import {
   NoiseModulatorSource, NoiseVideoSource,
   Transform2DEffect, ColorAdjustEffect, LumaKeyEffect, SimpleFeedbackEffect,
   InterLayerOutputEffect, InterLayerInputEffect, ColorRGBEffect, LumaSplitterEffect,
-  SpawnEffect, RGBMixerEffect, PathEffect, LogicGateEffect, TriggeredGateEffect, InverterEffect,
+  SpawnEffect, PathEffect, LogicGateEffect, TriggeredGateEffect, InverterEffect,
   PatternEffect, KaleidoscopeEffect, SignalMathEffect, SampleAndHoldEffect
 } from '../../state/types';
 
@@ -1087,40 +1087,73 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
   ],
   ColorRGB: [
     { id: 'r', label: 'Red',
-      render: ctx => (
-        <div className="rack-row-controls">
-          <Slider label="R" min={0} max={1} step={0.01} resetValue={0.5}
-            value={eff<ColorRGBEffect>(ctx).r} onChange={v => upd(ctx)({ r: v })} />
-          <button className={`mode-toggle ${eff<ColorRGBEffect>(ctx).rMode === 'mult' ? 'active' : ''}`}
-            onClick={() => upd(ctx)({ rMode: eff<ColorRGBEffect>(ctx).rMode === 'mult' ? 'add' : 'mult' })}>
-            {eff<ColorRGBEffect>(ctx).rMode === 'mult' ? '×' : '+'}
-          </button>
-        </div>
-      )
+      render: ctx => {
+        const ef = eff<ColorRGBEffect>(ctx);
+        return (
+          <div className="rack-row-controls">
+            <Slider label="R" min={0} max={1} step={0.01} resetValue={0.5}
+              value={ef.r} onChange={v => upd(ctx)({ r: v })} />
+            <button 
+              className={`mode-toggle ${ef.rInputMode === 'luma' ? 'active' : 'alt'}`}
+              title={ef.rInputMode === 'luma' ? 'Input Mode: Luma (Grayscale)' : 'Input Mode: Channel (Red)'}
+              onClick={() => upd(ctx)({ rInputMode: ef.rInputMode === 'luma' ? 'channel' : 'luma' })}
+              style={{ fontSize: 8, minWidth: 28, padding: '0 2px' }}
+            >
+              {ef.rInputMode === 'luma' ? 'LUM' : 'CH'}
+            </button>
+            <button className={`mode-toggle ${ef.rMode === 'mult' ? 'active' : ''}`}
+              onClick={() => upd(ctx)({ rMode: ef.rMode === 'mult' ? 'add' : 'mult' })}>
+              {ef.rMode === 'mult' ? '×' : '+'}
+            </button>
+          </div>
+        );
+      }
     },
     { id: 'g', label: 'Green',
-      render: ctx => (
-        <div className="rack-row-controls">
-          <Slider label="G" min={0} max={1} step={0.01} resetValue={0.5}
-            value={eff<ColorRGBEffect>(ctx).g} onChange={v => upd(ctx)({ g: v })} />
-          <button className={`mode-toggle ${eff<ColorRGBEffect>(ctx).gMode === 'mult' ? 'active' : ''}`}
-            onClick={() => upd(ctx)({ gMode: eff<ColorRGBEffect>(ctx).gMode === 'mult' ? 'add' : 'mult' })}>
-            {eff<ColorRGBEffect>(ctx).gMode === 'mult' ? '×' : '+'}
-          </button>
-        </div>
-      )
+      render: ctx => {
+        const ef = eff<ColorRGBEffect>(ctx);
+        return (
+          <div className="rack-row-controls">
+            <Slider label="G" min={0} max={1} step={0.01} resetValue={0.5}
+              value={ef.g} onChange={v => upd(ctx)({ g: v })} />
+            <button 
+              className={`mode-toggle ${ef.gInputMode === 'luma' ? 'active' : 'alt'}`}
+              title={ef.gInputMode === 'luma' ? 'Input Mode: Luma (Grayscale)' : 'Input Mode: Channel (Green)'}
+              onClick={() => upd(ctx)({ gInputMode: ef.gInputMode === 'luma' ? 'channel' : 'luma' })}
+              style={{ fontSize: 8, minWidth: 28, padding: '0 2px' }}
+            >
+              {ef.gInputMode === 'luma' ? 'LUM' : 'CH'}
+            </button>
+            <button className={`mode-toggle ${ef.gMode === 'mult' ? 'active' : ''}`}
+              onClick={() => upd(ctx)({ gMode: ef.gMode === 'mult' ? 'add' : 'mult' })}>
+              {ef.gMode === 'mult' ? '×' : '+'}
+            </button>
+          </div>
+        );
+      }
     },
     { id: 'b', label: 'Blue',
-      render: ctx => (
-        <div className="rack-row-controls">
-          <Slider label="B" min={0} max={1} step={0.01} resetValue={0.5}
-            value={eff<ColorRGBEffect>(ctx).b} onChange={v => upd(ctx)({ b: v })} />
-          <button className={`mode-toggle ${eff<ColorRGBEffect>(ctx).bMode === 'mult' ? 'active' : ''}`}
-            onClick={() => upd(ctx)({ bMode: eff<ColorRGBEffect>(ctx).bMode === 'mult' ? 'add' : 'mult' })}>
-            {eff<ColorRGBEffect>(ctx).bMode === 'mult' ? '×' : '+'}
-          </button>
-        </div>
-      )
+      render: ctx => {
+        const ef = eff<ColorRGBEffect>(ctx);
+        return (
+          <div className="rack-row-controls">
+            <Slider label="B" min={0} max={1} step={0.01} resetValue={0.5}
+              value={ef.b} onChange={v => upd(ctx)({ b: v })} />
+            <button 
+              className={`mode-toggle ${ef.bInputMode === 'luma' ? 'active' : 'alt'}`}
+              title={ef.bInputMode === 'luma' ? 'Input Mode: Luma (Grayscale)' : 'Input Mode: Channel (Blue)'}
+              onClick={() => upd(ctx)({ bInputMode: ef.bInputMode === 'luma' ? 'channel' : 'luma' })}
+              style={{ fontSize: 8, minWidth: 28, padding: '0 2px' }}
+            >
+              {ef.bInputMode === 'luma' ? 'LUM' : 'CH'}
+            </button>
+            <button className={`mode-toggle ${ef.bMode === 'mult' ? 'active' : ''}`}
+              onClick={() => upd(ctx)({ bMode: ef.bMode === 'mult' ? 'add' : 'mult' })}>
+              {ef.bMode === 'mult' ? '×' : '+'}
+            </button>
+          </div>
+        );
+      }
     },
   ],
   LumaSplitter: [
@@ -1136,11 +1169,6 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
       render: ctx => <Slider label="Slope" min={0} max={0.5} step={0.01} resetValue={0.1}
         value={eff<LumaSplitterEffect>(ctx).softness} onChange={v => upd(ctx)({ softness: v })} />
     },
-  ],
-  RGBMixer: [
-    { id: 'rLevel', label: 'R Level', render: ctx => <Slider label="Red" min={0} max={2} step={0.01} resetValue={1} value={eff<RGBMixerEffect>(ctx).rLevel} onChange={v => upd(ctx)({ rLevel: v })} /> },
-    { id: 'gLevel', label: 'G Level', render: ctx => <Slider label="Green" min={0} max={2} step={0.01} resetValue={1} value={eff<RGBMixerEffect>(ctx).gLevel} onChange={v => upd(ctx)({ gLevel: v })} /> },
-    { id: 'bLevel', label: 'B Level', render: ctx => <Slider label="Blue" min={0} max={2} step={0.01} resetValue={1} value={eff<RGBMixerEffect>(ctx).bLevel} onChange={v => upd(ctx)({ bLevel: v })} /> },
   ],
 
   Inverter: [

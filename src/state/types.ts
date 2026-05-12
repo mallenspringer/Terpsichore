@@ -232,15 +232,11 @@ export interface ColorRGBEffect {
   rMode: 'add' | 'mult';
   gMode: 'add' | 'mult';
   bMode: 'add' | 'mult';
+  rInputMode: 'channel' | 'luma';
+  gInputMode: 'channel' | 'luma';
+  bInputMode: 'channel' | 'luma';
 }
 
-export interface RGBMixerEffect {
-  id: string;
-  type: 'RGBMixer';
-  rLevel: number;
-  gLevel: number;
-  bLevel: number;
-}
 
 export interface LumaSplitterEffect {
   id: string;
@@ -356,13 +352,13 @@ export type AnyEffect =
   | Transform2DEffect | ColorAdjustEffect | LumaKeyEffect 
   | SimpleFeedbackEffect | AudioAnalyzerEffect | BipolarConverterEffect
   | InterLayerOutputEffect | InterLayerInputEffect | ColorRGBEffect 
-  | LumaSplitterEffect | RGBMixerEffect | SpawnEffect | PathEffect | InverterEffect
+  | LumaSplitterEffect | SpawnEffect | PathEffect | InverterEffect
   | LogicGateEffect | TriggeredGateEffect | PatternEffect | KaleidoscopeEffect | SignalMathEffect | SampleAndHoldEffect;
 
 export type EffectType = 
   | 'Transform2D' | 'ColorAdjust' | 'LumaKey' | 'SimpleFeedback' 
   | 'AudioAnalyzer' | 'BipolarConverter' | 'InterLayerOutput' | 'InterLayerInput' 
-  | 'ColorRGB' | 'LumaSplitter' | 'RGBMixer' | 'Spawn' | 'Path' | 'Inverter'
+  | 'ColorRGB' | 'LumaSplitter' | 'Spawn' | 'Path' | 'Inverter'
   | 'LogicGate' | 'TriggeredGate' | 'Pattern' | 'Kaleidoscope' | 'SignalMath' | 'SampleAndHold';
 
 // --- GRAPH ---

@@ -9,7 +9,6 @@ import { SimpleFeedbackWGSL } from './shaders/SimpleFeedback';
 import { ImageVideoSourceWGSL, VideoSourceWGSL } from './shaders/ImageVideoSource';
 import { AudioEngine } from '../state/AudioEngine';
 import { LumaSplitterWGSL } from './shaders/LumaSplitter';
-import { RGBMixerWGSL } from './shaders/RGBMixer';
 import { SpawnWGSL, SpawnVertexWGSL } from './shaders/Spawn';
 import { NoiseSourceVertexWGSL, NoiseSourceFragmentWGSL } from './shaders/NoiseSource';
 import { InverterWGSL } from './shaders/Inverter';
@@ -21,7 +20,7 @@ import { PORT_DEFS } from '../components/NodeGraph/portDefs';
 import { SignalDispatcher } from '../state/SignalDispatcher';
 import { 
   ShapeGeneratorSource, Transform2DEffect, ColorAdjustEffect, LumaKeyEffect, 
-  SimpleFeedbackEffect, ColorRGBEffect, LumaSplitterEffect, RGBMixerEffect, 
+  SimpleFeedbackEffect, ColorRGBEffect, LumaSplitterEffect, 
   VideoURLSource, VideoFileSource, WebcamCaptureSource, ImageLoaderSource, ImageFileSource, 
   SpawnEffect, PathEffect, NoiseVideoSource, InverterEffect,
   PatternEffect, KaleidoscopeEffect, SampleAndHoldEffect,
@@ -74,7 +73,6 @@ export class Renderer {
   private lumaAnalysisPipeline!: GPURenderPipeline;
   private lumaAnalysisTexture!: GPUTexture;
   private blitPipeline!: GPURenderPipeline;
-  private rgbMixerPipeline!: GPURenderPipeline;
   private inverterPipeline!: GPURenderPipeline;
   private triggeredGatePipeline!: GPURenderPipeline;
   private patternPipeline!: GPURenderPipeline;
@@ -350,7 +348,21 @@ export class Renderer {
     this.colorAdjustPipeline = this.device.createRenderPipeline({ layout, vertex, fragment: { module: this.device.createShaderModule({ code: ColorAdjustWGSL }), entryPoint: 'fs_main', targets }, primitive });
     this.lumaKeyPipeline = this.device.createRenderPipeline({ layout, vertex, fragment: { module: this.device.createShaderModule({ code: LumaKeyWGSL }), entryPoint: 'fs_main', targets }, primitive });
     this.colorRGBPipeline = this.device.createRenderPipeline({ 
-      layout, vertex, 
+      layout: this.device.createPipelineLayout({
+        bindGroupLayouts: [
+          this.device.createBindGroupLayout({
+            entries: [
+              { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+              { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+              { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
+              { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+              { binding: 4, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+              { binding: 5, visibility: GPUShaderStage.FRAGMENT, texture: {} }
+            ]
+          })
+        ]
+      }),
+      vertex, 
       fragment: { 
         module: this.device.createShaderModule({ code: ColorRGBWGSL }), 
         entryPoint: 'fs_main', 
@@ -363,6 +375,7 @@ export class Renderer {
       }, 
       primitive 
     });
+    this.effectLayouts.set('ColorRGB', this.colorRGBPipeline.getBindGroupLayout(0));
     this.feedbackPipeline = this.device.createRenderPipeline({ layout, vertex, fragment: { module: this.device.createShaderModule({ code: SimpleFeedbackWGSL }), entryPoint: 'fs_main', targets }, primitive });
 
     this.videoPipeline = this.device.createRenderPipeline({ 
@@ -442,28 +455,6 @@ export class Renderer {
 
     this.lumaAnalysisTexture = this.device.createTexture({ size: [1, 1, 1], format: this.format, usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC | GPUTextureUsage.TEXTURE_BINDING });
 
-    this.rgbMixerPipeline = this.device.createRenderPipeline({
-      layout: this.device.createPipelineLayout({
-        bindGroupLayouts: [
-          this.device.createBindGroupLayout({
-            entries: [
-              { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
-              { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
-              { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: {} },
-              { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: {} },
-              { binding: 4, visibility: GPUShaderStage.FRAGMENT, sampler: {} }
-            ]
-          })
-        ]
-      }),
-      vertex,
-      fragment: {
-        module: this.device.createShaderModule({ code: RGBMixerWGSL }),
-        entryPoint: 'fs_main',
-        targets: [{ format: this.format }]
-      },
-      primitive
-    });
 
     this.noiseSourcePipeline = this.device.createRenderPipeline({
       layout: this.device.createPipelineLayout({
@@ -527,9 +518,7 @@ export class Renderer {
     this.effectLayouts.set('Pattern', this.patternPipeline.getBindGroupLayout(0));
     this.effectLayouts.set('Kaleidoscope', this.kaleidoscopePipeline.getBindGroupLayout(0));
     this.effectLayouts.set('SimpleFeedback', this.feedbackPipeline.getBindGroupLayout(0));
-    this.effectLayouts.set('RGBMixer', this.rgbMixerPipeline.getBindGroupLayout(0));
     this.effectLayouts.set('TriggeredGate', this.triggeredGatePipeline.getBindGroupLayout(0));
-    this.effectLayouts.set('ColorRGB', this.colorRGBPipeline.getBindGroupLayout(0));
     this.effectLayouts.set('LumaSplitter', this.lumaSplitPipeline.getBindGroupLayout(0));
   }
 
@@ -1113,19 +1102,56 @@ export class Renderer {
           if (effect.type === 'ColorRGB') {
             pipeline = this.colorRGBPipeline;
             const ef = effect as ColorRGBEffect;
-            const hasInput = (incomingEdges.some(e => e.toPort === 'video_in'));
-            const mapVal = (v: number, mode: string) => hasInput ? (mode === 'mult' ? v * 2.0 : (v - 0.5) * 2.0) : v;
+            
+            const hasV = incomingEdges.some(e => e.toPort === 'video_in');
+            const hasR = incomingEdges.some(e => e.toPort === 'r_in');
+            const hasG = incomingEdges.some(e => e.toPort === 'g_in');
+            const hasB = incomingEdges.some(e => e.toPort === 'b_in');
+            const hasAnyInput = hasV || hasR || hasG || hasB;
 
-            const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 32);
-            const buf = new ArrayBuffer(32);
-            new Float32Array(buf).set([this.getEffectiveParam(layer, ef.id, 'r_cv', mapVal(ef.r, ef.rMode), timeSec), this.getEffectiveParam(layer, ef.id, 'g_cv', mapVal(ef.g, ef.gMode), timeSec), this.getEffectiveParam(layer, ef.id, 'b_cv', mapVal(ef.b, ef.bMode), timeSec)]);
+            const mapVal = (v: number, mode: string) => hasAnyInput ? (mode === 'mult' ? v * 2.0 : (v - 0.5) * 2.0) : v;
+
+            const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 64);
+            const buf = new ArrayBuffer(64);
+            const f32 = new Float32Array(buf);
             const u32 = new Uint32Array(buf);
-            u32[3] = hasInput ? 1 : 0;
-            u32[4] = ef.rMode === 'mult' ? 1 : 0; u32[5] = ef.gMode === 'mult' ? 1 : 0; u32[6] = ef.bMode === 'mult' ? 1 : 0;
+            
+            f32[0] = this.getEffectiveParam(layer, ef.id, 'r_cv', mapVal(ef.r, ef.rMode), timeSec);
+            f32[1] = this.getEffectiveParam(layer, ef.id, 'g_cv', mapVal(ef.g, ef.gMode), timeSec);
+            f32[2] = this.getEffectiveParam(layer, ef.id, 'b_cv', mapVal(ef.b, ef.bMode), timeSec);
+            
+            u32[3] = hasV ? 1 : 0;
+            u32[4] = hasR ? 1 : 0;
+            u32[5] = hasG ? 1 : 0;
+            u32[6] = hasB ? 1 : 0;
+            
+            u32[7] = ef.rMode === 'mult' ? 1 : 0;
+            u32[8] = ef.gMode === 'mult' ? 1 : 0;
+            u32[9] = ef.bMode === 'mult' ? 1 : 0;
+            
+            u32[10] = ef.rInputMode === 'luma' ? 1 : 0;
+            u32[11] = ef.gInputMode === 'luma' ? 1 : 0;
+            u32[12] = ef.bInputMode === 'luma' ? 1 : 0;
+            
             this.device.queue.writeBuffer(uniformBuffer, 0, buf);
-            entries = [{ binding: 0, resource: { buffer: uniformBuffer } }, { binding: 1, resource: inputTex.createView() }, { binding: 2, resource: this.sampler }];
 
-            const rTex = this.ensureTexture(nodeId, 'r_out'); const gTex = this.ensureTexture(nodeId, 'g_out'); const bTex = this.ensureTexture(nodeId, 'b_out');
+            const rIn = this.getTextureForNode(nodeId, 'r_in')?.createView() ?? inputTex.createView();
+            const gIn = this.getTextureForNode(nodeId, 'g_in')?.createView() ?? inputTex.createView();
+            const bIn = this.getTextureForNode(nodeId, 'b_in')?.createView() ?? inputTex.createView();
+
+            entries = [
+              { binding: 0, resource: { buffer: uniformBuffer } }, 
+              { binding: 1, resource: inputTex.createView() }, 
+              { binding: 2, resource: this.sampler },
+              { binding: 3, resource: rIn },
+              { binding: 4, resource: gIn },
+              { binding: 5, resource: bIn },
+            ];
+
+            const rTex = this.ensureTexture(nodeId, 'r_out'); 
+            const gTex = this.ensureTexture(nodeId, 'g_out'); 
+            const bTex = this.ensureTexture(nodeId, 'b_out');
+            
             const pass = commandEncoder.beginRenderPass({
               colorAttachments: [
                 { view: target.createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' },
@@ -1223,20 +1249,6 @@ export class Renderer {
               ]));
               const fbTex = this.getFeedbackTexture(layer.id);
               entries = [{ binding: 0, resource: { buffer: uniformBuffer } }, { binding: 1, resource: inputTex.createView() }, { binding: 2, resource: fbTex.createView() }, { binding: 3, resource: this.sampler }];
-            } else if (effect.type === 'RGBMixer') {
-              pipeline = this.rgbMixerPipeline;
-              const ef = effect as RGBMixerEffect;
-              const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 16);
-              this.device.queue.writeBuffer(uniformBuffer, 0, new Float32Array([
-                this.getEffectiveParam(layer, ef.id, 'r_level', ef.rLevel, timeSec),
-                this.getEffectiveParam(layer, ef.id, 'g_level', ef.gLevel, timeSec),
-                this.getEffectiveParam(layer, ef.id, 'b_level', ef.bLevel, timeSec),
-                0
-              ]));
-              const rIn = this.getTextureForNode(nodeId, 'r_in')?.createView() ?? inputTex.createView();
-              const gIn = this.getTextureForNode(nodeId, 'g_in')?.createView() ?? inputTex.createView();
-              const bIn = this.getTextureForNode(nodeId, 'b_in')?.createView() ?? inputTex.createView();
-              entries = [{ binding: 0, resource: { buffer: uniformBuffer } }, { binding: 1, resource: rIn }, { binding: 2, resource: gIn }, { binding: 3, resource: bIn }, { binding: 4, resource: this.sampler }];
             } else if (effect.type === 'TriggeredGate') {
               pipeline = this.triggeredGatePipeline;
               const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 16); // Only 1 f32 (padded to 16 for alignment)

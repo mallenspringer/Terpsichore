@@ -123,6 +123,15 @@ Stochastic control signal generator (CPU-bound).
     *   **Sample Trigger/Button**: When locked, a rising edge on the `Sample` input (or clicking the UI button) generates a single new random value and holds it.
 *   **Use Cases**: Creating discrete random steps (Sample & Hold), adding "jitter" to parameters, or simulating organic camera shake.
 
+### Trigger Pad (⌨️)
+Manual control signal generator mapped to keyboard keys.
+*   **Parameters**:
+    *   **Key Mapping**: Assign to number keys (1-0). 
+    *   **Indicator**: Dropdown shows a color-coded bullet if a key is already assigned elsewhere in the rack (Grey = Available, Colored = Used).
+    *   **Attack / Release**: Optional envelope for smoothing the 0-to-1 transition.
+*   **Signal Output**: `0.0` when idle, `1.0` when key is pressed (or follows envelope).
+*   **Use Cases**: Manual rhythmic triggering, momentary effect activation, or "flashing" a color/source.
+
 ### Logic Gate (⊦)
 Comparison-based signal processing.
 *   **Operators**: AND, OR, XOR, NAND, NOR.
@@ -166,13 +175,18 @@ Routes signals between layers.
     *   Inputs pull from this bus at the start of the dispatch cycle.
     *   Enables complex cross-layer modulation (e.g., Layer 1's audio peak controlling Layer 3's rotation).
 
-### Sample and Hold (?)
+### Sample and Hold (❄️)
 A dual-mode capture module for both video and control signals.
-*   **Behavior**: When a trigger is received, the current value of the input signal (or the current frame of the video input) is captured and held until the next trigger.
+*   **New in v0.2.0**: Specialized "Live/Buffer" switching for high-performance visual freezing.
 *   **Parameters**:
-    *   **SAMPLE / CAPTURE**: Manual trigger button in UI.
-*   **Signal Behaviors**:
-    *   **Trigger In**: Rising edge triggers a new capture.
+    *   **CAPTURE**: Manual button to grab a new frame/value.
+    *   **SOURCE (Live/Buff)**: Toggles between the live input and the captured buffer.
+    *   **Key Mapping**: Can be assigned to a keyboard key for remote capture/toggling.
+*   **Ports**:
+    *   **Capture (Trigger In)**: Rising edge triggers a new capture.
+    *   **Live/Buff (Trigger In)**: Rising edge **toggles** the Source state. Switching to "Buffer" mode automatically triggers a capture.
     *   **Sig In/Out**: Modulation path (CPU).
     *   **Video In/Out**: Video path (GPU).
-*   **Use Cases**: Creating stepped/pixelated time effects, capturing a specific color or position for later use, or "freezing" a video frame while audio modulation continues.
+*   **Signal Behavior**: 
+    *   **Zero-Latency**: Uses the high-frequency engine path to ensure the captured value is frame-accurate to the trigger.
+*   **Use Cases**: Strobe-like video freezing, creating "staircase" modulation from smooth LFOs, or holding a specific visual state while tweaking other parameters.

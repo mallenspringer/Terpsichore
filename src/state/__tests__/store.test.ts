@@ -63,8 +63,8 @@ describe('EngineStore Auto-wiring', () => {
     const autoEdge = layerBefore.graph?.edges.find(e => e.toNodeId === '__output__');
     
     store.updateLayerGraph('layer_1', {
-      ...layerBefore.graph,
-      edges: layerBefore.graph.edges.filter(e => e.id !== autoEdge?.id),
+      ...layerBefore.graph!,
+      edges: layerBefore.graph!.edges.filter(e => e.id !== autoEdge?.id),
       disconnectedPorts: ['__output__.composite_in']
     });
     

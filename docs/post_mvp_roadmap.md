@@ -6,6 +6,9 @@ This document tracks planned features and architectural improvements to be addre
 - **WebGPU Instancing**: Migrated `Spawn` module to high-performance storage-buffer batching.
 - **Path Module**: Initial implementation of trajectory-based movement (Physics, Wiggle, Orbit).
 - **Stochastic Engine**: 1D Noise modulator with White, Pink, Brownian, and Perlin algorithms.
+- **v0.2.0 Architecture**: Implemented High-Frequency Signal Engine (Signal Engine 2.0) for zero-latency modulation.
+- **v0.2.0 UX**: Implemented Autoscroll and Transform-aware interaction (focus prevention) for stable graph navigation.
+- **New Modules**: Kaleidoscope, Pattern, Logic Gates, and the enhanced dual-mode Sample & Hold.
 
 ## 🚀 New Features
 

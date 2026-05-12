@@ -52,10 +52,9 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
     case 'AudioAnalyzer': return { id, type: 'AudioAnalyzer', smoothing: 0.5, sensitivity: 1.0, logarithmic: false };
     case 'InterLayerOutput': return { id, type: 'InterLayerOutput', portCount: 1 };
     case 'InterLayerInput': return { id, type: 'InterLayerInput', portCount: 1 };
-    case 'ColorRGB': return { id, type: 'ColorRGB', r: 0.5, g: 0.5, b: 0.5, rMode: 'add', gMode: 'add', bMode: 'add' };
+    case 'ColorRGB': return { id, type: 'ColorRGB', r: 0.5, g: 0.5, b: 0.5, rMode: 'add', gMode: 'add', bMode: 'add', rInputMode: 'channel', gInputMode: 'channel', bInputMode: 'channel' };
     case 'LumaSplitter': return { id, type: 'LumaSplitter', threshold1: 0.33, threshold2: 0.66, softness: 0.1 };
     case 'Spawn': return { id, type: 'Spawn', x: 0, y: 0, scale: 0.5, rotation: 0, maxCount: 20, lifetime: 2.0, fadeOut: true, randomPos: 0.0, randomScale: 0.0, coordinateMode: 'normalized' } as any;
-    case 'RGBMixer': return { id, type: 'RGBMixer', rLevel: 1, gLevel: 1, bLevel: 1 };
     case 'Path': return { id, type: 'Path', mode: 'physics', speed: 1.0, strength: 1.0, frequency: 1.0, drift: 0.0 };
     case 'Inverter': return { id, type: 'Inverter', videoMode: 'rgb', cvMode: 'unipolar', triggerMode: 'latch', mix: 1.0, active: true };
     case 'LogicGate': return { id, type: 'LogicGate', mode: 'and', thresholdA: 0.5, thresholdB: 0.5 };

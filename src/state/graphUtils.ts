@@ -1,4 +1,4 @@
-import { LayerState, LayerGraph, GraphEdge, AnySource, AnyEffect, SignalType } from './types';
+import { LayerState, LayerGraph, GraphEdge } from './types';
 import { PORT_DEFS, getPrimaryOutput } from '../components/NodeGraph/portDefs';
 
 const OUTPUT_ID = '__output__';
@@ -20,8 +20,16 @@ export function buildAutoEdges(layer: LayerState, existingGraph?: LayerGraph): G
     return { ...n, isDuplicate: count > 1 };
   });
 
-  const manualEdges = (existingGraph?.edges ?? []).filter(e => !e.isAuto);
-  const disconnectedPorts = existingGraph?.disconnectedPorts ?? [];
+  const nodeIds = new Set(nodes.map(n => n.id));
+  nodeIds.add(OUTPUT_ID);
+
+  const manualEdges = (existingGraph?.edges ?? []).filter(e => 
+    !e.isAuto && nodeIds.has(e.fromNodeId) && nodeIds.has(e.toNodeId)
+  );
+  const disconnectedPorts = (existingGraph?.disconnectedPorts ?? []).filter(p => {
+    const [nid] = p.split('.');
+    return nodeIds.has(nid);
+  });
   const isPortOccupied = (toNodeId: string, toPortId: string) => 
     manualEdges.some(e => e.toNodeId === toNodeId && e.toPort === toPortId) ||
     disconnectedPorts.includes(`${toNodeId}.${toPortId}`);
