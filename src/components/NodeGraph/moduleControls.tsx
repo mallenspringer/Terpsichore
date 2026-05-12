@@ -8,7 +8,8 @@ import {
   NoiseModulatorSource, NoiseVideoSource,
   Transform2DEffect, ColorAdjustEffect, LumaKeyEffect, SimpleFeedbackEffect,
   InterLayerOutputEffect, InterLayerInputEffect, ColorRGBEffect, LumaSplitterEffect,
-  SpawnEffect, RGBMixerEffect, PathEffect, LogicGateEffect, TriggeredGateEffect, InverterEffect
+  SpawnEffect, RGBMixerEffect, PathEffect, LogicGateEffect, TriggeredGateEffect, InverterEffect,
+  PatternEffect, KaleidoscopeEffect, SignalMathEffect
 } from '../../state/types';
 
 // ── Context types ──────────────────────────────────────────────────────────────
@@ -1223,6 +1224,117 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
     { id: 'drift', label: 'Drift',
       render: ctx => <Slider label="Drift" min={-2} max={2} step={0.01} resetValue={0}
         value={eff<PathEffect>(ctx).drift} onChange={v => upd(ctx)({ drift: v })} />
+    },
+  ],
+
+  Pattern: [
+    { id: 'counts', label: 'Grid',
+      render: ctx => {
+        const ef = eff<PatternEffect>(ctx);
+        return (
+          <div className="rack-row-content">
+            <Slider label="X" min={1} max={32} step={1} resetValue={2}
+              value={ef.countX} onChange={v => upd(ctx)({ countX: v, countY: ef.syncCount ? v : ef.countY })} />
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: 24 }}>
+               <input type="checkbox" checked={ef.syncCount} title="Sync X/Y"
+                 onChange={e => { e.stopPropagation(); upd(ctx)({ syncCount: e.target.checked, countY: e.target.checked ? ef.countX : ef.countY }); }} />
+            </div>
+            <Slider label="Y" min={1} max={32} step={1} resetValue={2}
+              value={ef.syncCount ? ef.countX : ef.countY} 
+              onChange={v => ef.syncCount ? upd(ctx)({ countX: v, countY: v }) : upd(ctx)({ countY: v })} />
+          </div>
+        );
+      }
+    },
+    { id: 'spacing', label: 'Spacing',
+      render: ctx => {
+        const ef = eff<PatternEffect>(ctx);
+        return (
+          <div className="rack-row-content">
+            <Slider label="X" min={-1} max={1} step={0.01} resetValue={0}
+              value={ef.spacingX} onChange={v => upd(ctx)({ spacingX: v, spacingY: ef.syncSpacing ? v : ef.spacingY })} />
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: 24 }}>
+               <input type="checkbox" checked={ef.syncSpacing} title="Sync X/Y"
+                 onChange={e => { e.stopPropagation(); upd(ctx)({ syncSpacing: e.target.checked, spacingY: e.target.checked ? ef.spacingX : ef.spacingY }); }} />
+            </div>
+            <Slider label="Y" min={-1} max={1} step={0.01} resetValue={0}
+              value={ef.syncSpacing ? ef.spacingX : ef.spacingY} 
+              onChange={v => ef.syncSpacing ? upd(ctx)({ spacingX: v, spacingY: v }) : upd(ctx)({ spacingY: v })} />
+          </div>
+        );
+      }
+    },
+    { id: 'offsets', label: 'Offsets',
+      render: ctx => {
+        const ef = eff<PatternEffect>(ctx);
+        return (
+          <div className="rack-row-content">
+            <Slider label="X" min={-1} max={1} step={0.01} resetValue={0}
+              value={ef.offsetX} onChange={v => upd(ctx)({ offsetX: v, offsetY: ef.syncOffset ? v : ef.offsetY })} />
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: 24 }}>
+               <input type="checkbox" checked={ef.syncOffset} title="Sync X/Y"
+                 onChange={e => { e.stopPropagation(); upd(ctx)({ syncOffset: e.target.checked, offsetY: e.target.checked ? ef.offsetX : ef.offsetY }); }} />
+            </div>
+            <Slider label="Y" min={-1} max={1} step={0.01} resetValue={0}
+              value={ef.syncOffset ? ef.offsetX : ef.offsetY} 
+              onChange={v => ef.syncOffset ? upd(ctx)({ offsetX: v, offsetY: v }) : upd(ctx)({ offsetY: v })} />
+          </div>
+        );
+      }
+    },
+    { id: 'mirror', label: 'Mirroring',
+      render: ctx => (
+        <div className="rack-row-content" style={{ gap: 10 }}>
+           <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10 }}>
+             <input type="checkbox" checked={eff<PatternEffect>(ctx).alternateMirrorX} onChange={e => upd(ctx)({ alternateMirrorX: e.target.checked })} /> Mirror X
+           </label>
+           <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10 }}>
+             <input type="checkbox" checked={eff<PatternEffect>(ctx).alternateMirrorY} onChange={e => upd(ctx)({ alternateMirrorY: e.target.checked })} /> Mirror Y
+           </label>
+        </div>
+      )
+    }
+  ],
+
+  Kaleidoscope: [
+    { id: 'segments', label: 'Count',
+      render: ctx => <Slider label="Count" min={1} max={32} step={1} resetValue={5}
+        value={eff<KaleidoscopeEffect>(ctx).segments} onChange={v => upd(ctx)({ segments: v })} />
+    },
+    { id: 'angle', label: 'Angle',
+      render: ctx => <Slider label="Rotation" min={0} max={360} step={1} resetValue={0}
+        value={eff<KaleidoscopeEffect>(ctx).angle} onChange={v => upd(ctx)({ angle: v })} />
+    },
+    { id: 'zoom', label: 'Zoom',
+      render: ctx => <Slider label="Zoom" min={0.1} max={4} step={0.01} resetValue={1}
+        value={eff<KaleidoscopeEffect>(ctx).zoom} onChange={v => upd(ctx)({ zoom: v })} />
+    },
+  ],
+  SignalMath: [
+    { id: 'operator', label: 'Operator',
+      render: ctx => (
+        <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} onDragStart={e => e.stopPropagation()}>
+          <span className="rack-row-label">Operator</span>
+          <select value={eff<SignalMathEffect>(ctx).operator} 
+            onChange={e => { e.stopPropagation(); upd(ctx)({ operator: e.target.value as any }); }}>
+            <option value="add">Add (A + B)</option>
+            <option value="subtract">Subtract (A - B)</option>
+            <option value="multiply">Multiply (A * B)</option>
+            <option value="divide">Divide (A / B)</option>
+            <option value="min">Minimum</option>
+            <option value="max">Maximum</option>
+            <option value="pow">Power (A^B)</option>
+          </select>
+        </div>
+      )
+    },
+    { id: 'operandA', label: 'Manual A',
+      render: ctx => <Slider label="Manual A" min={-2} max={2} step={0.01} resetValue={0}
+        value={eff<SignalMathEffect>(ctx).operandA} onChange={v => upd(ctx)({ operandA: v })} />
+    },
+    { id: 'operandB', label: 'Manual B',
+      render: ctx => <Slider label="Manual B" min={-2} max={2} step={0.01} resetValue={0}
+        value={eff<SignalMathEffect>(ctx).operandB} onChange={v => upd(ctx)({ operandB: v })} />
     },
   ],
 };

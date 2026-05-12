@@ -135,7 +135,7 @@ export class SignalDispatcher {
             ctx.signalValues[`${nodeId}.modulation_out`] = finalVal;
           });
           } else if (mod.type === 'Noise') {
-          pipeline.push((ctx: DispatchContext, dt: number) => {
+          pipeline.push((ctx: DispatchContext, _dt: number) => {
             const noise = ctx.layer.modulators?.[nodeId] as any;
             if (!noise) return;
 
@@ -298,6 +298,24 @@ export class SignalDispatcher {
               }
               
               ctx.signalValues[`${nodeId}.sig_out`] = gateOpen ? sigIn : 0;
+            });
+          } else if (effect.type === 'SignalMath') {
+            pipeline.push((ctx: DispatchContext) => {
+              const ef = ctx.layer.effects.find(e => e.id === nodeId) as any;
+              if (!ef) return;
+              const a = (ctx.signalValues[`${nodeId}.in_a`] ?? 0) + (ef.operandA ?? 0);
+              const b = (ctx.signalValues[`${nodeId}.in_b`] ?? 0) + (ef.operandB ?? 0);
+              let res = 0;
+              switch (ef.operator) {
+                case 'add': res = a + b; break;
+                case 'subtract': res = a - b; break;
+                case 'multiply': res = a * b; break;
+                case 'divide': res = b !== 0 ? a / b : 0; break;
+                case 'min': res = Math.min(a, b); break;
+                case 'max': res = Math.max(a, b); break;
+                case 'pow': res = Math.pow(Math.abs(a), b); break;
+              }
+              ctx.signalValues[`${nodeId}.out`] = res;
             });
           } else if (effect.type === 'Path') {
             pipeline.push((ctx: DispatchContext) => {

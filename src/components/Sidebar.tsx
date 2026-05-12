@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useEngineStore } from '../state/store';
-import { VideoFileSource, ImageFileSource, ColorRGBEffect } from '../state/types';
+import { VideoFileSource, ImageFileSource } from '../state/types';
 import { createDefaultSource, createDefaultEffect, createDefaultModulator } from '../state/moduleFactory';
 import { exportProject, importProject } from '../utils/projectPersistence';
 import { FoundationalPanel } from './NodeGraph/FoundationalPanel';
@@ -36,6 +36,8 @@ const ALL_MODULES: ModuleEntry[] = [
   { id: 'LumaKey',        glyph: '🔑', label: 'LumaKey',   tooltip: 'Luminance Key',           category: 'Effects', moduleType: 'effect:LumaKey'        },
   { id: 'ColorRGB',       glyph: 'RGB_STRIPES', label: 'RGB',        tooltip: 'RGB Channel Split/Gen',   category: 'Effects', moduleType: 'effect:ColorRGB'       },
   { id: 'SimpleFeedback', glyph: '🔄', label: 'Feedback',  tooltip: 'Simple Feedback Loop',    category: 'Effects', moduleType: 'effect:SimpleFeedback' },
+  { id: 'Pattern',        glyph: '▦', label: 'Pattern',   tooltip: 'Tiling & Grid Layout',    category: 'Effects', moduleType: 'effect:Pattern'         },
+  { id: 'Kaleidoscope',   glyph: '✺', label: 'Kaleido',   tooltip: 'Radial Reflections',      category: 'Effects', moduleType: 'effect:Kaleidoscope'    },
   { id: 'LumaSplit',      glyph: '▤', label: 'LumaSplit', tooltip: 'Split by luminance bands', category: 'Utility', moduleType: 'effect:LumaSplitter'   },
   { id: 'RGBMixer',      glyph: '▥', label: 'RGB Mixer', tooltip: 'Sum RGB channels to composite', category: 'Utility', moduleType: 'effect:RGBMixer'      },
   // Utility
@@ -49,6 +51,7 @@ const ALL_MODULES: ModuleEntry[] = [
   { id: 'Inverter',       glyph: '⇅', label: 'Inverter',  tooltip: 'Polarity/Color Inversion', category: 'Utility', moduleType: 'effect:Inverter'         },
   { id: 'LogicGate',      glyph: '⊦', label: 'Logic',     tooltip: 'Signal Comparison (AND/OR/XOR)', category: 'Utility', moduleType: 'effect:LogicGate'       },
   { id: 'TriggeredGate',  glyph: 'Gate', label: 'Trig Gate', tooltip: 'Signal Gating / Routing',      category: 'Utility', moduleType: 'effect:TriggeredGate'   },
+  { id: 'SignalMath',     glyph: '∑', label: 'Math',      tooltip: 'Signal Processing (A + B, A * B)', category: 'Utility', moduleType: 'effect:SignalMath'     },
 ];
 
 const DEFAULT_BANK_IDS = ALL_MODULES.map(m => m.id);

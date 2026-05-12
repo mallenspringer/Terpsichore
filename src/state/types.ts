@@ -305,18 +305,53 @@ export interface TriggeredGateEffect {
   gateOpen?: boolean; // final resolved gate state for renderer
 }
 
+export interface PatternEffect {
+  id: string;
+  type: 'Pattern';
+  countX: number;
+  countY: number;
+  spacingX: number;
+  spacingY: number;
+  offsetX: number;
+  offsetY: number;
+  alternateMirrorX: boolean;
+  alternateMirrorY: boolean;
+  syncCount: boolean;
+  syncSpacing: boolean;
+  syncOffset: boolean;
+  mirrorXTrigger: boolean;
+  mirrorYTrigger: boolean;
+}
+
+export interface KaleidoscopeEffect {
+  id: string;
+  type: 'Kaleidoscope';
+  segments: number;
+  angle: number;
+  zoom: number;
+  center: [number, number];
+}
+
+export interface SignalMathEffect {
+  id: string;
+  type: 'SignalMath';
+  operator: 'add' | 'subtract' | 'multiply' | 'divide' | 'min' | 'max' | 'pow';
+  operandA: number;
+  operandB: number;
+}
+
 export type AnyEffect = 
   | Transform2DEffect | ColorAdjustEffect | LumaKeyEffect 
   | SimpleFeedbackEffect | AudioAnalyzerEffect | BipolarConverterEffect
   | InterLayerOutputEffect | InterLayerInputEffect | ColorRGBEffect 
   | LumaSplitterEffect | RGBMixerEffect | SpawnEffect | PathEffect | InverterEffect
-  | LogicGateEffect | TriggeredGateEffect;
+  | LogicGateEffect | TriggeredGateEffect | PatternEffect | KaleidoscopeEffect | SignalMathEffect;
 
 export type EffectType = 
   | 'Transform2D' | 'ColorAdjust' | 'LumaKey' | 'SimpleFeedback' 
   | 'AudioAnalyzer' | 'BipolarConverter' | 'InterLayerOutput' | 'InterLayerInput' 
   | 'ColorRGB' | 'LumaSplitter' | 'RGBMixer' | 'Spawn' | 'Path' | 'Inverter'
-  | 'LogicGate' | 'TriggeredGate';
+  | 'LogicGate' | 'TriggeredGate' | 'Pattern' | 'Kaleidoscope' | 'SignalMath';
 
 // --- GRAPH ---
 export interface GraphEdge {

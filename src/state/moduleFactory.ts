@@ -45,22 +45,30 @@ export function createDefaultSource(type: string): AnySource {
 }
 
 export function createDefaultEffect(type: string, id: string): AnyEffect {
-  switch (type) {
-    case 'Transform2D': return { id, type, translateX: 0, translateY: 0, scaleX: 1, scaleY: 1, rotation: 0, spin: 0 };
-    case 'ColorAdjust': return { id, type, hue: 0, saturation: 1, contrast: 1, brightness: 0, invert: false };
-    case 'LumaKey': return { id, type, threshold: 0.5, tolerance: 0.1, invertKey: false };
-    case 'AudioAnalyzer': return { id, type, smoothing: 0.5, sensitivity: 1.0, logarithmic: false };
-    case 'InterLayerOutput': return { id, type, portCount: 1 };
-    case 'InterLayerInput': return { id, type, portCount: 1 };
-    case 'ColorRGB': return { id, type, r: 0.5, g: 0.5, b: 0.5, rMode: 'add', gMode: 'add', bMode: 'add' };
-    case 'LumaSplitter': return { id, type, threshold1: 0.33, threshold2: 0.66, softness: 0.1 };
-    case 'Spawn': return { id, type, x: 0, y: 0, scale: 0.5, rotation: 0, maxCount: 20, lifetime: 2.0, fadeOut: true, randomPos: 0.0, randomScale: 0.0, coordinateMode: 'normalized' } as any;
-    case 'RGBMixer': return { id, type, rLevel: 1, gLevel: 1, bLevel: 1 };
-    case 'Path': return { id, type, mode: 'physics', speed: 1.0, strength: 1.0, frequency: 1.0, drift: 0.0 };
-    case 'Inverter': return { id, type, videoMode: 'rgb', cvMode: 'unipolar', triggerMode: 'latch', mix: 1.0, active: true };
-    case 'LogicGate': return { id, type, mode: 'and', thresholdA: 0.5, thresholdB: 0.5 };
-    case 'TriggeredGate': return { id, type, gateMode: 'momentary', defaultState: 'off', threshold: 0.5, active: false, gateOpen: false };
-    default: return { id, type: 'SimpleFeedback', feedbackAmount: 0.9, zoom: 0.95, angle: 0.05 } as any;
+  switch (type.trim()) {
+    case 'Transform2D': return { id, type: 'Transform2D', translateX: 0, translateY: 0, scaleX: 1, scaleY: 1, rotation: 0, spin: 0 };
+    case 'ColorAdjust': return { id, type: 'ColorAdjust', hue: 0, saturation: 1, contrast: 1, brightness: 0, invert: false };
+    case 'LumaKey': return { id, type: 'LumaKey', threshold: 0.5, tolerance: 0.1, invertKey: false };
+    case 'AudioAnalyzer': return { id, type: 'AudioAnalyzer', smoothing: 0.5, sensitivity: 1.0, logarithmic: false };
+    case 'InterLayerOutput': return { id, type: 'InterLayerOutput', portCount: 1 };
+    case 'InterLayerInput': return { id, type: 'InterLayerInput', portCount: 1 };
+    case 'ColorRGB': return { id, type: 'ColorRGB', r: 0.5, g: 0.5, b: 0.5, rMode: 'add', gMode: 'add', bMode: 'add' };
+    case 'LumaSplitter': return { id, type: 'LumaSplitter', threshold1: 0.33, threshold2: 0.66, softness: 0.1 };
+    case 'Spawn': return { id, type: 'Spawn', x: 0, y: 0, scale: 0.5, rotation: 0, maxCount: 20, lifetime: 2.0, fadeOut: true, randomPos: 0.0, randomScale: 0.0, coordinateMode: 'normalized' } as any;
+    case 'RGBMixer': return { id, type: 'RGBMixer', rLevel: 1, gLevel: 1, bLevel: 1 };
+    case 'Path': return { id, type: 'Path', mode: 'physics', speed: 1.0, strength: 1.0, frequency: 1.0, drift: 0.0 };
+    case 'Inverter': return { id, type: 'Inverter', videoMode: 'rgb', cvMode: 'unipolar', triggerMode: 'latch', mix: 1.0, active: true };
+    case 'LogicGate': return { id, type: 'LogicGate', mode: 'and', thresholdA: 0.5, thresholdB: 0.5 };
+    case 'TriggeredGate': return { id, type: 'TriggeredGate', gateMode: 'momentary', defaultState: 'off', threshold: 0.5, active: false, gateOpen: false };
+    case 'Pattern': return { id, type: 'Pattern', countX: 2, countY: 2, spacingX: 0, spacingY: 0, offsetX: 0, offsetY: 0, alternateMirrorX: false, alternateMirrorY: false, syncCount: true, syncSpacing: true, syncOffset: true, mirrorXTrigger: false, mirrorYTrigger: false } as any;
+    case 'Kaleidoscope': return { id, type: 'Kaleidoscope', segments: 6, angle: 0, zoom: 1.0, center: [0.5, 0.5] };
+    case 'SignalMath':
+    case 'Math': 
+      return { id, type: 'SignalMath', operator: 'add', operandA: 0, operandB: 0 };
+    case 'SimpleFeedback':
+      return { id, type: 'SimpleFeedback', feedbackAmount: 0.9, zoom: 0.95, angle: 0.05 };
+    default:
+      return { id, type: 'SimpleFeedback', feedbackAmount: 0.9, zoom: 0.95, angle: 0.05 } as any;
   }
 }
 

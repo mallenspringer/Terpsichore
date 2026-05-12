@@ -14,6 +14,8 @@ import { SpawnWGSL, SpawnVertexWGSL } from './shaders/Spawn';
 import { NoiseSourceVertexWGSL, NoiseSourceFragmentWGSL } from './shaders/NoiseSource';
 import { InverterWGSL } from './shaders/Inverter';
 import { TriggeredGateWGSL } from './shaders/TriggeredGate';
+import { PatternWGSL } from './shaders/Pattern';
+import { KaleidoscopeWGSL } from './shaders/Kaleidoscope';
 
 import { PORT_DEFS } from '../components/NodeGraph/portDefs';
 import { SignalDispatcher } from '../state/SignalDispatcher';
@@ -22,6 +24,7 @@ import {
   SimpleFeedbackEffect, ColorRGBEffect, LumaSplitterEffect, RGBMixerEffect, 
   VideoURLSource, VideoFileSource, WebcamCaptureSource, ImageLoaderSource, ImageFileSource, 
   SpawnEffect, PathEffect, NoiseVideoSource, InverterEffect,
+  PatternEffect, KaleidoscopeEffect,
   LayerState
 } from '../state/types';
 
@@ -74,6 +77,8 @@ export class Renderer {
   private rgbMixerPipeline!: GPURenderPipeline;
   private inverterPipeline!: GPURenderPipeline;
   private triggeredGatePipeline!: GPURenderPipeline;
+  private patternPipeline!: GPURenderPipeline;
+  private kaleidoscopePipeline!: GPURenderPipeline;
   
   // Isolated layouts to prevent 'Minimum Binding Size' collisions
   private effectLayouts: Map<string, GPUBindGroupLayout> = new Map();
@@ -149,6 +154,9 @@ export class Renderer {
     this.masterFBO = this.device.createTexture({ size, format: this.format, usage });
     this.layerFBO_A = this.device.createTexture({ size, format: this.format, usage });
     this.layerFBO_B = this.device.createTexture({ size, format: this.format, usage });
+
+    Object.values(this.prevFrameFBOs).forEach(fbo => fbo.destroy());
+    this.prevFrameFBOs = {};
   }
 
   private getPrevFrameFBO(layerId: string) {
@@ -508,12 +516,16 @@ export class Renderer {
       primitive
     });
     this.inverterPipeline = this.device.createRenderPipeline({ layout, vertex, fragment: { module: this.device.createShaderModule({ code: InverterWGSL }), entryPoint: 'fs_main', targets }, primitive });
+    this.patternPipeline = this.device.createRenderPipeline({ layout, vertex, fragment: { module: this.device.createShaderModule({ code: PatternWGSL }), entryPoint: 'fs_main', targets }, primitive });
+    this.kaleidoscopePipeline = this.device.createRenderPipeline({ layout, vertex, fragment: { module: this.device.createShaderModule({ code: KaleidoscopeWGSL }), entryPoint: 'fs_main', targets }, primitive });
 
     // Capture auto-generated layouts
     this.effectLayouts.set('Transform2D', this.transformPipeline.getBindGroupLayout(0));
     this.effectLayouts.set('ColorAdjust', this.colorAdjustPipeline.getBindGroupLayout(0));
     this.effectLayouts.set('LumaKey', this.lumaKeyPipeline.getBindGroupLayout(0));
     this.effectLayouts.set('Inverter', this.inverterPipeline.getBindGroupLayout(0));
+    this.effectLayouts.set('Pattern', this.patternPipeline.getBindGroupLayout(0));
+    this.effectLayouts.set('Kaleidoscope', this.kaleidoscopePipeline.getBindGroupLayout(0));
     this.effectLayouts.set('SimpleFeedback', this.feedbackPipeline.getBindGroupLayout(0));
     this.effectLayouts.set('RGBMixer', this.rgbMixerPipeline.getBindGroupLayout(0));
     this.effectLayouts.set('TriggeredGate', this.triggeredGatePipeline.getBindGroupLayout(0));
@@ -834,6 +846,7 @@ export class Renderer {
   private frameCount = 0;
   private spawnStates = new Map<string, SpawnedObject[]>();
   private lastTriggerVals = new Map<string, number>();
+  private patternMirrorStates = new Map<string, { x: boolean, y: boolean }>();
 
   private accumulatedTimeSec = 0;
   private lastRenderRealTime = performance.now();
@@ -1230,6 +1243,89 @@ export class Renderer {
                 gateOpen ? 1.0 : 0.0, 0, 0, 0
               ]));
               entries = [{ binding: 0, resource: { buffer: uniformBuffer } }, { binding: 1, resource: inputTex.createView() }, { binding: 2, resource: this.sampler }];
+            } else if (effect.type === 'Pattern') {
+              pipeline = this.patternPipeline;
+              const ef = effect as PatternEffect;
+              const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 32);
+              const buf = new ArrayBuffer(32);
+              const f32 = new Float32Array(buf);
+              
+              const applyLogScale = (manual: number, mod: number) => {
+                if (mod > 0) return manual * Math.pow(32 / manual, mod);
+                if (mod < 0) return manual * Math.pow(manual, mod);
+                return manual;
+              };
+
+              const rawCountX = layer.signalValues?.[`${nodeId}.countX`] ?? 0;
+              const rawCountY = layer.signalValues?.[`${nodeId}.countY`] ?? 0;
+              const countMod = ef.syncCount ? (rawCountX + rawCountY) : 0;
+              f32[0] = applyLogScale(ef.countX, ef.syncCount ? countMod : rawCountX);
+              f32[1] = applyLogScale(ef.countY, ef.syncCount ? countMod : rawCountY);
+
+              const rawSpX = layer.signalValues?.[`${nodeId}.spacingX`] ?? 0;
+              const rawSpY = layer.signalValues?.[`${nodeId}.spacingY`] ?? 0;
+              const spModX = ef.syncSpacing ? (rawSpX + rawSpY) : rawSpX;
+              const spModY = ef.syncSpacing ? (rawSpX + rawSpY) : rawSpY;
+              f32[2] = ef.spacingX + spModX;
+              f32[3] = ef.spacingY + spModY;
+
+              const rawOffX = layer.signalValues?.[`${nodeId}.offsetX`] ?? 0;
+              const rawOffY = layer.signalValues?.[`${nodeId}.offsetY`] ?? 0;
+              const offModX = ef.syncOffset ? (rawOffX + rawOffY) : rawOffX;
+              const offModY = ef.syncOffset ? (rawOffX + rawOffY) : rawOffY;
+              f32[4] = ef.offsetX + offModX;
+              f32[5] = ef.offsetY + offModY;
+
+              // Handle Mirror Triggers
+              let mState = this.patternMirrorStates.get(nodeId);
+              if (!mState) {
+                mState = { x: ef.alternateMirrorX, y: ef.alternateMirrorY };
+                this.patternMirrorStates.set(nodeId, mState);
+              }
+
+              const trigX = layer.signalValues?.[`${nodeId}.mirror_trig_x`] ?? 0;
+              const lastX = this.lastTriggerVals.get(`${nodeId}.mirror_trig_x`) ?? 0;
+              if (trigX > 0.5 && lastX <= 0.5) mState.x = !mState.x;
+              this.lastTriggerVals.set(`${nodeId}.mirror_trig_x`, trigX);
+
+              const trigY = layer.signalValues?.[`${nodeId}.mirror_trig_y`] ?? 0;
+              const lastY = this.lastTriggerVals.get(`${nodeId}.mirror_trig_y`) ?? 0;
+              if (trigY > 0.5 && lastY <= 0.5) mState.y = !mState.y;
+              this.lastTriggerVals.set(`${nodeId}.mirror_trig_y`, trigY);
+
+              const u32 = new Uint32Array(buf);
+              u32[6] = mState.x ? 1 : 0;
+              u32[7] = mState.y ? 1 : 0;
+              this.device.queue.writeBuffer(uniformBuffer, 0, buf);
+              entries = [{ binding: 0, resource: { buffer: uniformBuffer } }, { binding: 1, resource: this.sampler }, { binding: 2, resource: inputTex.createView() }];
+            } else if (effect.type === 'Kaleidoscope') {
+              pipeline = this.kaleidoscopePipeline;
+              const ef = effect as KaleidoscopeEffect;
+              const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 32);
+              
+              const rawAngleMod = layer.signalValues?.[`${nodeId}.angle`] ?? 0;
+              const angle = ef.angle + rawAngleMod * 360.0;
+              
+              const rawCountMod = layer.signalValues?.[`${nodeId}.segments`] ?? 0;
+              const manualCount = ef.segments;
+              let finalCount = manualCount;
+              if (rawCountMod > 0) {
+                finalCount = manualCount * Math.pow(32 / manualCount, rawCountMod);
+              } else if (rawCountMod < 0) {
+                finalCount = manualCount * Math.pow(manualCount, rawCountMod);
+              }
+
+              const modZoom = this.getEffectiveParam(layer, ef.id, 'zoom', ef.zoom, timeSec);
+
+              this.device.queue.writeBuffer(uniformBuffer, 0, new Float32Array([
+                finalCount,
+                angle,
+                modZoom,
+                ef.center[0],
+                ef.center[1],
+                0, 0, 0
+              ]));
+              entries = [{ binding: 0, resource: { buffer: uniformBuffer } }, { binding: 1, resource: this.sampler }, { binding: 2, resource: inputTex.createView() }];
             }
 
             if (pipeline) {

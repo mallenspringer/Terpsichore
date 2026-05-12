@@ -19,10 +19,21 @@ This document tracks planned features and architectural improvements to be addre
 - **Logic Gates**: AND, OR, XOR modules for trigger-based patch logic.
 
 ### 3. Effects Modules
+- **Pattern Refinements**: 
+    - **Radial Mode**: Tiling objects in concentric circles rather than grids.
+    - **Per-Tile Rotation**: Staggered rotation where each tile rotates incrementally.
+    - **Tile Jitter**: Noise/randomization of tile positions.
+    - **UV Distortion Port**: Input for warping tiles using external video signals.
+- **Video Math**: A high-level module for combining two or more textures using algebraic operators (Add, Subtract, Multiply, Min/Max) and standard blending modes.
 - **Eternal Zoom**: A procedural noise effect that cross-fades octaves during scale changes to create an illusion of infinite inward or outward motion.
 - **Complex and Compound Symmetry**: Advanced tiling and mirroring modules (Kaleidoscopes, Mandalas, and multi-axis reflections).
 - **Outliner**: Stylized edge detection that creates "slabby" or bold outlines at contrast boundaries.
 - **Posterizer**: Color bit-crushing to emulate the stepped-gradient aesthetic of vintage 90s digital video effects.
+
+### 4. Physics & Space
+- **Gravity Module**: A dedicated spatial force module that exerts directional pull on objects across the coordinate plane.
+- **Physics Engine**: Add mass, gravity, buoyancy, and friction to spawned objects.
+- **Attractors/Repellers**: Modules that influence the movement of all objects on a layer based on spatial coordinates.
 
 ### 4. 1-Click Audio Visualizers
 - **Visualizer Presets**: A bank of "Macro" patches that instantly wire up audio transients to specific visual styles.

@@ -158,9 +158,33 @@ export const PORT_DEFS: Record<string, PortDef[]> = {
     { id: 'out',  label: 'Out',  direction: 'out', signalType: 'trigger', priority: 0 },
   ],
   TriggeredGate: [
-    { id: 'sig_in',     label: 'Sig In',  direction: 'in',  signalType: 'generic' },
-    { id: 'trigger_in', label: 'Trigger', direction: 'in',  signalType: 'trigger' },
-    { id: 'sig_out',    label: 'Sig Out', direction: 'out', signalType: 'generic', priority: 0 },
+    { id: 'video_in',  label: 'Video In',  direction: 'in',  signalType: 'video' },
+    { id: 'trigger',   label: 'Trigger',   direction: 'in',  signalType: 'trigger' },
+    { id: 'video_out', label: 'Video Out', direction: 'out', signalType: 'video', priority: 0 },
+  ],
+  Pattern: [
+    { id: 'video_in',  label: 'Video In',  direction: 'in',  signalType: 'video' },
+    { id: 'countX',    label: 'Count X',   direction: 'in',  signalType: 'modulation' },
+    { id: 'countY',    label: 'Count Y',   direction: 'in',  signalType: 'modulation' },
+    { id: 'spacingX',  label: 'Spacing X', direction: 'in',  signalType: 'modulation' },
+    { id: 'spacingY',  label: 'Spacing Y', direction: 'in',  signalType: 'modulation' },
+    { id: 'offsetX',    label: 'Offset X',  direction: 'in',  signalType: 'modulation' },
+    { id: 'offsetY',    label: 'Offset Y',  direction: 'in',  signalType: 'modulation' },
+    { id: 'mirror_trig_x', label: 'Mirror X Trig', direction: 'in', signalType: 'trigger' },
+    { id: 'mirror_trig_y', label: 'Mirror Y Trig', direction: 'in', signalType: 'trigger' },
+    { id: 'video_out', label: 'Video Out', direction: 'out', signalType: 'video', priority: 0 },
+  ],
+  Kaleidoscope: [
+    { id: 'video_in',  label: 'Video In',  direction: 'in',  signalType: 'video' },
+    { id: 'segments',  label: 'Count',     direction: 'in',  signalType: 'modulation' },
+    { id: 'angle',     label: 'Angle',     direction: 'in',  signalType: 'modulation' },
+    { id: 'zoom',      label: 'Zoom',      direction: 'in',  signalType: 'modulation' },
+    { id: 'video_out', label: 'Video Out', direction: 'out', signalType: 'video', priority: 0 },
+  ],
+  SignalMath: [
+    { id: 'in_a', label: 'Input A', direction: 'in', signalType: 'modulation' },
+    { id: 'in_b', label: 'Input B', direction: 'in', signalType: 'modulation' },
+    { id: 'out',  label: 'Output',  direction: 'out', signalType: 'modulation', priority: 0 },
   ],
   Path: [
     { id: 'trajectory_out', label: 'Trajectory', direction: 'out', signalType: 'trajectory', priority: 0 },
@@ -235,6 +259,17 @@ const SHORT_LABELS: Record<string, string> = {
   path_in: 'Path',
   trajectory_out: 'Traj',
   modulation_out: 'Val',
+  segments: 'Count',
+  countX: 'Cnt X',
+  countY: 'Cnt Y',
+  spacingX: 'Spc X',
+  spacingY: 'Spc Y',
+  offsetX: 'Off X',
+  offsetY: 'Off Y',
+  mirror_trig_x: 'Mir X',
+  mirror_trig_y: 'Mir Y',
+  in_a: 'In A',
+  in_b: 'In B',
 };
 
 export function getShortLabel(portId: string, fullLabel: string): string {
@@ -264,4 +299,7 @@ export const MODULE_DISPLAY_NAMES: Record<string, string> = {
   Path: 'Path',
   LogicGate: 'Logic Gate',
   TriggeredGate: 'Trig Gate',
+  Pattern: 'Pattern',
+  Kaleidoscope: 'K-Scope',
+  SignalMath: 'Math',
 };
