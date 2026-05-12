@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { useEngineStore } from '../../state/store';
 import {
   AnyEffect, AnySource, LayerState,
-  GraphEdge, LayerGraph,
+  GraphEdge,
   VideoFileSource, ImageFileSource,
   SignalType
 } from '../../state/types';
@@ -10,7 +10,6 @@ import { createDefaultSource, createDefaultEffect, createDefaultModulator } from
 import { SOURCE_ROWS, EFFECT_ROWS, SourceCtx, EffectCtx } from './moduleControls';
 import { PORT_DEFS, SIGNAL_COLORS, SOURCE_WIRE_COLOR, getPrimaryOutput, MODULE_DISPLAY_NAMES } from './portDefs';
 import { ModuleNode, NodeUIState, useNodeLayout, GhostEdge } from './ModuleNode';
-import { FoundationalPanel } from './FoundationalPanel';
 import './NodeGraph.css';
 
 const NODE_W = 220;
@@ -104,7 +103,6 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
     if (!el) return;
 
     const k = Math.min(Math.max(nextK, 0.15), 2.0);
-    const ratio = k / zoomRef.current;
 
     // Adjust scroll to keep mouse over the same world point
     const worldX = (el.scrollLeft + mouseX) / zoomRef.current;
@@ -554,6 +552,7 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
 
   const sourceCtx: SourceCtx = {
     source: layer.source,
+    layer: layer,
     onChange: handleSourceChange,
     videoProgress,
     onSeek,
@@ -669,6 +668,7 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
             const rows = EFFECT_ROWS[effect.type] ?? [];
             const effectCtx: EffectCtx = {
               effect,
+              layer: layer,
               onUpdate: (upd) => handleUpdateEffect(effect.id, upd),
               linkedScales,
               setLinkedScales,
@@ -705,12 +705,13 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
             const rows = SOURCE_ROWS[mod.type] ?? []; // Most modulators share row defs with sources
             const modCtx: SourceCtx = {
               source: mod,
+              layer: layer,
               onChange: (key, val) => {
-                const nextMods = { ...layer.modulators, [modId]: { ...mod, [key]: val } };
+                const nextMods = { ...layer.modulators, [modId]: { ...mod, [key]: val } as any };
                 updateLayer(layer.id, { modulators: nextMods });
               },
               onUpdate: (upd) => {
-                const nextMods = { ...layer.modulators, [modId]: { ...mod, ...upd } };
+                const nextMods = { ...layer.modulators, [modId]: { ...mod, ...upd } as any };
                 updateLayer(layer.id, { modulators: nextMods });
               }
             };

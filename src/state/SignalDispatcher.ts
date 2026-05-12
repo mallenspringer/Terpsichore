@@ -1,5 +1,5 @@
 import { useEngineStore } from './store';
-import { LayerState, TriggerPadSource, LogicGateEffect, TriggeredGateEffect, InverterEffect } from './types';
+import { LayerState, TriggerPadSource, LogicGateEffect, TriggeredGateEffect, InverterEffect, SignalMathEffect, SampleAndHoldEffect } from './types';
 import { AudioEngine } from './AudioEngine';
 
 // Ring buffer for smoothing temporal values (like rolling means)
@@ -49,7 +49,9 @@ export class SignalDispatcher {
   private lastTime = performance.now();
   private frameCount = 0;
   private lfoPhases: Record<string, number> = {};
-  private noiseStates = new Map<string, { value: number; b0: number; b1: number; b2: number; b3: number; b4: number; b5: number; b6: number; brown: number; seed: number; t: number }>();
+  private noiseStates = new Map<string, { value: number; b0: number; b1: number; b2: number; b3: number; b4: number; b5: number; b6: number; brown: number; seed: number; t: number; lastManualTime: number }>();
+  private shStates: Map<string, number> = new Map();
+  private shLiveStates = new Map<string, boolean>();
   private lastTriggerVals = new Map<string, number>();
   private triggerPadStates = new Map<string, number>();
   private gateLatchStates = new Map<string, boolean>();
@@ -135,32 +137,67 @@ export class SignalDispatcher {
             ctx.signalValues[`${nodeId}.modulation_out`] = finalVal;
           });
           } else if (mod.type === 'Noise') {
-          pipeline.push((ctx: DispatchContext, _dt: number) => {
-            const noise = ctx.layer.modulators?.[nodeId] as any;
-            if (!noise) return;
+            pipeline.push((ctx: DispatchContext, dt: number) => {
+              const noise = ctx.layer.modulators?.[nodeId] as any;
+              if (!noise) return;
 
-            const stateKey = `${ctx.layer.id}.${nodeId}`;
-            let nState = this.noiseStates.get(stateKey);
-            if (!nState) {
-              nState = { value: 0, b0: 0, b1: 0, b2: 0, b3: 0, b4: 0, b5: 0, b6: 0, brown: 0, seed: Math.random(), t: 0 };
-              this.noiseStates.set(stateKey, nState);
-            }
-            const white = Math.random() * 2 - 1;
-            nState.b0 = 0.99886 * nState.b0 + white * 0.0555179;
-            nState.b1 = 0.99332 * nState.b1 + white * 0.0750759;
-            nState.b2 = 0.96900 * nState.b2 + white * 0.1538520;
-            nState.b3 = 0.86650 * nState.b3 + white * 0.3104856;
-            nState.b4 = 0.55000 * nState.b4 + white * 0.5329522;
-            nState.b5 = -0.7616 * nState.b5 - white * 0.0168980;
-            const pink = nState.b0 + nState.b1 + nState.b2 + nState.b3 + nState.b4 + nState.b5 + nState.b6 + white * 0.5362;
-            nState.b6 = white * 0.115926;
-            nState.value = pink * 0.11;
-            
-            const amplitude = (noise.amplitude ?? 1.0) + (ctx.signalValues[`${nodeId}.amplitude_cv`] ?? 0);
-            const offset = (noise.offset ?? 0) + (ctx.signalValues[`${nodeId}.offset_cv`] ?? 0);
-            const finalVal = (nState.value * 0.5 + 0.5) * amplitude + offset;
-            ctx.signalValues[`${nodeId}.modulation_out`] = finalVal;
-          });
+              const stateKey = `${ctx.layer.id}.${nodeId}`;
+              let nState = this.noiseStates.get(stateKey);
+              if (!nState) {
+                nState = { value: 0, b0: 0, b1: 0, b2: 0, b3: 0, b4: 0, b5: 0, b6: 0, brown: 0, seed: Math.random(), t: 0, lastManualTime: 0 };
+                this.noiseStates.set(stateKey, nState);
+              }
+
+              const trigger = ctx.signalValues[`${nodeId}.trigger_in`] ?? 0;
+              const lastTrig = this.lastTriggerVals.get(stateKey) ?? 0;
+              const isRising = trigger > 0.5 && lastTrig <= 0.5;
+              this.lastTriggerVals.set(stateKey, trigger);
+
+              const manualTime = noise.manualTriggerTime ?? 0;
+              const isManualRising = manualTime > nState.lastManualTime;
+              nState.lastManualTime = manualTime;
+
+              const freq = (noise.frequency ?? 1.0) + (ctx.signalValues[`${nodeId}.frequency_cv`] ?? 0);
+              const shouldUpdate = !noise.frozen || isRising || isManualRising;
+
+              if (shouldUpdate) {
+                switch (noise.noiseType) {
+                  case 'white':
+                    nState.value = Math.random() * 2 - 1;
+                    break;
+                  case 'brownian':
+                    nState.brown += (Math.random() * 2 - 1) * freq * dt * 5.0;
+                    nState.brown = Math.max(-1, Math.min(1, nState.brown));
+                    nState.value = nState.brown;
+                    break;
+                  case 'perlin':
+                    nState.t += dt * freq;
+                    nState.value = Math.sin(nState.t) * Math.sin(nState.t * 1.5) * Math.sin(nState.t * 2.1);
+                    break;
+                  case 'pink':
+                  default:
+                    const white = Math.random() * 2 - 1;
+                    nState.b0 = 0.99886 * nState.b0 + white * 0.0555179;
+                    nState.b1 = 0.99332 * nState.b1 + white * 0.0750759;
+                    nState.b2 = 0.96900 * nState.b2 + white * 0.1538520;
+                    nState.b3 = 0.86650 * nState.b3 + white * 0.3104856;
+                    nState.b4 = 0.55000 * nState.b4 + white * 0.5329522;
+                    nState.b5 = -0.7616 * nState.b5 - white * 0.0168980;
+                    const pink = nState.b0 + nState.b1 + nState.b2 + nState.b3 + nState.b4 + nState.b5 + nState.b6 + white * 0.5362;
+                    nState.b6 = white * 0.115926;
+                    nState.value = pink * 0.11;
+                    break;
+                }
+              }
+
+              const amplitude = (noise.amplitude ?? 1.0) + (ctx.signalValues[`${nodeId}.amplitude_cv`] ?? 0);
+              const offset = (noise.offset ?? 0) + (ctx.signalValues[`${nodeId}.offset_cv`] ?? 0);
+              
+              let v = nState.value;
+              if (!noise.bipolar) v = v * 0.5 + 0.5;
+              
+              ctx.signalValues[`${nodeId}.modulation_out`] = v * amplitude + offset;
+            });
           } else if (mod.type === 'TriggerPad') {
           pipeline.push((ctx: DispatchContext, dt: number) => {
             const pad = ctx.layer.modulators?.[nodeId] as TriggerPadSource;
@@ -301,7 +338,7 @@ export class SignalDispatcher {
             });
           } else if (effect.type === 'SignalMath') {
             pipeline.push((ctx: DispatchContext) => {
-              const ef = ctx.layer.effects.find(e => e.id === nodeId) as any;
+              const ef = ctx.layer.effects.find(e => e.id === nodeId) as SignalMathEffect;
               if (!ef) return;
               const a = (ctx.signalValues[`${nodeId}.in_a`] ?? 0) + (ef.operandA ?? 0);
               const b = (ctx.signalValues[`${nodeId}.in_b`] ?? 0) + (ef.operandB ?? 0);
@@ -316,6 +353,75 @@ export class SignalDispatcher {
                 case 'pow': res = Math.pow(Math.abs(a), b); break;
               }
               ctx.signalValues[`${nodeId}.out`] = res;
+            });
+          } else if (effect.type === 'SampleAndHold') {
+            pipeline.push((ctx: DispatchContext) => {
+              const sh = ctx.layer.effects.find(e => e.id === nodeId) as SampleAndHoldEffect;
+              if (!sh) return;
+              const trigger = ctx.signalValues[`${nodeId}.trigger`] ?? 0;
+              const stateKey = `${ctx.layer.id}.${nodeId}`;
+              
+              const lastManualTime = this.lastTriggerVals.get(`${stateKey}.manual`) ?? 0;
+              const currentManualTime = sh.manualTriggerTime ?? 0;
+              const isManualRising = currentManualTime > lastManualTime;
+              this.lastTriggerVals.set(`${stateKey}.manual`, currentManualTime);
+
+              const lastTrig = this.lastTriggerVals.get(stateKey) ?? 0;
+              const isRising = (trigger > 0.5 && lastTrig <= 0.5) || isManualRising;
+              this.lastTriggerVals.set(stateKey, trigger);
+
+              // Get current live state (sync with store if first time)
+              let live = this.shLiveStates.get(stateKey);
+              if (live === undefined) {
+                live = sh.isLive;
+                this.shLiveStates.set(stateKey, live);
+              }
+              // If store value changed manually, override
+              if (sh.isLive !== live) {
+                live = sh.isLive;
+                this.shLiveStates.set(stateKey, live);
+              }
+
+              const toggleTrig = ctx.signalValues[`${nodeId}.live_toggle`] ?? 0;
+              const lastToggle = this.lastTriggerVals.get(`${stateKey}.live_toggle`) ?? 0;
+              const isToggleRising = toggleTrig > 0.5 && lastToggle <= 0.5;
+              this.lastTriggerVals.set(`${stateKey}.live_toggle`, toggleTrig);
+
+              if (isToggleRising) {
+                live = !live;
+                this.shLiveStates.set(stateKey, live);
+                // If flipping to Hold, also trigger a capture to be consistent with toggle behavior
+                if (!live) {
+                  const val = ctx.signalValues[`${nodeId}.sig_in`] ?? 0;
+                  this.shStates.set(stateKey, val);
+                }
+              }
+
+              if (isRising) {
+                if (sh.triggerMode === 'freeze_toggle') {
+                  live = !live;
+                  this.shLiveStates.set(stateKey, live);
+                  // Capture if flipping to Hold
+                  if (!live) {
+                    const val = ctx.signalValues[`${nodeId}.sig_in`] ?? 0;
+                    this.shStates.set(stateKey, val);
+                  }
+                } else if (sh.triggerMode === 'sample_show') {
+                  live = false;
+                  this.shLiveStates.set(stateKey, live);
+                  const val = ctx.signalValues[`${nodeId}.sig_in`] ?? 0;
+                  this.shStates.set(stateKey, val);
+                } else { // sample_only
+                  const val = ctx.signalValues[`${nodeId}.sig_in`] ?? 0;
+                  this.shStates.set(stateKey, val);
+                }
+              }
+
+              if (live) {
+                ctx.signalValues[`${nodeId}.sig_out`] = ctx.signalValues[`${nodeId}.sig_in`] ?? 0;
+              } else {
+                ctx.signalValues[`${nodeId}.sig_out`] = this.shStates.get(stateKey) ?? 0;
+              }
             });
           } else if (effect.type === 'Path') {
             pipeline.push((ctx: DispatchContext) => {

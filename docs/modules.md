@@ -119,7 +119,9 @@ Stochastic control signal generator (CPU-bound).
     *   **Frequency**: Rate of change (evolution speed).
     *   **Amplitude / Offset**: Scaling and bias.
     *   **Bipolar Toggle**: Outputs between `0 to 1` or `-1 to 1`.
-*   **Use Cases**: Adding "jitter" to parameters, simulating organic camera shake, or subtle drifting modulation.
+    *   **Lock Value**: Freezes the noise at its current value, preventing further evolution.
+    *   **Sample Trigger/Button**: When locked, a rising edge on the `Sample` input (or clicking the UI button) generates a single new random value and holds it.
+*   **Use Cases**: Creating discrete random steps (Sample & Hold), adding "jitter" to parameters, or simulating organic camera shake.
 
 ### Logic Gate (⊦)
 Comparison-based signal processing.
@@ -163,3 +165,14 @@ Routes signals between layers.
     *   Outputs are stored in a global `interLayerBus` in the `SignalDispatcher`.
     *   Inputs pull from this bus at the start of the dispatch cycle.
     *   Enables complex cross-layer modulation (e.g., Layer 1's audio peak controlling Layer 3's rotation).
+
+### Sample and Hold (?)
+A dual-mode capture module for both video and control signals.
+*   **Behavior**: When a trigger is received, the current value of the input signal (or the current frame of the video input) is captured and held until the next trigger.
+*   **Parameters**:
+    *   **SAMPLE / CAPTURE**: Manual trigger button in UI.
+*   **Signal Behaviors**:
+    *   **Trigger In**: Rising edge triggers a new capture.
+    *   **Sig In/Out**: Modulation path (CPU).
+    *   **Video In/Out**: Video path (GPU).
+*   **Use Cases**: Creating stepped/pixelated time effects, capturing a specific color or position for later use, or "freezing" a video frame while audio modulation continues.

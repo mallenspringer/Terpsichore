@@ -4,7 +4,6 @@ import { useEngineStore } from "./state/store";
 import { Renderer } from "./renderer/Renderer";
 import { Sidebar } from "./components/Sidebar";
 import { NodeGraph } from "./components/NodeGraph/NodeGraph";
-import { FoundationalPanel } from "./components/NodeGraph/FoundationalPanel";
 
 function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -12,7 +11,6 @@ function App() {
   
   // Store Subscriptions
   const layers = useEngineStore(s => s.layers);
-  const layerOrder = useEngineStore(s => s.layerOrder);
   const resolution = useEngineStore(s => s.resolution);
   const activeLayerId = useEngineStore(s => s.activeLayerId);
   const setActiveLayerId = useEngineStore(s => s.setActiveLayerId);
@@ -69,16 +67,45 @@ function App() {
 
       Object.entries(layers).forEach(([layerId, layer]) => {
         const nextModulators = { ...layer.modulators };
-        let changed = false;
+        let modChanged = false;
         Object.entries(layer.modulators || {}).forEach(([modId, mod]) => {
           if (mod.type === 'TriggerPad' && (mod as any).keyMapping === key) {
             if (mod.isPressed !== isDown) {
               nextModulators[modId] = { ...mod, isPressed: isDown };
-              changed = true;
+              modChanged = true;
             }
           }
         });
-        if (changed) updateLayer(layerId, { modulators: nextModulators });
+
+        const nextEffects = [...(layer.effects || [])];
+        let effChanged = false;
+        if (isDown) { // Only trigger S&H on keydown
+          nextEffects.forEach((eff, idx) => {
+            if (eff.type === 'SampleAndHold' && (eff as any).keyMapping === key) {
+              const sh = eff as any;
+              if (sh.triggerMode === 'freeze_toggle') {
+                const newLive = !sh.isLive;
+                nextEffects[idx] = { 
+                  ...eff, 
+                  isLive: newLive, 
+                  manualTriggerTime: !newLive ? Date.now() : sh.manualTriggerTime 
+                };
+              } else if (sh.triggerMode === 'sample_show') {
+                nextEffects[idx] = { ...eff, isLive: false, manualTriggerTime: Date.now() };
+              } else { // sample_only
+                nextEffects[idx] = { ...eff, manualTriggerTime: Date.now() };
+              }
+              effChanged = true;
+            }
+          });
+        }
+
+        if (modChanged || effChanged) {
+          updateLayer(layerId, { 
+            modulators: modChanged ? nextModulators : layer.modulators,
+            effects: effChanged ? nextEffects : layer.effects
+          });
+        }
       });
     };
     const onDown = (e: KeyboardEvent) => handleKey(e, true);

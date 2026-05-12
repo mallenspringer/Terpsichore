@@ -9,13 +9,14 @@ import {
   Transform2DEffect, ColorAdjustEffect, LumaKeyEffect, SimpleFeedbackEffect,
   InterLayerOutputEffect, InterLayerInputEffect, ColorRGBEffect, LumaSplitterEffect,
   SpawnEffect, RGBMixerEffect, PathEffect, LogicGateEffect, TriggeredGateEffect, InverterEffect,
-  PatternEffect, KaleidoscopeEffect, SignalMathEffect
+  PatternEffect, KaleidoscopeEffect, SignalMathEffect, SampleAndHoldEffect
 } from '../../state/types';
 
 // ── Context types ──────────────────────────────────────────────────────────────
 
 export interface SourceCtx {
   source: AnySource;
+  layer: any; // Using any to avoid circular import issues if necessary, but we'll try to use the type
   onChange: (key: string, value: any) => void;
   onUpdate?: (updates: Partial<AnySource>) => void;
   videoProgress?: { currentTime: number; duration: number };
@@ -31,6 +32,7 @@ export interface SourceCtx {
 
 export interface EffectCtx {
   effect: AnyEffect;
+  layer: any;
   onUpdate: (updates: Partial<AnyEffect>) => void;
   linkedScales?: Record<string, boolean>;
   setLinkedScales?: (s: Record<string, boolean>) => void;
@@ -51,6 +53,51 @@ const eff = <T extends AnyEffect>(ctx: RowCtx) => (ctx as EffectCtx).effect as T
 const chg = (ctx: RowCtx) => (ctx as SourceCtx).onChange;
 const sup = (ctx: RowCtx) => (ctx as SourceCtx).onUpdate;
 const upd = (ctx: RowCtx) => (ctx as EffectCtx).onUpdate;
+
+const KEY_COLORS: Record<string, string> = {
+  '1': '#ff4444', '2': '#ff8844', '3': '#ffcc44', '4': '#88cc00', '5': '#44ffcc',
+  '6': '#4488ff', '7': '#8844ff', '8': '#cc44ff', '9': '#ff44cc', '0': '#ffffff'
+};
+
+const KeyMappingRow = ({ label, value, onChange, ctx }: { label: string, value: string, onChange: (v: string) => void, ctx: RowCtx }) => {
+  const layer = (ctx as any).layer;
+  const usedKeys = new Set<string>();
+  if (layer) {
+    Object.values(layer.modulators || {}).forEach((m: any) => {
+      if (m.keyMapping && m.keyMapping !== 'none') usedKeys.add(m.keyMapping);
+    });
+    (layer.effects || []).forEach((e: any) => {
+      if (e.keyMapping && e.keyMapping !== 'none') usedKeys.add(e.keyMapping);
+    });
+  }
+
+  return (
+    <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} onDragStart={e => e.stopPropagation()}>
+      <span className="rack-row-label">{label}</span>
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 6, flex: 1 }}>
+        <select 
+          value={value} 
+          onChange={e => onChange(e.target.value)}
+          style={{ flex: 1 }}
+        >
+          <option value="none">None</option>
+          {['1','2','3','4','5','6','7','8','9','0'].map(k => (
+            <option key={k} value={k}>
+              {k} {usedKeys.has(k) ? '●' : '○'}
+            </option>
+          ))}
+        </select>
+        {value !== 'none' && (
+          <div style={{ 
+            width: 8, height: 8, borderRadius: '50%', 
+            background: KEY_COLORS[value] || '#fff',
+            boxShadow: `0 0 4px ${KEY_COLORS[value] || '#fff'}`
+          }} />
+        )}
+      </div>
+    </div>
+  );
+};
 
 const Slider = ({ label, min, max, step, value, onChange, resetValue = 0 }: {
   label?: string; min: number; max: number; step: number; value: number;
@@ -517,15 +564,7 @@ export const SOURCE_ROWS: Record<string, ControlRowDef[]> = {
       )
     },
     { id: 'keyMapping', label: 'Key',
-      render: ctx => (
-        <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} onDragStart={e => e.stopPropagation()}>
-          <span className="rack-row-label">Key Map</span>
-          <select value={src<TriggerPadSource>(ctx).keyMapping} onChange={e => chg(ctx)('keyMapping', e.target.value)}>
-            <option value="none">None</option>
-            {['1','2','3','4','5','6','7','8','9','0'].map(k => <option key={k} value={k}>{k}</option>)}
-          </select>
-        </div>
-      )
+      render: ctx => <KeyMappingRow label="Key Map" value={src<TriggerPadSource>(ctx).keyMapping ?? 'none'} onChange={v => chg(ctx)('keyMapping', v)} ctx={ctx} />
     },
     { id: 'useEnvelope', label: 'Env',
       render: ctx => {
@@ -571,6 +610,23 @@ export const SOURCE_ROWS: Record<string, ControlRowDef[]> = {
     },
     { id: 'persistence', label: 'Persist',
       render: ctx => src<NoiseModulatorSource>(ctx).noiseType === 'perlin' ? <Slider label="Persistence" min={0} max={1} step={0.01} value={src<NoiseModulatorSource>(ctx).persistence} onChange={v => chg(ctx)('persistence', v)} /> : null
+    },
+    { id: 'frozen', label: 'Lock',
+      render: ctx => {
+        const frozen = src<NoiseModulatorSource>(ctx).frozen;
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} onDragStart={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <span className="rack-row-label">Lock Value</span>
+            <input type="checkbox" checked={frozen} onChange={e => chg(ctx)('frozen', e.target.checked)} />
+            {frozen && (
+              <button className="rack-small-btn" style={{ marginLeft: 'auto', fontSize: 9, padding: '2px 8px', background: '#333', color: '#88cc00', border: '1px solid #444', borderRadius: 2 }}
+                onClick={() => chg(ctx)('manualTriggerTime', Date.now())}>
+                SAMPLE
+              </button>
+            )}
+          </div>
+        );
+      }
     },
     { id: 'bipolar', label: 'Polarity',
       render: ctx => (
@@ -1336,5 +1392,67 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
       render: ctx => <Slider label="Manual B" min={-2} max={2} step={0.01} resetValue={0}
         value={eff<SignalMathEffect>(ctx).operandB} onChange={v => upd(ctx)({ operandB: v })} />
     },
+  ],
+  SampleAndHold: [
+    { id: 'trigger', label: 'Capture',
+      render: ctx => (
+        <div className="rack-row-content" style={{ padding: '4px 0' }}>
+          <button className="rack-trigger-btn"
+            style={{ width: '100%', height: 32, background: '#111', border: '1px solid #333', color: '#88cc00', fontSize: 11, fontWeight: 'bold' }}
+            onPointerDown={e => e.stopPropagation()}
+            onClick={() => upd(ctx)({ manualTriggerTime: Date.now() })}>
+            SNAP / CAPTURE
+          </button>
+        </div>
+      )
+    },
+    { id: 'bypass', label: 'Output',
+      render: ctx => {
+        const sh = eff<SampleAndHoldEffect>(ctx);
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()}>
+            <span className="rack-row-label">Source</span>
+            <div className="rack-button-group" style={{ display: 'flex', gap: 2, flex: 1 }}>
+              <button 
+                className={`group-btn ${sh.isLive ? 'active' : ''}`}
+                style={{ flex: 1, height: 18, border: '1px solid #333', borderRadius: '2px 0 0 2px', fontSize: 9, background: sh.isLive ? '#88cc00' : '#1a1a1a', color: sh.isLive ? '#000' : '#888', cursor: 'pointer' }}
+                onClick={() => upd(ctx)({ isLive: true })}
+              >LIVE</button>
+              <button 
+                className={`group-btn ${!sh.isLive ? 'active' : ''}`}
+                style={{ flex: 1, height: 18, border: '1px solid #333', borderLeft: 'none', borderRadius: '0 2px 2px 0', fontSize: 9, background: !sh.isLive ? '#4a9eff' : '#1a1a1a', color: !sh.isLive ? '#000' : '#888', cursor: 'pointer' }}
+                onClick={() => upd(ctx)({ isLive: false })}
+              >BUFFER</button>
+            </div>
+          </div>
+        );
+      }
+    },
+    { id: 'triggerMode', label: 'Mode',
+      render: ctx => (
+        <div className="rack-row-content" onPointerDown={e => e.stopPropagation()}>
+          <span className="rack-row-label">Trig Mode</span>
+          <select 
+            value={eff<SampleAndHoldEffect>(ctx).triggerMode} 
+            onChange={e => upd(ctx)({ triggerMode: e.target.value as any })}
+            style={{ width: '100%', background: '#111', color: '#ccc', border: '1px solid #333', fontSize: 10 }}
+          >
+            <option value="sample_show">Sample & Show</option>
+            <option value="freeze_toggle">Freeze Toggle</option>
+            <option value="sample_only">Sample Only (BG)</option>
+          </select>
+        </div>
+      )
+    },
+    { id: 'keyMapping', label: 'Key',
+      render: ctx => <KeyMappingRow label="Key Map" value={eff<SampleAndHoldEffect>(ctx).keyMapping ?? 'none'} onChange={v => upd(ctx)({ keyMapping: v })} ctx={ctx} />
+    },
+    { id: 'info', label: 'Status',
+      render: () => (
+        <div className="rack-row-content" style={{ fontSize: 9, color: '#666', fontStyle: 'italic', padding: '0 4px' }}>
+          Modes: S&H (Auto-show), Freeze (Toggle), BG (Silent capture).
+        </div>
+      )
+    }
   ],
 };

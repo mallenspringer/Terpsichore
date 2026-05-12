@@ -52,6 +52,7 @@ const ALL_MODULES: ModuleEntry[] = [
   { id: 'LogicGate',      glyph: '⊦', label: 'Logic',     tooltip: 'Signal Comparison (AND/OR/XOR)', category: 'Utility', moduleType: 'effect:LogicGate'       },
   { id: 'TriggeredGate',  glyph: 'Gate', label: 'Trig Gate', tooltip: 'Signal Gating / Routing',      category: 'Utility', moduleType: 'effect:TriggeredGate'   },
   { id: 'SignalMath',     glyph: '∑', label: 'Math',      tooltip: 'Signal Processing (A + B, A * B)', category: 'Utility', moduleType: 'effect:SignalMath'     },
+  { id: 'SampleAndHold',  glyph: '◲', label: 'S&H',       tooltip: 'Capture Signal/Frame on Trigger', category: 'Utility', moduleType: 'effect:SampleAndHold'  },
 ];
 
 const DEFAULT_BANK_IDS = ALL_MODULES.map(m => m.id);

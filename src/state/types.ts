@@ -116,6 +116,8 @@ export interface NoiseModulatorSource {
   octaves: number;
   persistence: number;
   bipolar: boolean;
+  frozen: boolean;
+  manualTriggerTime: number;
 }
 
 export interface NoiseVideoSource {
@@ -191,6 +193,16 @@ export interface AudioAnalyzerEffect {
   smoothing: number; // 0.0 to 0.99
   sensitivity: number;
   logarithmic: boolean;
+}
+
+export interface SampleAndHoldEffect {
+  id: string;
+  type: 'SampleAndHold';
+  lastSampledValue: number;
+  manualTriggerTime: number;
+  keyMapping?: string;
+  isLive: boolean;
+  triggerMode: 'sample_show' | 'freeze_toggle' | 'sample_only';
 }
 
 export interface BipolarConverterEffect {
@@ -345,13 +357,13 @@ export type AnyEffect =
   | SimpleFeedbackEffect | AudioAnalyzerEffect | BipolarConverterEffect
   | InterLayerOutputEffect | InterLayerInputEffect | ColorRGBEffect 
   | LumaSplitterEffect | RGBMixerEffect | SpawnEffect | PathEffect | InverterEffect
-  | LogicGateEffect | TriggeredGateEffect | PatternEffect | KaleidoscopeEffect | SignalMathEffect;
+  | LogicGateEffect | TriggeredGateEffect | PatternEffect | KaleidoscopeEffect | SignalMathEffect | SampleAndHoldEffect;
 
 export type EffectType = 
   | 'Transform2D' | 'ColorAdjust' | 'LumaKey' | 'SimpleFeedback' 
   | 'AudioAnalyzer' | 'BipolarConverter' | 'InterLayerOutput' | 'InterLayerInput' 
   | 'ColorRGB' | 'LumaSplitter' | 'RGBMixer' | 'Spawn' | 'Path' | 'Inverter'
-  | 'LogicGate' | 'TriggeredGate' | 'Pattern' | 'Kaleidoscope' | 'SignalMath';
+  | 'LogicGate' | 'TriggeredGate' | 'Pattern' | 'Kaleidoscope' | 'SignalMath' | 'SampleAndHold';
 
 // --- GRAPH ---
 export interface GraphEdge {

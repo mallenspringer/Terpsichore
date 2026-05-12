@@ -31,6 +31,7 @@ export const PORT_DEFS: Record<string, PortDef[]> = {
     { id: 'frequency_cv',   label: 'Freq CV',  direction: 'in',  signalType: 'modulation', priority: 1 },
     { id: 'amplitude_cv',   label: 'Amp CV',   direction: 'in',  signalType: 'modulation', priority: 2 },
     { id: 'offset_cv',      label: 'Offs CV',  direction: 'in',  signalType: 'modulation', priority: 3 },
+    { id: 'trigger_in',     label: 'Sample',   direction: 'in',  signalType: 'trigger',    priority: 4 }
   ],
   NoiseSource: [
     { id: 'video_out',      label: 'Video Out', direction: 'out', signalType: 'video', priority: 0 },
@@ -197,6 +198,14 @@ export const PORT_DEFS: Record<string, PortDef[]> = {
   None: [],
   __OUTPUT__: [
     { id: 'composite_in', label: 'Composite In', direction: 'in', signalType: 'video' },
+  ],
+  SampleAndHold: [
+    { id: 'video_in',  label: 'Video In', direction: 'in',  signalType: 'video' },
+    { id: 'sig_in',    label: 'Sig In',   direction: 'in',  signalType: 'modulation' },
+    { id: 'trigger',   label: 'Capture',  direction: 'in',  signalType: 'trigger' },
+    { id: 'live_toggle', label: 'Live/Buff', direction: 'in', signalType: 'trigger' },
+    { id: 'video_out', label: 'Video Out',direction: 'out', signalType: 'video', priority: 0 },
+    { id: 'sig_out',   label: 'Sig Out',  direction: 'out', signalType: 'modulation', priority: 1 },
   ],
 };
 

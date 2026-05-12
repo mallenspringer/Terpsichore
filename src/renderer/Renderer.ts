@@ -24,7 +24,7 @@ import {
   SimpleFeedbackEffect, ColorRGBEffect, LumaSplitterEffect, RGBMixerEffect, 
   VideoURLSource, VideoFileSource, WebcamCaptureSource, ImageLoaderSource, ImageFileSource, 
   SpawnEffect, PathEffect, NoiseVideoSource, InverterEffect,
-  PatternEffect, KaleidoscopeEffect,
+  PatternEffect, KaleidoscopeEffect, SampleAndHoldEffect,
   LayerState
 } from '../state/types';
 
@@ -845,6 +845,7 @@ export class Renderer {
 
   private frameCount = 0;
   private spawnStates = new Map<string, SpawnedObject[]>();
+  private shLiveStates = new Map<string, boolean>();
   private lastTriggerVals = new Map<string, number>();
   private patternMirrorStates = new Map<string, { x: boolean, y: boolean }>();
 
@@ -1326,6 +1327,81 @@ export class Renderer {
                 0, 0, 0
               ]));
               entries = [{ binding: 0, resource: { buffer: uniformBuffer } }, { binding: 1, resource: this.sampler }, { binding: 2, resource: inputTex.createView() }];
+            } else if (effect.type === 'SampleAndHold') {
+              const sh = effect as SampleAndHoldEffect;
+              const trigger = layer.signalValues?.[`${nodeId}.trigger`] ?? 0;
+              const lastTrig = this.lastTriggerVals.get(`${nodeId}.trigger`) ?? 0;
+              
+              const currentManualTime = sh.manualTriggerTime ?? 0;
+              const lastManualTime = this.lastTriggerVals.get(`${nodeId}.manualTrigger`) ?? 0;
+              const isManualRising = currentManualTime > lastManualTime;
+              this.lastTriggerVals.set(`${nodeId}.manualTrigger`, currentManualTime);
+
+              const isRising = (trigger > 0.5 && lastTrig <= 0.5) || isManualRising;
+              this.lastTriggerVals.set(`${nodeId}.trigger`, trigger);
+
+              const heldTex = this.ensureTexture(nodeId, 'held');
+
+              // Handle modes
+              let live = this.shLiveStates.get(nodeId);
+              if (live === undefined) {
+                live = sh.isLive;
+                this.shLiveStates.set(nodeId, live);
+              }
+              if (sh.isLive !== live) {
+                live = sh.isLive;
+                this.shLiveStates.set(nodeId, live);
+              }
+
+              const toggleTrig = layer.signalValues?.[`${nodeId}.live_toggle`] ?? 0;
+              const lastToggle = this.lastTriggerVals.get(`${nodeId}.live_toggle`) ?? 0;
+              const isToggleRising = toggleTrig > 0.5 && lastToggle <= 0.5;
+              this.lastTriggerVals.set(`${nodeId}.live_toggle`, toggleTrig);
+
+              if (isToggleRising) {
+                live = !live;
+                this.shLiveStates.set(nodeId, live);
+                // If flipping to Hold, capture current frame
+                if (!live) {
+                  commandEncoder.copyTextureToTexture(
+                    { texture: inputTex },
+                    { texture: heldTex },
+                    [this.canvas.width, this.canvas.height]
+                  );
+                }
+              }
+
+              if (isRising) {
+                if (sh.triggerMode === 'freeze_toggle') {
+                  live = !live;
+                  this.shLiveStates.set(nodeId, live);
+                  if (!live) {
+                    commandEncoder.copyTextureToTexture(
+                      { texture: inputTex },
+                      { texture: heldTex },
+                      [this.canvas.width, this.canvas.height]
+                    );
+                  }
+                } else if (sh.triggerMode === 'sample_show') {
+                  live = false;
+                  this.shLiveStates.set(nodeId, live);
+                  commandEncoder.copyTextureToTexture(
+                    { texture: inputTex },
+                    { texture: heldTex },
+                    [this.canvas.width, this.canvas.height]
+                  );
+                } else { // sample_only
+                  commandEncoder.copyTextureToTexture(
+                    { texture: inputTex },
+                    { texture: heldTex },
+                    [this.canvas.width, this.canvas.height]
+                  );
+                }
+              }
+
+              pipeline = this.blitPipeline;
+              const displayTex = live ? inputTex : heldTex;
+              entries = [{ binding: 0, resource: displayTex.createView() }, { binding: 1, resource: this.sampler }];
             }
 
             if (pipeline) {

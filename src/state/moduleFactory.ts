@@ -65,6 +65,11 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
     case 'SignalMath':
     case 'Math': 
       return { id, type: 'SignalMath', operator: 'add', operandA: 0, operandB: 0 };
+    case 'SampleAndHold':
+      return { 
+        id, type: 'SampleAndHold', lastSampledValue: 0, manualTriggerTime: 0, keyMapping: 'none',
+        isLive: false, triggerMode: 'sample_show' 
+      };
     case 'SimpleFeedback':
       return { id, type: 'SimpleFeedback', feedbackAmount: 0.9, zoom: 0.95, angle: 0.05 };
     default:
@@ -79,7 +84,7 @@ export function createDefaultModulator(type: string): any {
     case 'TriggerPad':
       return { type, isPressed: false, keyMapping: 'none', useEnvelope: false, attack: 0.1, release: 0.5 };
     case 'Noise':
-      return { type, noiseType: 'white', frequency: 1.0, amplitude: 1.0, octaves: 4, persistence: 0.5, bipolar: true };
+      return { type, noiseType: 'white', frequency: 1.0, amplitude: 1.0, octaves: 4, persistence: 0.5, bipolar: true, frozen: false, manualTriggerTime: 0 };
     default:
       return { type: 'TriggerPad', isPressed: false, keyMapping: 'none', useEnvelope: false, attack: 0.1, release: 0.5 };
   }
