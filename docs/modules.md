@@ -108,6 +108,19 @@ Algebraic processor for two control signals.
     *   **Pow**: Exponential curving (useful for snappier transients).
 *   **Parameters**: `Manual A` and `Manual B` act as baseline offsets for the input ports.
 
+### Noise (🎲)
+Stochastic control signal generator (CPU-bound).
+*   **Noise Types**:
+    *   **White**: Pure randomness every frame.
+    *   **Pink**: Balanced spectral density (1/f), less "hiss" than white noise.
+    *   **Brown**: Random walk/Brownian motion, very smooth and drifting.
+    *   **Perlin**: Smooth 1D gradient noise.
+*   **Parameters**:
+    *   **Frequency**: Rate of change (evolution speed).
+    *   **Amplitude / Offset**: Scaling and bias.
+    *   **Bipolar Toggle**: Outputs between `0 to 1` or `-1 to 1`.
+*   **Use Cases**: Adding "jitter" to parameters, simulating organic camera shake, or subtle drifting modulation.
+
 ### Logic Gate (⊦)
 Comparison-based signal processing.
 *   **Operators**: AND, OR, XOR, NAND, NOR.
