@@ -12,6 +12,7 @@ import { LumaSplitterWGSL } from './shaders/LumaSplitter';
 import { SpawnWGSL, SpawnVertexWGSL } from './shaders/Spawn';
 import { NoiseSourceVertexWGSL, NoiseSourceFragmentWGSL } from './shaders/NoiseSource';
 import { InverterWGSL } from './shaders/Inverter';
+import { VideoMixerWGSL } from './shaders/VideoMixer';
 import { TriggeredGateWGSL } from './shaders/TriggeredGate';
 import { PatternWGSL } from './shaders/Pattern';
 import { KaleidoscopeWGSL } from './shaders/Kaleidoscope';
@@ -20,7 +21,7 @@ import { PORT_DEFS } from '../components/NodeGraph/portDefs';
 import { SignalDispatcher } from '../state/SignalDispatcher';
 import { 
   ShapeGeneratorSource, Transform2DEffect, ColorAdjustEffect, LumaKeyEffect, 
-  SimpleFeedbackEffect, ColorRGBEffect, LumaSplitterEffect, 
+  SimpleFeedbackEffect, ColorRGBEffect, LumaSplitterEffect, VideoMixerEffect,
   VideoURLSource, VideoFileSource, WebcamCaptureSource, ImageLoaderSource, ImageFileSource, 
   SpawnEffect, PathEffect, NoiseVideoSource, InverterEffect,
   PatternEffect, KaleidoscopeEffect, SampleAndHoldEffect,
@@ -75,6 +76,7 @@ export class Renderer {
   private blitPipeline!: GPURenderPipeline;
   private inverterPipeline!: GPURenderPipeline;
   private triggeredGatePipeline!: GPURenderPipeline;
+  private videoMixerPipeline!: GPURenderPipeline;
   private patternPipeline!: GPURenderPipeline;
   private kaleidoscopePipeline!: GPURenderPipeline;
   
@@ -401,6 +403,30 @@ export class Renderer {
       fragment: { module: this.device.createShaderModule({ code: TriggeredGateWGSL }), entryPoint: 'fs_main', targets }, 
       primitive 
     });
+
+    this.videoMixerPipeline = this.device.createRenderPipeline({
+      layout: this.device.createPipelineLayout({
+        bindGroupLayouts: [
+          this.device.createBindGroupLayout({
+            entries: [
+              { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+              { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+              { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+              { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+              { binding: 4, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+              { binding: 5, visibility: GPUShaderStage.FRAGMENT, sampler: {} }
+            ]
+          })
+        ]
+      }),
+      vertex,
+      fragment: { 
+        module: this.device.createShaderModule({ code: VideoMixerWGSL }), 
+        entryPoint: 'fs_main', 
+        targets: [{ format: this.format }] 
+      },
+      primitive
+    });
     
     
 
@@ -519,6 +545,7 @@ export class Renderer {
     this.effectLayouts.set('Kaleidoscope', this.kaleidoscopePipeline.getBindGroupLayout(0));
     this.effectLayouts.set('SimpleFeedback', this.feedbackPipeline.getBindGroupLayout(0));
     this.effectLayouts.set('TriggeredGate', this.triggeredGatePipeline.getBindGroupLayout(0));
+    this.effectLayouts.set('VideoMixer', this.videoMixerPipeline.getBindGroupLayout(0));
     this.effectLayouts.set('LumaSplitter', this.lumaSplitPipeline.getBindGroupLayout(0));
   }
 
@@ -1415,6 +1442,41 @@ export class Renderer {
               pipeline = this.blitPipeline;
               const displayTex = live ? inputTex : heldTex;
               entries = [{ binding: 0, resource: displayTex.createView() }, { binding: 1, resource: this.sampler }];
+            } else if (effect.type === 'VideoMixer') {
+              pipeline = this.videoMixerPipeline;
+              const ef = effect as VideoMixerEffect;
+              const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 48);
+              const modeMap: Record<string, number> = { normal: 0, add: 1, screen: 2, mult: 3 };
+              
+              const f32 = new Float32Array(12);
+              f32[0] = this.getEffectiveParam(layer, ef.id, 'v1_cv', ef.v1, timeSec);
+              f32[1] = this.getEffectiveParam(layer, ef.id, 'v2_cv', ef.v2, timeSec);
+              f32[2] = this.getEffectiveParam(layer, ef.id, 'v3_cv', ef.v3, timeSec);
+              f32[3] = this.getEffectiveParam(layer, ef.id, 'v4_cv', ef.v4, timeSec);
+              
+              const u32 = new Uint32Array(f32.buffer);
+              u32[4] = modeMap[ef.v1Mode] || 0;
+              u32[5] = modeMap[ef.v2Mode] || 0;
+              u32[6] = modeMap[ef.v3Mode] || 0;
+              u32[7] = modeMap[ef.v4Mode] || 0;
+              
+              f32[8] = this.getEffectiveParam(layer, ef.id, 'master_cv', ef.masterGain, timeSec);
+
+              this.device.queue.writeBuffer(uniformBuffer, 0, f32);
+
+              const v1 = this.getTextureForNode(nodeId, 'v1_in')?.createView() ?? inputTex.createView();
+              const v2 = this.getTextureForNode(nodeId, 'v2_in')?.createView() ?? inputTex.createView();
+              const v3 = this.getTextureForNode(nodeId, 'v3_in')?.createView() ?? inputTex.createView();
+              const v4 = this.getTextureForNode(nodeId, 'v4_in')?.createView() ?? inputTex.createView();
+              
+              entries = [
+                { binding: 0, resource: { buffer: uniformBuffer } },
+                { binding: 1, resource: v1 },
+                { binding: 2, resource: v2 },
+                { binding: 3, resource: v3 },
+                { binding: 4, resource: v4 },
+                { binding: 5, resource: this.sampler }
+              ];
             }
 
             if (pipeline) {

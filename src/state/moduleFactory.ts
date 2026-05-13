@@ -60,6 +60,7 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
     case 'LogicGate': return { id, type: 'LogicGate', mode: 'and', thresholdA: 0.5, thresholdB: 0.5 };
     case 'TriggeredGate': return { id, type: 'TriggeredGate', gateMode: 'momentary', defaultState: 'off', threshold: 0.5, active: false, gateOpen: false };
     case 'Pattern': return { id, type: 'Pattern', countX: 2, countY: 2, spacingX: 0, spacingY: 0, offsetX: 0, offsetY: 0, alternateMirrorX: false, alternateMirrorY: false, syncCount: true, syncSpacing: true, syncOffset: true, mirrorXTrigger: false, mirrorYTrigger: false } as any;
+    case 'VideoMixer': return { id, type: 'VideoMixer', v1: 1, v2: 0, v3: 0, v4: 0, v1Mode: 'normal', v2Mode: 'add', v3Mode: 'add', v4Mode: 'add', masterGain: 1.0 };
     case 'Kaleidoscope': return { id, type: 'Kaleidoscope', segments: 6, angle: 0, zoom: 1.0, center: [0.5, 0.5] };
     case 'SignalMath':
     case 'Math': 
@@ -71,6 +72,21 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
       };
     case 'SimpleFeedback':
       return { id, type: 'SimpleFeedback', feedbackAmount: 0.9, zoom: 0.95, angle: 0.05 };
+    case 'StepSequencer':
+      return {
+        id, type: 'StepSequencer',
+        steps: 8,
+        currentStep: 0,
+        rate: 2.0,
+        rateMode: 'hz',
+        shuffle: 0,
+        slew: 0.1,
+        playState: 'play',
+        direction: 'forward',
+        stepValues: new Array(16).fill(0.5),
+        endStep: 7,
+        manualResetTrigger: 0
+      };
     default:
       return { id, type: 'SimpleFeedback', feedbackAmount: 0.9, zoom: 0.95, angle: 0.05 } as any;
   }

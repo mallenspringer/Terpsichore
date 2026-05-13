@@ -204,6 +204,31 @@ export const PORT_DEFS: Record<string, PortDef[]> = {
     { id: 'video_out', label: 'Video Out',direction: 'out', signalType: 'video', priority: 0 },
     { id: 'sig_out',   label: 'Sig Out',  direction: 'out', signalType: 'modulation', priority: 1 },
   ],
+  VideoMixer: [
+    { id: 'v1_in', label: 'V1 In', direction: 'in', signalType: 'video' },
+    { id: 'v2_in', label: 'V2 In', direction: 'in', signalType: 'video' },
+    { id: 'v3_in', label: 'V3 In', direction: 'in', signalType: 'video' },
+    { id: 'v4_in', label: 'V4 In', direction: 'in', signalType: 'video' },
+    { id: 'v1_cv', label: 'V1 Lvl', direction: 'in', signalType: 'modulation' },
+    { id: 'v2_cv', label: 'V2 Lvl', direction: 'in', signalType: 'modulation' },
+    { id: 'v3_cv', label: 'V3 Lvl', direction: 'in', signalType: 'modulation' },
+    { id: 'v4_cv', label: 'V4 Lvl', direction: 'in', signalType: 'modulation' },
+    { id: 'master_cv', label: 'Master', direction: 'in', signalType: 'modulation' },
+    { id: 'video_out', label: 'Video Out', direction: 'out', signalType: 'video', priority: 0 },
+  ],
+  StepSequencer: [
+    { id: 'global_out', label: 'Seq Out', direction: 'out', signalType: 'modulation', priority: 0 },
+    { id: 'rate_cv',    label: 'Rate CV', direction: 'in',  signalType: 'modulation' },
+    { id: 'clock_in',   label: 'Clock In', direction: 'in',  signalType: 'trigger' },
+    { id: 'reset_in',   label: 'Reset',   direction: 'in',  signalType: 'trigger' },
+    { id: 'pause_in',   label: 'Pause',   direction: 'in',  signalType: 'trigger' },
+    ...Array.from({ length: 16 }, (_, i) => ({
+      id: `step_${i}_out`,
+      label: `Step ${i+1}`,
+      direction: 'out' as const,
+      signalType: 'modulation' as const,
+    }))
+  ],
 };
 
 export const SIGNAL_COLORS: Record<SignalType, string> = {
@@ -308,4 +333,5 @@ export const MODULE_DISPLAY_NAMES: Record<string, string> = {
   Pattern: 'Pattern',
   Kaleidoscope: 'K-Scope',
   SignalMath: 'Math',
+  StepSequencer: 'Sequencer',
 };

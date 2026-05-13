@@ -62,6 +62,7 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
   const removeEffect = useEngineStore(s => s.removeEffect);
   const addModulator = useEngineStore(s => s.addModulator);
   const removeModulator = useEngineStore(s => s.removeModulator);
+  const updateInputSettings = useEngineStore(s => s.updateInputSettings);
 
   const graphRef = useRef<HTMLDivElement>(null);
 
@@ -661,6 +662,7 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
                 onRemove={handleRemoveSource}
                 graphRef={graphRef}
                 inputSettings={layer.inputSettings}
+                onUpdateInputSettings={(portKey, updates) => updateInputSettings(layer.id, portKey, updates)}
                 hoveredPortId={hoveredPortId}
                 zoom={zoom}
               />
@@ -698,6 +700,7 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
                 onRemove={() => handleRemoveEffect(effect.id)}
                 graphRef={graphRef}
                 inputSettings={layer.inputSettings}
+                onUpdateInputSettings={(portKey, updates) => updateInputSettings(layer.id, portKey, updates)}
                 hoveredPortId={hoveredPortId}
                 zoom={zoom}
               />
@@ -740,6 +743,7 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
                 onRemove={() => handleRemoveModulator(modId)}
                 graphRef={graphRef}
                 inputSettings={layer.inputSettings}
+                onUpdateInputSettings={(portKey, updates) => updateInputSettings(layer.id, portKey, updates)}
                 hoveredPortId={hoveredPortId}
                 zoom={zoom}
               />
@@ -770,6 +774,7 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
                   onLayoutChange={u => updateNodeState(OUTPUT_ID, u)}
                   graphRef={graphRef}
                   inputSettings={layer.inputSettings}
+                  onUpdateInputSettings={(portKey, updates) => updateInputSettings(layer.id, portKey, updates)}
                   hoveredPortId={hoveredPortId}
                   zoom={zoom}
                 />

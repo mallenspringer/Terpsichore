@@ -263,6 +263,20 @@ export interface SpawnEffect {
   globalLatch?: boolean;
 }
 
+export interface VideoMixerEffect {
+  id: string;
+  type: 'VideoMixer';
+  v1: number;
+  v2: number;
+  v3: number;
+  v4: number;
+  v1Mode: 'add' | 'normal' | 'screen' | 'mult';
+  v2Mode: 'add' | 'normal' | 'screen' | 'mult';
+  v3Mode: 'add' | 'normal' | 'screen' | 'mult';
+  v4Mode: 'add' | 'normal' | 'screen' | 'mult';
+  masterGain: number;
+}
+
 export interface PathEffect {
   id: string;
   type: 'Path';
@@ -271,6 +285,24 @@ export interface PathEffect {
   strength: number; // e.g. Wobble amount or gravity strength
   frequency: number; // e.g. Wobble frequency
   drift: number; // e.g. Horizontal wind
+}
+
+export interface StepSequencerEffect {
+  id: string;
+  type: 'StepSequencer';
+  steps: 8 | 16;
+  currentStep: number;
+  rate: number; // Hz or BPM
+  rateMode: 'hz' | 'bpm';
+  shuffle: number; // 0 to 1
+  slew: number; // 0 to 1
+  playState: 'play' | 'pause';
+  direction: 'forward' | 'backward' | 'pendulum' | 'random';
+  stepValues: number[]; // Array of 16 values
+  stepBipolar?: boolean[]; // Array of 16 booleans
+  allStepsBipolar?: boolean;
+  endStep: number; // 0 to 15
+  manualResetTrigger?: number;
 }
 
 export type SignalType = 'video' | 'audio' | 'modulation' | 'trigger' | 'midi' | 'generic' | 'trajectory';
@@ -352,14 +384,15 @@ export type AnyEffect =
   | Transform2DEffect | ColorAdjustEffect | LumaKeyEffect 
   | SimpleFeedbackEffect | AudioAnalyzerEffect | BipolarConverterEffect
   | InterLayerOutputEffect | InterLayerInputEffect | ColorRGBEffect 
-  | LumaSplitterEffect | SpawnEffect | PathEffect | InverterEffect
-  | LogicGateEffect | TriggeredGateEffect | PatternEffect | KaleidoscopeEffect | SignalMathEffect | SampleAndHoldEffect;
+  | LumaSplitterEffect | SpawnEffect | PathEffect | InverterEffect | VideoMixerEffect
+  | LogicGateEffect | TriggeredGateEffect | PatternEffect | KaleidoscopeEffect | SignalMathEffect | SampleAndHoldEffect
+  | StepSequencerEffect;
 
 export type EffectType = 
   | 'Transform2D' | 'ColorAdjust' | 'LumaKey' | 'SimpleFeedback' 
   | 'AudioAnalyzer' | 'BipolarConverter' | 'InterLayerOutput' | 'InterLayerInput' 
-  | 'ColorRGB' | 'LumaSplitter' | 'Spawn' | 'Path' | 'Inverter'
-  | 'LogicGate' | 'TriggeredGate' | 'Pattern' | 'Kaleidoscope' | 'SignalMath' | 'SampleAndHold';
+  | 'ColorRGB' | 'LumaSplitter' | 'Spawn' | 'Path' | 'Inverter' | 'VideoMixer'
+  | 'LogicGate' | 'TriggeredGate' | 'Pattern' | 'Kaleidoscope' | 'SignalMath' | 'SampleAndHold' | 'StepSequencer';
 
 // --- GRAPH ---
 export interface GraphEdge {

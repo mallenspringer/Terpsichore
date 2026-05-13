@@ -74,3 +74,16 @@ Terpsichore uses a **Strictly Decoupled Engine**.
 - **Speed:** 15px per update.
 - **Synchronization:** When the container scrolls, we adjust the internal `dragStart` offsets in the `ModuleNode` to keep the module visually pinned to the cursor.
 
+### 5. Advanced Sequencer State
+- **State Persistence**: The `SignalDispatcher` maintains a `sequencerStates` map to track phase, current step, and last known manual settings.
+- **Sync Logic**:
+    - **Hz/BPM**: Values are linked in the dispatcher. Changing mode converts the internal `rate` value to maintain timing.
+    - **Trigger Overrides**: Trigger inputs (Clock/Reset/Pause) are processed with rising-edge detection and take priority over internal phase logic.
+- **Bipolar Mapping**: The engine dynamically transforms the internal [0, 1] step values to [-1, 1] on a per-step or global basis before outputting to the signal bus.
+
+## UI Standards (v0.2.1)
+- **High-Density Layout**: Modular interfaces (like the Step Sequencer) utilize a "Console-Strip" aesthetic:
+    - Stacked jacks and toggles to maximize horizontal space.
+    - Standardized 10px LCD-style numerical readouts.
+    - Double-click-to-reset on all critical parameters (Knobs, Sliders).
+    - Label font color: `#aaa` for standard input banks.

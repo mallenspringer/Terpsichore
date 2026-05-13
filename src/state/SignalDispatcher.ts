@@ -1,5 +1,5 @@
 import { useEngineStore } from './store';
-import { LayerState, TriggerPadSource, LogicGateEffect, TriggeredGateEffect, InverterEffect, SignalMathEffect, SampleAndHoldEffect } from './types';
+import { LayerState, TriggerPadSource, LogicGateEffect, TriggeredGateEffect, InverterEffect, SignalMathEffect, SampleAndHoldEffect, StepSequencerEffect } from './types';
 import { AudioEngine } from './AudioEngine';
 
 // Ring buffer for smoothing temporal values (like rolling means)
@@ -56,6 +56,7 @@ export class SignalDispatcher {
   private triggerPadStates = new Map<string, number>();
   private gateLatchStates = new Map<string, boolean>();
   private gateOpenStates = new Map<string, boolean>();
+  private sequencerStates = new Map<string, { phase: number; currentStep: number; lastGlobalValue: number; lastStepValues: number[]; lastResetManualTime: number; isPaused: boolean; directionState: 'up' | 'down'; lastManualPlayState?: string }>();
   private latestSignals: Record<string, Record<string, number>> = {};
 
   private constructor() {}
@@ -125,10 +126,13 @@ export class SignalDispatcher {
             const lfo = ctx.layer.modulators?.[nodeId] as any;
             if (!lfo) return;
 
-            let phase = this.lfoPhases[nodeId] ?? lfo.phase ?? 0;
-            phase = (phase + (lfo.frequency ?? 0) * dt) % 1.0; 
+            const lastPhase = this.lfoPhases[nodeId] ?? 0;
+            let phase = (lastPhase + (lfo.frequency ?? 0) * dt) % 1.0; 
             this.lfoPhases[nodeId] = phase;
             
+            // Sync Out (Rising edge on phase reset)
+            ctx.signalValues[`${nodeId}.sync_out`] = (phase < lastPhase) ? 1.0 : 0.0;
+
             let val = 0;
             switch (lfo.waveform) {
               case 'sine': val = Math.sin(phase * Math.PI * 2) * 0.5 + 0.5; break;
@@ -434,6 +438,131 @@ export class SignalDispatcher {
               const time = performance.now() / 1000;
               ctx.signalValues[`${effect.id}.modulation_out`] = Math.sin(time * (ef.frequency || 0)) * (ef.amplitude ?? 1.0) + (ef.offset ?? 0);
             });
+          } else if (effect.type === 'StepSequencer') {
+            pipeline.push((ctx: DispatchContext, dt: number) => {
+              const ef = ctx.layer.effects.find(e => e.id === nodeId) as StepSequencerEffect;
+              if (!ef) return;
+
+              const stateKey = `${ctx.layer.id}.${nodeId}`;
+              let state = this.sequencerStates.get(stateKey);
+              if (!state) {
+                state = { 
+                  phase: 0, 
+                  currentStep: 0, 
+                  lastGlobalValue: 0, 
+                  lastStepValues: new Array(16).fill(0), 
+                  lastResetManualTime: 0, 
+                  isPaused: false, 
+                  directionState: 'up',
+                  lastManualPlayState: ef.playState 
+                };
+                this.sequencerStates.set(stateKey, state);
+              }
+
+              // 1. Triggers & Pause
+              const resetTrig = ctx.signalValues[`${nodeId}.reset_in`] ?? 0;
+              const lastResetTrig = this.lastTriggerVals.get(`${stateKey}.reset`) ?? 0;
+              const manualResetTime = ef.manualResetTrigger ?? 0;
+              const isReset = (resetTrig > 0.5 && lastResetTrig <= 0.5) || (manualResetTime > state.lastResetManualTime);
+              this.lastTriggerVals.set(`${stateKey}.reset`, resetTrig);
+              state.lastResetManualTime = manualResetTime;
+
+              const pauseTrig = ctx.signalValues[`${nodeId}.pause_in`] ?? 0;
+              const lastPauseTrig = this.lastTriggerVals.get(`${stateKey}.pause`) ?? 0;
+              if (pauseTrig > 0.5 && lastPauseTrig <= 0.5) {
+                state.isPaused = !state.isPaused;
+              }
+              this.lastTriggerVals.set(`${stateKey}.pause`, pauseTrig);
+
+              const manualPlayState = ef.playState;
+              if (manualPlayState !== state.lastManualPlayState) {
+                state.isPaused = manualPlayState === 'pause';
+                state.lastManualPlayState = manualPlayState;
+              }
+              const paused = state.isPaused;
+
+              if (isReset) {
+                state.currentStep = 0;
+                state.phase = 0;
+                state.directionState = 'up';
+              }
+
+              // 2. Clocking
+              const clockTrig = ctx.signalValues[`${nodeId}.clock_in`] ?? 0;
+              const lastClockTrig = this.lastTriggerVals.get(`${stateKey}.clock`) ?? 0;
+              const isExternalClock = clockTrig > 0.5 && lastClockTrig <= 0.5;
+              this.lastTriggerVals.set(`${stateKey}.clock`, clockTrig);
+
+              let advance = false;
+              if (!paused) {
+                if (isExternalClock) {
+                  advance = true;
+                } else {
+                  let rateHz = ef.rate ?? 1;
+                  const rateCv = ctx.signalValues[`${nodeId}.rate_cv`] ?? 0;
+                  rateHz += rateCv * 5; // CV adds up to 5Hz
+                  if (ef.rateMode === 'bpm') rateHz = rateHz / 60;
+
+                  state.phase += rateHz * dt;
+                  const shuffleAmount = ef.shuffle ?? 0;
+                  // Even steps (1, 3, 5...) are delayed
+                  const threshold = (state.currentStep % 2 === 1) ? (1.0 + shuffleAmount * 0.5) : (1.0 - shuffleAmount * 0.5);
+                  
+                  if (state.phase >= threshold) {
+                    state.phase -= threshold;
+                    advance = true;
+                  }
+                }
+              }
+
+              if (advance) {
+                const maxSteps = ef.endStep + 1;
+                switch (ef.direction) {
+                  case 'forward':
+                    state.currentStep = (state.currentStep + 1) % maxSteps;
+                    break;
+                  case 'backward':
+                    state.currentStep = (state.currentStep - 1 + maxSteps) % maxSteps;
+                    break;
+                  case 'pendulum':
+                    if (state.directionState === 'up') {
+                      state.currentStep++;
+                      if (state.currentStep >= maxSteps - 1) state.directionState = 'down';
+                    } else {
+                      state.currentStep--;
+                      if (state.currentStep <= 0) state.directionState = 'up';
+                    }
+                    break;
+                  case 'random':
+                    state.currentStep = Math.floor(Math.random() * maxSteps);
+                    break;
+                }
+              }
+
+              // 3. Outputs with Slew & Bipolar conversion
+              const slew = Math.max(0.001, ef.slew ?? 0);
+              const slewFactor = dt / slew;
+
+              const getProcessedStepVal = (idx: number) => {
+                let v = ef.stepValues[idx] ?? 0;
+                const isBipolar = ef.allStepsBipolar || (ef.stepBipolar && ef.stepBipolar[idx]);
+                if (isBipolar) v = (v * 2.0) - 1.0;
+                return v;
+              };
+
+              const activeStepVal = getProcessedStepVal(state.currentStep);
+              
+              // Slew Global Out
+              state.lastGlobalValue += (activeStepVal - state.lastGlobalValue) * Math.min(1.0, slewFactor);
+              ctx.signalValues[`${nodeId}.global_out`] = state.lastGlobalValue;
+
+              // Slew Step Outs
+              for (let i = 0; i < 16; i++) {
+                const targetVal = (i === state.currentStep) ? getProcessedStepVal(i) : 0;
+                state.lastStepValues[i] += (targetVal - state.lastStepValues[i]) * Math.min(1.0, slewFactor);
+                ctx.signalValues[`${nodeId}.step_${i}_out`] = state.lastStepValues[i];
+              }
+            });
           }
         }
       }
@@ -585,6 +714,17 @@ export class SignalDispatcher {
           }
         }
         this.lastTriggerVals.set(`${layer.id}.${e.id}`, trigger);
+      });
+
+      layer.effects.filter(ef => ef.type === 'StepSequencer').forEach(seq => {
+        const sState = this.sequencerStates.get(`${layer.id}.${seq.id}`);
+        if (sState && shouldCommitToUi) {
+          const s = seq as StepSequencerEffect;
+          const ps = sState.isPaused ? 'pause' : 'play';
+          if (s.currentStep !== sState.currentStep || s.playState !== ps) {
+            state.updateEffect(layer.id, seq.id, { currentStep: sState.currentStep, playState: ps } as any);
+          }
+        }
       });
     });
 

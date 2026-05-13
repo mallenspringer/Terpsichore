@@ -8,7 +8,7 @@ import {
   NoiseModulatorSource, NoiseVideoSource,
   Transform2DEffect, ColorAdjustEffect, LumaKeyEffect, SimpleFeedbackEffect,
   InterLayerOutputEffect, InterLayerInputEffect, ColorRGBEffect, LumaSplitterEffect,
-  SpawnEffect, PathEffect, LogicGateEffect, TriggeredGateEffect, InverterEffect,
+  SpawnEffect, PathEffect, LogicGateEffect, TriggeredGateEffect, InverterEffect, VideoMixerEffect,
   PatternEffect, KaleidoscopeEffect, SignalMathEffect, SampleAndHoldEffect
 } from '../../state/types';
 
@@ -1171,6 +1171,70 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
     },
   ],
 
+  VideoMixer: [
+    { id: 'v1', label: 'V1', render: ctx => {
+        const ef = eff<VideoMixerEffect>(ctx);
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Slider label="V1" min={0} max={2} step={0.01} resetValue={1} value={ef.v1} onChange={v => upd(ctx)({ v1: v })} />
+            <select value={ef.v1Mode} onChange={e => upd(ctx)({ v1Mode: e.target.value as any })} className="mode-select">
+              <option value="normal">NORM</option>
+              <option value="add">ADD</option>
+              <option value="screen">SCRN</option>
+              <option value="mult">MULT</option>
+            </select>
+          </div>
+        );
+      }
+    },
+    { id: 'v2', label: 'V2', render: ctx => {
+        const ef = eff<VideoMixerEffect>(ctx);
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Slider label="V2" min={0} max={2} step={0.01} resetValue={0} value={ef.v2} onChange={v => upd(ctx)({ v2: v })} />
+            <select value={ef.v2Mode} onChange={e => upd(ctx)({ v2Mode: e.target.value as any })} className="mode-select">
+              <option value="normal">NORM</option>
+              <option value="add">ADD</option>
+              <option value="screen">SCRN</option>
+              <option value="mult">MULT</option>
+            </select>
+          </div>
+        );
+      }
+    },
+    { id: 'v3', label: 'V3', render: ctx => {
+        const ef = eff<VideoMixerEffect>(ctx);
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Slider label="V3" min={0} max={2} step={0.01} resetValue={0} value={ef.v3} onChange={v => upd(ctx)({ v3: v })} />
+            <select value={ef.v3Mode} onChange={e => upd(ctx)({ v3Mode: e.target.value as any })} className="mode-select">
+              <option value="normal">NORM</option>
+              <option value="add">ADD</option>
+              <option value="screen">SCRN</option>
+              <option value="mult">MULT</option>
+            </select>
+          </div>
+        );
+      }
+    },
+    { id: 'v4', label: 'V4', render: ctx => {
+        const ef = eff<VideoMixerEffect>(ctx);
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Slider label="V4" min={0} max={2} step={0.01} resetValue={0} value={ef.v4} onChange={v => upd(ctx)({ v4: v })} />
+            <select value={ef.v4Mode} onChange={e => upd(ctx)({ v4Mode: e.target.value as any })} className="mode-select">
+              <option value="normal">NORM</option>
+              <option value="add">ADD</option>
+              <option value="screen">SCRN</option>
+              <option value="mult">MULT</option>
+            </select>
+          </div>
+        );
+      }
+    },
+    { id: 'master', label: 'Master', render: ctx => <Slider label="Gain" min={0} max={2} step={0.01} resetValue={1} value={eff<VideoMixerEffect>(ctx).masterGain} onChange={v => upd(ctx)({ masterGain: v })} /> },
+  ],
+
   Inverter: [
     { id: 'active', label: 'Active',
       render: ctx => (
@@ -1483,4 +1547,7 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
       )
     }
   ],
+  StepSequencer: [
+    { id: 'sequencer_ui', label: 'Sequencer', render: () => null }
+  ]
 };

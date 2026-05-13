@@ -190,3 +190,24 @@ A dual-mode capture module for both video and control signals.
 *   **Signal Behavior**: 
     *   **Zero-Latency**: Uses the high-frequency engine path to ensure the captured value is frame-accurate to the trigger.
 *   **Use Cases**: Strobe-like video freezing, creating "staircase" modulation from smooth LFOs, or holding a specific visual state while tweaking other parameters.
+### Step Sequencer (🪜)
+A high-density 16-step modular modulation engine.
+*   **Parameters**:
+    *   **Steps**: Toggle between 8 and 16 active steps.
+    *   **Rate**: Manual frequency control with linked **Hz** and **BPM** modes (2Hz = 120BPM).
+    *   **Slew**: Smooths transitions between steps (0.0 to 1.0).
+    *   **Shuffle**: Adds rhythmic swing by delaying every second step.
+    *   **Last Step**: Defines the loop length (Double-click to reset to max).
+    *   **Direction**: Forward, Backward, Pendulum, Random.
+*   **Step Controls**:
+    *   **Vertical Fader**: Sets the output level [0, 1]. (Double-click to reset to 0.5 unipolar or 1.0 bipolar).
+    *   **± Toggle**: Switches the individual step to bipolar output [-1, 1].
+    *   **Global Bipolar**: Overrides all steps to bipolar mode.
+*   **Ports**:
+    *   **Seq Out**: The combined global modulation signal.
+    *   **Rate CV**: Modulation of the internal clock speed.
+    *   **Clock In**: Advances the sequence by one step per trigger.
+    *   **Reset In**: Instantly returns to step 1.
+    *   **Pause In**: Latched toggle for freezing the sequence.
+    *   **S1-S16 Outs**: Individual outputs for every step, allowing complex polyphonic modulation.
+*   **Use Cases**: Complex rhythmic modulation, "Acid" style parameter sequencing, or driving multiple effects with synchronized but distinct values.

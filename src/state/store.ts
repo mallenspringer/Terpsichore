@@ -21,6 +21,7 @@ interface EngineActions {
   // High-level mutations with auto-wiring
   setSource: (layerId: string, source: AnySource) => void;
   addEffect: (layerId: string, effect: AnyEffect) => void;
+  updateEffect: (layerId: string, effectId: string, updates: Partial<AnyEffect>) => void;
   removeEffect: (layerId: string, effectId: string) => void;
   addModulator: (layerId: string, id: string, mod: any) => void;
   updateModulatorGlobal: (id: string, updates: any) => void;
@@ -182,6 +183,14 @@ export const useEngineStore = create<StoreState>((set) => ({
           [layerId]: { ...nextLayer, graph: { ...layer.graph, edges: nextEdges } } 
         } 
       };
+    }),
+  
+  updateEffect: (layerId, effectId, updates) =>
+    set((state) => {
+      const layer = state.layers[layerId];
+      if (!layer) return {};
+      const effects = layer.effects.map(e => e.id === effectId ? { ...e, ...updates } as AnyEffect : e);
+      return { layers: { ...state.layers, [layerId]: { ...layer, effects } } };
     }),
 
   removeEffect: (layerId, effectId) =>

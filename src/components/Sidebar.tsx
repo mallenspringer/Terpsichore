@@ -39,6 +39,7 @@ const ALL_MODULES: ModuleEntry[] = [
   { id: 'Pattern',        glyph: '▦', label: 'Pattern',   tooltip: 'Tiling & Grid Layout',    category: 'Effects', moduleType: 'effect:Pattern'         },
   { id: 'Kaleidoscope',   glyph: '✺', label: 'Kaleido',   tooltip: 'Radial Reflections',      category: 'Effects', moduleType: 'effect:Kaleidoscope'    },
   { id: 'LumaSplit',      glyph: '▤', label: 'LumaSplit', tooltip: 'Split by luminance bands', category: 'Utility', moduleType: 'effect:LumaSplitter'   },
+  { id: 'VideoMixer',     glyph: '⧉', label: 'Mixer',     tooltip: '4-Ch Video Compositor',   category: 'Utility', moduleType: 'effect:VideoMixer'      },
   // Utility
   { id: 'LFO',            glyph: '〜', label: 'LFO',       tooltip: 'Modular LFO Source',      category: 'Utility', moduleType: 'modulator:LFO'         },
   { id: 'TriggerPad',     glyph: '🔘', label: 'Trig Pad',  tooltip: 'Click-to-trigger Pulse',  category: 'Utility', moduleType: 'modulator:TriggerPad'  },
@@ -52,6 +53,7 @@ const ALL_MODULES: ModuleEntry[] = [
   { id: 'TriggeredGate',  glyph: 'Gate', label: 'Trig Gate', tooltip: 'Signal Gating / Routing',      category: 'Utility', moduleType: 'effect:TriggeredGate'   },
   { id: 'SignalMath',     glyph: '∑', label: 'Math',      tooltip: 'Signal Processing (A + B, A * B)', category: 'Utility', moduleType: 'effect:SignalMath'     },
   { id: 'SampleAndHold',  glyph: '◲', label: 'S&H',       tooltip: 'Capture Signal/Frame on Trigger', category: 'Utility', moduleType: 'effect:SampleAndHold'  },
+  { id: 'StepSequencer',  glyph: '🪜', label: 'Sequencer', tooltip: '16-Step Modular Sequencer', category: 'Utility', moduleType: 'effect:StepSequencer' },
 ];
 
 const DEFAULT_BANK_IDS = ALL_MODULES.map(m => m.id);
