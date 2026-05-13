@@ -16,6 +16,7 @@ import { VideoMixerWGSL } from './shaders/VideoMixer';
 import { TriggeredGateWGSL } from './shaders/TriggeredGate';
 import { PatternWGSL } from './shaders/Pattern';
 import { KaleidoscopeWGSL } from './shaders/Kaleidoscope';
+import { OscilloscopeWGSL } from './shaders/Oscilloscope';
 
 import { PORT_DEFS } from '../components/NodeGraph/portDefs';
 import { SignalDispatcher } from '../state/SignalDispatcher';
@@ -24,7 +25,7 @@ import {
   SimpleFeedbackEffect, ColorRGBEffect, LumaSplitterEffect, VideoMixerEffect,
   VideoURLSource, VideoFileSource, WebcamCaptureSource, ImageLoaderSource, ImageFileSource, 
   SpawnEffect, PathEffect, NoiseVideoSource, InverterEffect,
-  PatternEffect, KaleidoscopeEffect, SampleAndHoldEffect,
+  PatternEffect, KaleidoscopeEffect, SampleAndHoldEffect, OscilloscopeEffect,
   LayerState
 } from '../state/types';
 
@@ -79,6 +80,7 @@ export class Renderer {
   private videoMixerPipeline!: GPURenderPipeline;
   private patternPipeline!: GPURenderPipeline;
   private kaleidoscopePipeline!: GPURenderPipeline;
+  private oscilloscopePipeline!: GPURenderPipeline;
   
   // Isolated layouts to prevent 'Minimum Binding Size' collisions
   private effectLayouts: Map<string, GPUBindGroupLayout> = new Map();
@@ -547,6 +549,27 @@ export class Renderer {
     this.effectLayouts.set('TriggeredGate', this.triggeredGatePipeline.getBindGroupLayout(0));
     this.effectLayouts.set('VideoMixer', this.videoMixerPipeline.getBindGroupLayout(0));
     this.effectLayouts.set('LumaSplitter', this.lumaSplitPipeline.getBindGroupLayout(0));
+
+    this.oscilloscopePipeline = this.device.createRenderPipeline({
+      layout: this.device.createPipelineLayout({
+        bindGroupLayouts: [
+          this.device.createBindGroupLayout({
+            entries: [
+              { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+              { binding: 1, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } }
+            ]
+          })
+        ]
+      }),
+      vertex,
+      fragment: { 
+        module: this.device.createShaderModule({ code: OscilloscopeWGSL }), 
+        entryPoint: 'fs_main', 
+        targets: [{ format: this.format }] 
+      },
+      primitive
+    });
+    this.effectLayouts.set('Oscilloscope', this.oscilloscopePipeline.getBindGroupLayout(0));
   }
 
   private getStorageBuffer(key: string, size: number): GPUBuffer {
@@ -1190,6 +1213,47 @@ export class Renderer {
             const layout = this.effectLayouts.get(effect.type) || pipeline.getBindGroupLayout(0);
             const bg = this.device.createBindGroup({ layout, entries });
             pass.setPipeline(pipeline); pass.setBindGroup(0, bg); pass.draw(3); pass.end();
+          } else if (effect.type === 'Oscilloscope') {
+            pipeline = this.oscilloscopePipeline;
+            const ef = effect as OscilloscopeEffect;
+            
+            // 1. Find connected bus (same logic as ModuleNode)
+            const edge = layer?.graph?.edges.find(e => e.toNodeId === nodeId && e.toPort === 'audio_in');
+            let busId = 'master';
+            if (edge) {
+              const sourceEffect = layer?.effects.find(e => e.id === edge.fromNodeId);
+              if (sourceEffect?.type === 'AudioSource') busId = (sourceEffect as any).busId;
+              else if (edge.fromNodeId === 'source') busId = layer.id;
+            }
+
+            const busData = AudioEngine.getInstance().getBusData(busId);
+            const waveform = busData ? busData.waveform : new Float32Array(1024);
+
+            // 2. Upload waveform to storage buffer
+            const storageBuffer = this.getStorageBuffer(`${nodeId}.waveform`, waveform.byteLength);
+            this.device.queue.writeBuffer(storageBuffer, 0, waveform as any);
+
+            // 3. Upload uniforms
+            const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 16);
+            this.device.queue.writeBuffer(uniformBuffer, 0, new Float32Array([
+              this.getEffectiveParam(layer, ef.id, 'triggerLevel', ef.triggerLevel, timeSec),
+              this.getEffectiveParam(layer, ef.id, 'timeScale', ef.timeScale, timeSec),
+              this.canvas.width / this.canvas.height,
+              ef.isFrozen ? 1.0 : 0.0
+            ]) as any);
+
+            entries = [
+              { binding: 0, resource: { buffer: uniformBuffer } },
+              { binding: 1, resource: { buffer: storageBuffer } }
+            ];
+
+            const pass = commandEncoder.beginRenderPass({
+              colorAttachments: [{ view: target.createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' }]
+            });
+            const layout = this.effectLayouts.get(effect.type) || pipeline.getBindGroupLayout(0);
+            const bg = this.device.createBindGroup({ layout, entries });
+            pass.setPipeline(pipeline); pass.setBindGroup(0, bg); pass.draw(3); pass.end();
+            pipeline = null; // Prevent redundant common pass
           } else if (effect.type === 'LumaSplitter') {
             pipeline = this.lumaSplitPipeline;
             const ef = effect as LumaSplitterEffect;

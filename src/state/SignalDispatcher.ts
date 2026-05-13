@@ -1,33 +1,6 @@
 import { useEngineStore } from './store';
-import { LayerState, TriggerPadSource, LogicGateEffect, TriggeredGateEffect, InverterEffect, SignalMathEffect, SampleAndHoldEffect, StepSequencerEffect } from './types';
+import { LayerState, TriggerPadSource, LogicGateEffect, TriggeredGateEffect, InverterEffect, SignalMathEffect, SampleAndHoldEffect, StepSequencerEffect, OscilloscopeEffect } from './types';
 import { AudioEngine } from './AudioEngine';
-
-// Ring buffer for smoothing temporal values (like rolling means)
-class RingBuffer {
-  private buffer: Float32Array;
-  private head = 0;
-  private sum = 0;
-  private count = 0;
-
-  constructor(public size: number) {
-    this.buffer = new Float32Array(size);
-  }
-
-  push(value: number) {
-    if (this.count === this.size) {
-      this.sum -= this.buffer[this.head];
-    } else {
-      this.count++;
-    }
-    this.buffer[this.head] = value;
-    this.sum += value;
-    this.head = (this.head + 1) % this.size;
-  }
-
-  getMean(): number {
-    return this.count === 0 ? 0 : this.sum / this.count;
-  }
-}
 
 type SignalFunction = (context: DispatchContext, dt: number) => void;
 
@@ -41,7 +14,6 @@ export class SignalDispatcher {
   private static instance: SignalDispatcher;
   
   private pipelines: Record<string, SignalFunction[]> = {};
-  private ringBuffers: Record<string, RingBuffer> = {};
   private interLayerBus: Record<string, number> = {};
 
   private lastUiCommitTime = 0;
@@ -240,33 +212,37 @@ export class SignalDispatcher {
 
         const effect = layer.effects.find(e => e.id === nodeId);
         if (effect) {
-          if (effect.type === 'AudioAnalyzer') {
+          if (effect.type === 'AudioSource') {
             pipeline.push((ctx: DispatchContext) => {
-              const analyzer = ctx.layer.effects.find(e => e.id === nodeId) as any;
-              if (!analyzer) return;
+              const ef = ctx.layer.effects.find(e => e.id === nodeId) as any;
+              if (!ef) return;
+              const bus = ctx.audioEngine.getBusData(ef.busId || 'master');
+              if (bus) {
+                ctx.signalValues[`${nodeId}.peak_out`] = bus.peak;
+                ctx.signalValues[`${nodeId}.audio_out`] = 1.0;
+                ctx.signalValues[`${nodeId}.beat_out`] = bus.onset ? 1.0 : 0.0;
+                ctx.signalValues[`${nodeId}.bass_out`] = bus.bands.bass;
+                ctx.signalValues[`${nodeId}.mid_out`] = bus.bands.mid;
+                ctx.signalValues[`${nodeId}.high_out`] = bus.bands.high;
+              }
+            });
+          } else if (effect.type === 'Oscilloscope') {
+            pipeline.push((ctx: DispatchContext) => {
+              const ef = ctx.layer.effects.find(e => e.id === nodeId) as OscilloscopeEffect;
+              if (!ef) return;
+
+              const trigger = ctx.signalValues[`${nodeId}.freeze`] ?? 0;
+              const lastTrig = this.lastTriggerVals.get(`${ctx.layer.id}.${nodeId}.freeze`) ?? 0;
               
-              let peak = ctx.audioEngine.getPeakVolume(ctx.layer.id);
-              const sensitivity = analyzer.sensitivity ?? 1.0;
-              peak *= sensitivity;
-
-              if (analyzer.logarithmic) {
-                // Simple log scaling: log10(1 + peak * 9) / 1.0
-                peak = Math.log10(1 + peak * 9);
+              // Toggle on rising edge
+              if (trigger > 0.5 && lastTrig <= 0.5) {
+                // We use the store to update so the UI stays in sync
+                useEngineStore.getState().updateEffect(ctx.layer.id, nodeId, { isFrozen: !ef.isFrozen } as any);
               }
+              this.lastTriggerVals.set(`${ctx.layer.id}.${nodeId}.freeze`, trigger);
 
-              const smoothing = analyzer.smoothing ?? 0;
-              if (smoothing > 0) {
-                const bufferKey = `${layer.id}_${effect.id}_audio_out`;
-                let buffer = this.ringBuffers[bufferKey];
-                const bufferSize = Math.max(1, Math.floor(smoothing * 60)); 
-                if (!buffer || buffer.size !== bufferSize) {
-                  buffer = new RingBuffer(bufferSize);
-                  this.ringBuffers[bufferKey] = buffer;
-                }
-                buffer.push(peak);
-                peak = buffer.getMean();
-              }
-              ctx.signalValues[`${effect.id}.out`] = peak;
+              // Signal that we are active for the renderer
+              ctx.signalValues[`${nodeId}.video_out`] = 1.0; 
             });
           } else if (effect.type === 'Inverter') {
             pipeline.push((ctx: DispatchContext) => {
@@ -610,6 +586,9 @@ export class SignalDispatcher {
     const now = performance.now();
     let dt = (now - this.lastTime) / 1000;
     this.lastTime = now;
+
+    // 1. Update Global Audio Analysis
+    audioEngine.update();
 
     if (state.globalResetSignal !== this.lastResetSignal) {
       this.lastResetSignal = state.globalResetSignal;

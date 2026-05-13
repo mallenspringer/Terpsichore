@@ -1,3 +1,5 @@
+import { AudioBusData } from './types';
+
 export class AudioEngine {
   private static instance: AudioEngine;
 
@@ -8,16 +10,19 @@ export class AudioEngine {
   private layerGains: Map<string, GainNode> = new Map();
   private masterGain: GainNode;
 
-  // A shared Float32Array to read frequency/time data (avoids garbage collection overhead)
-  private dataArray: Float32Array;
+  // Global Audio Bus Registry
+  private buses: Map<string, AudioBusData> = new Map();
+  private fftSize = 1024;
   private _masterMuted = false;
 
   private constructor() {
     this.context = new (window.AudioContext || (window as any).webkitAudioContext)();
-    this.dataArray = new Float32Array(256); // 256 is the default fftSize/2
 
     this.masterGain = this.context.createGain();
     this.masterGain.connect(this.context.destination);
+    
+    // Initialize Default Buses
+    this.initializeBus('master', 'Master Audio');
   }
 
   public static getInstance(): AudioEngine {
@@ -33,10 +38,28 @@ export class AudioEngine {
     }
   }
 
-  public registerMediaElement(id: string, element: HTMLMediaElement) {
-    if (this.sources.has(id)) {
-      return; // Already registered
+  /**
+   * Initializes or resets an audio bus with necessary buffers
+   */
+  private initializeBus(id: string, name: string) {
+    if (!this.buses.has(id)) {
+      this.buses.set(id, {
+        id,
+        name,
+        peak: 0,
+        rms: 0,
+        fft: new Float32Array(this.fftSize / 2),
+        waveform: new Float32Array(this.fftSize),
+        onset: false,
+        bpm: 120,
+        confidence: 0,
+        bands: { bass: 0, mid: 0, high: 0 }
+      });
     }
+  }
+
+  public registerMediaElement(id: string, element: HTMLMediaElement) {
+    if (this.sources.has(id)) return;
 
     try {
       const source = this.context.createMediaElementSource(element);
@@ -44,10 +67,10 @@ export class AudioEngine {
       const analyzer = this.context.createAnalyser();
       const layerGain = this.context.createGain();
 
-      analyzer.fftSize = 512;
-      analyzer.smoothingTimeConstant = 0.5;
+      analyzer.fftSize = this.fftSize;
+      analyzer.smoothingTimeConstant = 0.8;
 
-      // Chain: Source -> ModuleMute -> Analyzer -> LayerMute -> Master -> Output
+      // Chain: Source -> ModuleGain -> Analyzer -> LayerGain -> Master -> Output
       source.connect(moduleGain);
       moduleGain.connect(analyzer);
       analyzer.connect(layerGain);
@@ -58,9 +81,92 @@ export class AudioEngine {
       this.analyzers.set(id, analyzer);
       this.layerGains.set(id, layerGain);
 
+      // Register this as a bus
+      this.initializeBus(id, `Layer ${id}`);
+
     } catch (e) {
       console.error(`[AudioEngine] Failed to register element ${id}`, e);
     }
+  }
+
+  public unregisterMediaElement(id: string) {
+    const source = this.sources.get(id);
+    const analyzer = this.analyzers.get(id);
+    const mGain = this.moduleGains.get(id);
+    const lGain = this.layerGains.get(id);
+
+    if (source) source.disconnect();
+    if (mGain) mGain.disconnect();
+    if (analyzer) analyzer.disconnect();
+    if (lGain) lGain.disconnect();
+
+    this.sources.delete(id);
+    this.moduleGains.delete(id);
+    this.analyzers.delete(id);
+    this.layerGains.delete(id);
+    this.buses.delete(id);
+  }
+
+  /**
+   * Main analysis loop called by the SignalDispatcher
+   */
+  public update() {
+    this.analyzers.forEach((analyzer, id) => {
+      const bus = this.buses.get(id);
+      if (!bus) return;
+
+      // 1. Get Frequency Data
+      analyzer.getFloatFrequencyData(bus.fft as any);
+      
+      // 2. Get Time Domain Data
+      analyzer.getFloatTimeDomainData(bus.waveform as any);
+
+      // 3. Calculate Peak & RMS
+      let peak = 0;
+      let sumSq = 0;
+      for (let i = 0; i < bus.waveform.length; i++) {
+        const val = Math.abs(bus.waveform[i]);
+        if (val > peak) peak = val;
+        sumSq += val * val;
+      }
+      bus.peak = peak;
+      bus.rms = Math.sqrt(sumSq / bus.waveform.length);
+
+      // 4. Multi-band Analysis (Simple Frequency Averaging)
+      // FFT size is 1024, so bins are 0..511. 
+      // Sample rate typically 44.1kHz -> ~43Hz per bin.
+      // Bass: 20-250Hz (~ bins 0-6)
+      // Mid: 250-4000Hz (~ bins 6-93)
+      // High: 4000-20000Hz (~ bins 93-511)
+      
+      bus.bands = {
+        bass: this.getAverage(bus.fft, 0, 6),
+        mid: this.getAverage(bus.fft, 6, 93),
+        high: this.getAverage(bus.fft, 93, 511)
+      };
+
+      // 5. Onset Detection
+      const prevOnset = bus.onset;
+      bus.onset = bus.bands.bass > -40 && peak > 0.6 && !prevOnset;
+    });
+  }
+
+  private getAverage(fft: Float32Array, start: number, end: number): number {
+    let sum = 0;
+    for (let i = start; i < end; i++) {
+      sum += fft[i];
+    }
+    const avg = sum / (end - start);
+    // Convert dB (-100 to 0) to linear (0 to 1) roughly
+    return Math.max(0, (avg + 100) / 100);
+  }
+
+  public getBusData(id: string): AudioBusData | undefined {
+    return this.buses.get(id);
+  }
+
+  public getAllBuses(): AudioBusData[] {
+    return Array.from(this.buses.values());
   }
 
   public setModuleMute(id: string, muted: boolean) {
@@ -84,42 +190,10 @@ export class AudioEngine {
 
   public get masterMuted() { return this._masterMuted; }
 
-  public unregisterMediaElement(id: string) {
-    const source = this.sources.get(id);
-    const analyzer = this.analyzers.get(id);
-    const mGain = this.moduleGains.get(id);
-    const lGain = this.layerGains.get(id);
-
-    if (source) source.disconnect();
-    if (mGain) mGain.disconnect();
-    if (analyzer) analyzer.disconnect();
-    if (lGain) lGain.disconnect();
-
-    this.sources.delete(id);
-    this.moduleGains.delete(id);
-    this.analyzers.delete(id);
-    this.layerGains.delete(id);
-  }
-
   /**
-   * Returns the current peak volume (0.0 to 1.0) of the given element.
-   * This is very fast and safe to call 60 times a second.
+   * Compatibility method for legacy peak volume calls
    */
   public getPeakVolume(id: string): number {
-    const analyzer = this.analyzers.get(id);
-    if (!analyzer) return 0;
-
-    analyzer.getFloatTimeDomainData(this.dataArray as any);
-
-    let max = 0;
-    for (let i = 0; i < this.dataArray.length; i++) {
-      const val = Math.abs(this.dataArray[i]);
-      if (val > max) {
-        max = val;
-      }
-    }
-
-    // RMS might be better for perceived loudness, but peak is great for triggers
-    return Math.min(1.0, max);
+    return this.buses.get(id)?.peak ?? 0;
   }
 }

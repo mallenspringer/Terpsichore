@@ -1,8 +1,11 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { PORT_DEFS, SIGNAL_COLORS, getShortLabel } from './portDefs';
 import { ControlRowDef, RowCtx, EffectCtx } from './moduleControls';
-import { SpawnEffect, StepSequencerEffect } from '../../state/types';
+import { 
+  SpawnEffect, StepSequencerEffect, AudioSourceEffect, OscilloscopeEffect 
+} from '../../state/types';
 import { useEngineStore } from '../../state/store';
+import { OscilloscopeVisualizer, AudioSourceVisualizer } from './AudioVisualizers';
 
 // ── Mini Components ─────────────────────────────────────────────────────────
 
@@ -606,12 +609,29 @@ export function ModuleNode({
     const count = (rowCtx as any).effect?.portCount ?? 1;
     const direction = moduleType === 'InterLayerOutput' ? 'in' : 'out';
     
-    // We only filter the primary directional ports (In for Output module, Out for Input module)
     return rawPorts.filter(p => {
       if (p.direction !== direction) return true;
       const idx = parseInt(p.id.split('_')[1]);
       return idx < count;
     });
+  })();
+
+  const layer = useEngineStore(s => s.layers[layerId]);
+
+  // Find connected bus for visualizers
+  const connectedBusId = (() => {
+    if (moduleType === 'AudioSource') {
+      const effect = (rowCtx as EffectCtx).effect as AudioSourceEffect;
+      return effect?.busId || 'master';
+    }
+    if (moduleType === 'Oscilloscope') {
+      const edge = layer?.graph?.edges.find(e => e.toNodeId === nodeId && e.toPort === 'audio_in');
+      if (!edge) return null;
+      const sourceEffect = layer?.effects.find(e => e.id === edge.fromNodeId);
+      if (sourceEffect?.type === 'AudioSource') return (sourceEffect as AudioSourceEffect).busId;
+      if (edge.fromNodeId === 'source') return layerId;
+    }
+    return null;
   })();
 
   const inputs  = ports.filter(p => p.direction === 'in');
@@ -986,6 +1006,23 @@ export function ModuleNode({
             </>
           )}
         </div>
+
+        {/* Visualizers Area */}
+        {!isOutput && connectedBusId && (
+          <div className="node-visualizer-area" style={{ padding: '0 8px' }}>
+            {moduleType === 'Oscilloscope' && (
+              <OscilloscopeVisualizer 
+                busId={connectedBusId}
+                isFrozen={((rowCtx as EffectCtx).effect as OscilloscopeEffect).isFrozen}
+                triggerLevel={((rowCtx as EffectCtx).effect as OscilloscopeEffect).triggerLevel}
+                timeScale={((rowCtx as EffectCtx).effect as OscilloscopeEffect).timeScale}
+              />
+            )}
+            {moduleType === 'AudioSource' && (
+              <AudioSourceVisualizer busId={connectedBusId} />
+            )}
+          </div>
+        )}
 
         {/* Ports (Outputs & Mute) */}
         {(outputs.length > 0 || (isOutput && inputs.length > 0) || (rowCtx as any).source?.audioMuted !== undefined || (rowCtx as any).source?.muted !== undefined) && moduleType !== 'StepSequencer' && (

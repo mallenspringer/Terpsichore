@@ -49,7 +49,8 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
     case 'Transform2D': return { id, type: 'Transform2D', translateX: 0, translateY: 0, scaleX: 1, scaleY: 1, rotation: 0, spin: 0 };
     case 'ColorAdjust': return { id, type: 'ColorAdjust', hue: 0, saturation: 1, contrast: 1, brightness: 0, invert: false };
     case 'LumaKey': return { id, type: 'LumaKey', threshold: 0.5, tolerance: 0.1, invertKey: false };
-    case 'AudioAnalyzer': return { id, type: 'AudioAnalyzer', smoothing: 0.5, sensitivity: 1.0, logarithmic: false };
+    case 'AudioSource': return { id, type: 'AudioSource', busId: 'master' };
+    case 'Oscilloscope': return { id, type: 'Oscilloscope', isFrozen: false, triggerLevel: 0.5, timeScale: 1.0 };
     case 'InterLayerOutput': return { id, type: 'InterLayerOutput', portCount: 1 };
     case 'InterLayerInput': return { id, type: 'InterLayerInput', portCount: 1 };
     case 'ColorRGB': return { id, type: 'ColorRGB', r: 0.5, g: 0.5, b: 0.5, rMode: 'add', gMode: 'add', bMode: 'add', rInputMode: 'channel', gInputMode: 'channel', bInputMode: 'channel' };

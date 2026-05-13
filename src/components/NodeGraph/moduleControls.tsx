@@ -1,4 +1,5 @@
 import React from 'react';
+import { AudioEngine } from '../../state/AudioEngine';
 import {
   AnySource, AnyEffect,
   ShapeGeneratorSource, VideoURLSource, VideoFileSource,
@@ -9,7 +10,8 @@ import {
   Transform2DEffect, ColorAdjustEffect, LumaKeyEffect, SimpleFeedbackEffect,
   InterLayerOutputEffect, InterLayerInputEffect, ColorRGBEffect, LumaSplitterEffect,
   SpawnEffect, PathEffect, LogicGateEffect, TriggeredGateEffect, InverterEffect, VideoMixerEffect,
-  PatternEffect, KaleidoscopeEffect, SignalMathEffect, SampleAndHoldEffect
+  PatternEffect, KaleidoscopeEffect, SignalMathEffect, SampleAndHoldEffect,
+  AudioSourceEffect, OscilloscopeEffect
 } from '../../state/types';
 
 // ── Context types ──────────────────────────────────────────────────────────────
@@ -902,44 +904,6 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
     }
   ],
 
-  AudioAnalyzer: [
-    { id: 'smoothing', label: 'Smoothing',
-      render: ctx => <Slider label="Smoothing" min={0} max={0.99} step={0.01}
-        value={eff<any>(ctx).smoothing ?? 0}
-        onChange={v => upd(ctx)({ smoothing: v })} />
-    },
-    { id: 'sensitivity', label: 'Sensitivity',
-      render: ctx => <Slider label="Sensitivity" min={0.1} max={10} step={0.1}
-        resetValue={1.0}
-        value={eff<any>(ctx).sensitivity ?? 1.0}
-        onChange={v => upd(ctx)({ sensitivity: v })} />
-    },
-    { id: 'logarithmic', label: 'Log Scale',
-      render: ctx => (
-        <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} onDragStart={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <span className="rack-row-label">Perceived Vol (Log)</span>
-          <input type="checkbox" checked={eff<any>(ctx).logarithmic}
-            onChange={e => { e.stopPropagation(); upd(ctx)({ logarithmic: e.target.checked }); }} />
-        </div>
-      )
-    },
-  ],
-
-  BipolarConverter: [
-    { id: 'conversionMode', label: 'Mode',
-      render: ctx => (
-        <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} onDragStart={e => e.stopPropagation()}>
-          <span className="rack-row-label">Conversion Mode</span>
-          <select value={eff<any>(ctx).conversionMode ?? 'to_bipolar'} 
-            onChange={e => { e.stopPropagation(); upd(ctx)({ conversionMode: e.target.value as any }); }}>
-            <option value="to_bipolar">Unipolar (0-1) → Bipolar (-1 to 1)</option>
-            <option value="to_unipolar">Bipolar (-1 to 1) → Unipolar (0-1)</option>
-          </select>
-        </div>
-      )
-    },
-  ],
-
   Transform2D: [
     { id: 'translateX', label: 'Translate X',
       render: ctx => <Slider label="Translate X" min={-1} max={1} step={0.01}
@@ -1549,5 +1513,37 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
   ],
   StepSequencer: [
     { id: 'sequencer_ui', label: 'Sequencer', render: () => null }
-  ]
+  ],
+  AudioSource: [
+    { id: 'busId', label: 'Source Bus',
+      render: ctx => {
+        const ef = eff<AudioSourceEffect>(ctx);
+        const buses = AudioEngine.getInstance().getAllBuses();
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()}>
+            <span className="rack-row-label">Bus</span>
+            <select value={ef.busId} onChange={e => upd(ctx)({ busId: e.target.value })} className="mode-select" style={{ flex: 1 }}>
+              {buses.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+          </div>
+        );
+      }
+    }
+  ],
+  Oscilloscope: [
+    { id: 'triggerLevel', label: 'Trig Lvl',
+      render: ctx => <Slider label="Trig Lvl" min={0} max={1} step={0.01} value={eff<OscilloscopeEffect>(ctx).triggerLevel} resetValue={0.5} onChange={v => upd(ctx)({ triggerLevel: v })} />
+    },
+    { id: 'timeScale', label: 'Zoom',
+      render: ctx => <Slider label="Time Scale" min={0.1} max={4} step={0.1} value={eff<OscilloscopeEffect>(ctx).timeScale} resetValue={1.0} onChange={v => upd(ctx)({ timeScale: v })} />
+    },
+    { id: 'isFrozen', label: 'Freeze',
+      render: ctx => (
+        <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <span className="rack-row-label">Freeze</span>
+          <input type="checkbox" checked={eff<OscilloscopeEffect>(ctx).isFrozen} onChange={e => upd(ctx)({ isFrozen: e.target.checked })} />
+        </div>
+      )
+    },
+  ],
 };

@@ -1,5 +1,5 @@
 // --- SOURCES ---
-export type SourceType = 'None' | 'ShapeGenerator' | 'VideoURL' | 'VideoFile' | 'WebcamCapture' | 'ImageLoader' | 'ImageFile' | 'AudioInput' | 'AudioFile' | 'SystemAudio' | 'SignalProcessor' | 'AudioAnalyzer';
+export type SourceType = 'None' | 'ShapeGenerator' | 'VideoURL' | 'VideoFile' | 'WebcamCapture' | 'ImageLoader' | 'ImageFile' | 'AudioInput' | 'AudioFile' | 'SystemAudio' | 'SignalProcessor';
 
 export interface NoneSource {
   type: 'None';
@@ -187,13 +187,7 @@ export interface SimpleFeedbackEffect {
   angle: number; // rotation in radians
 }
 
-export interface AudioAnalyzerEffect {
-  id: string;
-  type: 'AudioAnalyzer';
-  smoothing: number; // 0.0 to 0.99
-  sensitivity: number;
-  logarithmic: boolean;
-}
+
 
 export interface SampleAndHoldEffect {
   id: string;
@@ -203,12 +197,6 @@ export interface SampleAndHoldEffect {
   keyMapping?: string;
   isLive: boolean;
   triggerMode: 'sample_show' | 'freeze_toggle' | 'sample_only';
-}
-
-export interface BipolarConverterEffect {
-  id: string;
-  type: 'BipolarConverter';
-  conversionMode: 'to_bipolar' | 'to_unipolar';
 }
 
 export interface InterLayerOutputEffect {
@@ -305,6 +293,20 @@ export interface StepSequencerEffect {
   manualResetTrigger?: number;
 }
 
+export interface AudioSourceEffect {
+  id: string;
+  type: 'AudioSource';
+  busId: string;
+}
+
+export interface OscilloscopeEffect {
+  id: string;
+  type: 'Oscilloscope';
+  isFrozen: boolean;
+  triggerLevel: number;
+  timeScale: number;
+}
+
 export type SignalType = 'video' | 'audio' | 'modulation' | 'trigger' | 'midi' | 'generic' | 'trajectory';
 
 export interface InterLayerEdge {
@@ -381,18 +383,18 @@ export interface SignalMathEffect {
 }
 
 export type AnyEffect = 
-  | Transform2DEffect | ColorAdjustEffect | LumaKeyEffect 
-  | SimpleFeedbackEffect | AudioAnalyzerEffect | BipolarConverterEffect
-  | InterLayerOutputEffect | InterLayerInputEffect | ColorRGBEffect 
-  | LumaSplitterEffect | SpawnEffect | PathEffect | InverterEffect | VideoMixerEffect
-  | LogicGateEffect | TriggeredGateEffect | PatternEffect | KaleidoscopeEffect | SignalMathEffect | SampleAndHoldEffect
-  | StepSequencerEffect;
+  | Transform2DEffect | ColorAdjustEffect | LumaKeyEffect | SimpleFeedbackEffect
+  | InterLayerOutputEffect | InterLayerInputEffect | ColorRGBEffect | LumaSplitterEffect 
+  | SpawnEffect | PathEffect | InverterEffect | VideoMixerEffect
+  | LogicGateEffect | TriggeredGateEffect | PatternEffect | KaleidoscopeEffect 
+  | SignalMathEffect | SampleAndHoldEffect | StepSequencerEffect 
+  | AudioSourceEffect | OscilloscopeEffect;
 
 export type EffectType = 
   | 'Transform2D' | 'ColorAdjust' | 'LumaKey' | 'SimpleFeedback' 
-  | 'AudioAnalyzer' | 'BipolarConverter' | 'InterLayerOutput' | 'InterLayerInput' 
+  | 'InterLayerOutput' | 'InterLayerInput' 
   | 'ColorRGB' | 'LumaSplitter' | 'Spawn' | 'Path' | 'Inverter' | 'VideoMixer'
-  | 'LogicGate' | 'TriggeredGate' | 'Pattern' | 'Kaleidoscope' | 'SignalMath' | 'SampleAndHold' | 'StepSequencer';
+  | 'LogicGate' | 'TriggeredGate' | 'Pattern' | 'Kaleidoscope' | 'SignalMath' | 'SampleAndHold' | 'StepSequencer' | 'AudioSource' | 'Oscilloscope';
 
 // --- GRAPH ---
 export interface GraphEdge {
@@ -440,4 +442,29 @@ export interface EngineState {
   activeLayerId: string | null;
   canvasWidth: number;
   canvasHeight: number;
+}
+
+// --- AUDIO TYPES ---
+
+export interface AudioBusData {
+  id: string;
+  name: string;
+  peak: number;
+  rms: number;
+  fft: Float32Array;
+  waveform: Float32Array;
+  onset: boolean;
+  bpm: number;
+  confidence: number;
+  bands: {
+    bass: number;
+    mid: number;
+    high: number;
+  };
+}
+
+export interface AudioEngineState {
+  buses: Record<string, AudioBusData>;
+  masterVolume: number;
+  isMuted: boolean;
 }

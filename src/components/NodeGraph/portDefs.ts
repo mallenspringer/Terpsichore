@@ -104,9 +104,18 @@ export const PORT_DEFS: Record<string, PortDef[]> = {
     { id: 'in_b', label: 'Input B', direction: 'in',  signalType: 'modulation' },
     { id: 'out',  label: 'Result',  direction: 'out', signalType: 'modulation' },
   ],
-  AudioAnalyzer: [
-    { id: 'audio_in', label: 'Audio In', direction: 'in', signalType: 'audio' },
-    { id: 'out', label: 'Peak Level', direction: 'out', signalType: 'modulation' },
+  AudioSource: [
+    { id: 'audio_out', label: 'Audio Out', direction: 'out', signalType: 'audio', priority: 0 },
+    { id: 'peak_out',  label: 'Peak Out',  direction: 'out', signalType: 'modulation', priority: 1 },
+    { id: 'beat_out',  label: 'Beat Out',  direction: 'out', signalType: 'trigger', priority: 2 },
+    { id: 'bass_out',  label: 'Bass Out',  direction: 'out', signalType: 'modulation', priority: 3 },
+    { id: 'mid_out',   label: 'Mid Out',   direction: 'out', signalType: 'modulation', priority: 4 },
+    { id: 'high_out',  label: 'High Out',  direction: 'out', signalType: 'modulation', priority: 5 },
+  ],
+  Oscilloscope: [
+    { id: 'audio_in',  label: 'Audio In',  direction: 'in',  signalType: 'audio', priority: 0 },
+    { id: 'video_out', label: 'Video Out', direction: 'out', signalType: 'video', priority: 1 },
+    { id: 'freeze',    label: 'Freeze',    direction: 'in',  signalType: 'trigger' },
   ],
   Inverter: [
     { id: 'video_in',   label: 'Video In',   direction: 'in',  signalType: 'video' },
@@ -323,7 +332,8 @@ export const MODULE_DISPLAY_NAMES: Record<string, string> = {
   AudioFile: 'Audio File',
   SystemAudio: 'Sys Audio',
   SignalProcessor: 'Processor',
-  AudioAnalyzer: 'Analyzer',
+  AudioSource: 'Audio Source',
+  Oscilloscope: 'Oscilloscope',
   InterLayerOutput: 'Layer Out',
   InterLayerInput: 'Layer In',
   LumaSplitter: 'Luma Split',
