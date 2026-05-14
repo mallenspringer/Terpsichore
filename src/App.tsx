@@ -21,7 +21,7 @@ function App() {
 
   // Local State
   const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
-  const [videoProgress, setVideoProgress] = useState<{currentTime: number, duration: number}>({currentTime: 0, duration: 0});
+  const [videoProgress, setVideoProgress] = useState<Record<string, {currentTime: number, duration: number}>>({});
 
   const activeLayer = useMemo(() => activeLayerId ? layers[activeLayerId] : null, [layers, activeLayerId]);
 
@@ -122,34 +122,48 @@ function App() {
   const progressLoopRef = useRef<number>(0);
   useEffect(() => {
     const loop = () => {
-      if (activeLayerId && rendererRef.current) {
-        const vid = rendererRef.current.getVideoElement(activeLayerId);
-        if (vid && !isNaN(vid.duration) && vid.duration > 0) {
-          const isSeeking = !!rendererRef.current.isSeeking[activeLayerId];
-          setVideoProgress(prev => {
-            if (Math.abs(prev.duration - vid.duration) > 0.01) {
-              return { currentTime: vid.currentTime, duration: vid.duration };
-            }
-            if (!isSeeking && Math.abs(prev.currentTime - vid.currentTime) > 0.01) {
-              return { ...prev, currentTime: vid.currentTime };
-            }
-            return prev;
-          });
+      if (activeLayerId && rendererRef.current && activeLayer) {
+        const nextProgress: Record<string, {currentTime: number, duration: number}> = {};
+        
+        // Track primary source
+        const primaryVid = rendererRef.current.getVideoElement(activeLayerId);
+        if (primaryVid && !isNaN(primaryVid.duration) && primaryVid.duration > 0) {
+          nextProgress['source'] = { currentTime: primaryVid.currentTime, duration: primaryVid.duration };
         }
+        
+        // Track effects
+        activeLayer.effects.forEach(ef => {
+          if (ef.id && ['VideoFile', 'VideoURL', 'WebcamCapture'].includes(ef.type)) {
+            const vid = rendererRef.current!.getVideoElement(ef.id);
+            if (vid && !isNaN(vid.duration) && vid.duration > 0) {
+              nextProgress[ef.id] = { currentTime: vid.currentTime, duration: vid.duration };
+            }
+          }
+        });
+
+        setVideoProgress(prev => {
+          const changed = Object.keys(nextProgress).some(k => 
+            !prev[k] || 
+            Math.abs(prev[k].currentTime - nextProgress[k].currentTime) > 0.05 ||
+            Math.abs(prev[k].duration - nextProgress[k].duration) > 0.05
+          );
+          return changed ? { ...prev, ...nextProgress } : prev;
+        });
       }
       progressLoopRef.current = requestAnimationFrame(loop);
     };
     progressLoopRef.current = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(progressLoopRef.current);
-  }, [activeLayerId]);
+  }, [activeLayerId, activeLayer]);
 
   // Handlers
-  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleSeek = (nodeId: string, e: React.ChangeEvent<HTMLInputElement>) => {
     const time = parseFloat(e.target.value);
     if (activeLayerId && rendererRef.current) {
-      const vid = rendererRef.current.getVideoElement(activeLayerId);
+      const vidKey = nodeId === 'source' ? activeLayerId : nodeId;
+      const vid = rendererRef.current.getVideoElement(vidKey);
       if (vid) vid.currentTime = time;
-      setVideoProgress(p => ({ ...p, currentTime: time }));
+      setVideoProgress(p => ({ ...p, [nodeId]: { ...(p[nodeId] || { duration: 0 }), currentTime: time } }));
     }
   };
 
@@ -159,7 +173,7 @@ function App() {
       source: activeLayer.source,
       onChange: (key: string, val: any) => setSource(activeLayerId, { ...activeLayer.source, [key]: val }),
       onUpdate: (upd: any) => setSource(activeLayerId, { ...activeLayer.source, ...upd }),
-      videoProgress,
+      videoProgress: videoProgress['source'] || { currentTime: 0, duration: 0 },
       onSeek: handleSeek,
       onSeekStart: () => { if (rendererRef.current) rendererRef.current.isSeeking[activeLayerId] = true; },
       onSeekEnd: () => { if (rendererRef.current) rendererRef.current.isSeeking[activeLayerId] = false; },
@@ -219,6 +233,8 @@ function App() {
                 layer={activeLayer}
                 videoProgress={videoProgress}
                 onSeek={handleSeek}
+                onSeekStart={(nodeId) => { if (rendererRef.current) rendererRef.current.isSeeking[nodeId] = true; }}
+                onSeekEnd={(nodeId) => { if (rendererRef.current) rendererRef.current.isSeeking[nodeId] = false; }}
                 cameras={cameras}
                 linkedScales={activeLayer?.linkedScales || {}}
                 setLinkedScales={(s) => {

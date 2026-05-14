@@ -51,6 +51,7 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
     case 'LumaKey': return { id, type: 'LumaKey', threshold: 0.5, tolerance: 0.1, invertKey: false };
     case 'AudioSource': return { id, type: 'AudioSource', busId: 'master' };
     case 'Oscilloscope': return { id, type: 'Oscilloscope', isFrozen: false, triggerLevel: 0.5, timeScale: 1.0 };
+    case 'SpectralSplitter': return { id, type: 'SpectralSplitter', busId: 'master', smoothing: 0.8, sensitivity: 1.0 };
     case 'InterLayerOutput': return { id, type: 'InterLayerOutput', portCount: 1 };
     case 'InterLayerInput': return { id, type: 'InterLayerInput', portCount: 1 };
     case 'ColorRGB': return { id, type: 'ColorRGB', r: 0.5, g: 0.5, b: 0.5, rMode: 'add', gMode: 'add', bMode: 'add', rInputMode: 'channel', gInputMode: 'channel', bInputMode: 'channel' };
@@ -88,6 +89,16 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
         endStep: 7,
         manualResetTrigger: 0
       };
+    case 'ShapeGenerator':
+      return { id, ...createDefaultSource('ShapeGenerator') } as any;
+    case 'VideoFile':
+      return { id, ...createDefaultSource('VideoFile') } as any;
+    case 'VideoURL':
+      return { id, ...createDefaultSource('VideoURL') } as any;
+    case 'WebcamCapture':
+      return { id, ...createDefaultSource('WebcamCapture') } as any;
+    case 'NoiseSource':
+      return { id, ...createDefaultSource('NoiseSource') } as any;
     default:
       return { id, type: 'SimpleFeedback', feedbackAmount: 0.9, zoom: 0.95, angle: 0.05 } as any;
   }

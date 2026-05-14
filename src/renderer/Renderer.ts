@@ -17,6 +17,7 @@ import { TriggeredGateWGSL } from './shaders/TriggeredGate';
 import { PatternWGSL } from './shaders/Pattern';
 import { KaleidoscopeWGSL } from './shaders/Kaleidoscope';
 import { OscilloscopeWGSL } from './shaders/Oscilloscope';
+import { SpectralSplitterWGSL } from './shaders/SpectralSplitter';
 
 import { PORT_DEFS } from '../components/NodeGraph/portDefs';
 import { SignalDispatcher } from '../state/SignalDispatcher';
@@ -25,8 +26,8 @@ import {
   SimpleFeedbackEffect, ColorRGBEffect, LumaSplitterEffect, VideoMixerEffect,
   VideoURLSource, VideoFileSource, WebcamCaptureSource, ImageLoaderSource, ImageFileSource, 
   SpawnEffect, PathEffect, NoiseVideoSource, InverterEffect,
-  PatternEffect, KaleidoscopeEffect, SampleAndHoldEffect, OscilloscopeEffect,
-  LayerState
+  PatternEffect, KaleidoscopeEffect, SampleAndHoldEffect, OscilloscopeEffect, SpectralSplitterEffect,
+  LayerState, AnySource
 } from '../state/types';
 
 interface SpawnedObject {
@@ -81,11 +82,13 @@ export class Renderer {
   private patternPipeline!: GPURenderPipeline;
   private kaleidoscopePipeline!: GPURenderPipeline;
   private oscilloscopePipeline!: GPURenderPipeline;
+  private spectralSplitterPipeline!: GPURenderPipeline;
   
   // Isolated layouts to prevent 'Minimum Binding Size' collisions
   private effectLayouts: Map<string, GPUBindGroupLayout> = new Map();
 
-  private mediaTextures: Record<string, GPUTexture> = {};
+  public mediaTextures: Record<string, GPUTexture> = {};
+  public isSeeking: Record<string, boolean> = {};
   private nodeTextures: Map<string, GPUTexture> = new Map();
   private analysisReadbackBuffers: Map<string, GPUBuffer> = new Map();
   private analysisWeightBuffers: Map<string, GPUBuffer> = new Map();
@@ -100,7 +103,6 @@ export class Renderer {
   private _isDestroyed = false;
   private animationFrameId: number = 0;
   public startTime = performance.now();
-  public isSeeking: Record<string, boolean> = {};
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -172,57 +174,6 @@ export class Renderer {
     return this.prevFrameFBOs[layerId];
   }
 
-  private renderNoiseSource(layer: LayerState, nodeId: string, target: GPUTexture, timeSec: number, commandEncoder: GPUCommandEncoder) {
-    const source = (nodeId === 'source') ? (layer.source || { type: 'None' }) : (layer.modulators ? layer.modulators[nodeId] : undefined);
-    if (!source || (source as any).type !== 'NoiseSource') return;
-    const ns = source as NoiseVideoSource;
-
-    const scale = this.getEffectiveParam(layer, nodeId, 'scale_cv', ns.scale, timeSec);
-    let evolution = this.getEffectiveParam(layer, nodeId, 'evolution_cv', ns.evolution, timeSec);
-
-    if (ns.autoAnimate) {
-      evolution += timeSec * (ns.flowSpeed ?? 1.0);
-    }
-
-    const octaves = this.getEffectiveParam(layer, nodeId, 'octaves_cv', ns.octaves, timeSec);
-    const persistence = this.getEffectiveParam(layer, nodeId, 'persistence_cv', ns.persistence, timeSec);
-    const seed = this.getEffectiveParam(layer, nodeId, 'seed_cv', ns.seed, timeSec);
-    const brightness = this.getEffectiveParam(layer, nodeId, 'brightness_cv', ns.brightness ?? 0, timeSec);
-    const contrast = this.getEffectiveParam(layer, nodeId, 'contrast_cv', ns.contrast ?? 1, timeSec);
-
-    const uniformData = new Float32Array([
-      ns.noiseType === 'fbm' ? 0 : (ns.noiseType === 'worley' ? 1 : (ns.noiseType === 'white' ? 2 : 3)),
-      scale,
-      evolution,
-      octaves,
-      persistence,
-      seed,
-      brightness,
-      contrast,
-      target.width / target.height,
-      0, 0, 0 // Padding
-    ]);
-
-    const buf = this.getUniformBuffer(`${layer.id}.${nodeId}.noise`, uniformData.byteLength);
-    this.device.queue.writeBuffer(buf, 0, uniformData);
-
-    const pass = commandEncoder.beginRenderPass({
-      colorAttachments: [{
-        view: target.createView(),
-        clearValue: { r: 0, g: 0, b: 0, a: 1 },
-        loadOp: 'clear',
-        storeOp: 'store'
-      }]
-    });
-
-    pass.setPipeline(this.noiseSourcePipeline);
-    pass.setBindGroup(0, this.device.createBindGroup({
-      layout: this.noiseSourcePipeline.getBindGroupLayout(0),
-      entries: [{ binding: 0, resource: { buffer: buf } }]
-    }));
-    pass.draw(3);
-    pass.end();
-  }
 
   private renderSpawn(layer: LayerState, nodeId: string, inputTex: GPUTexture, target: GPUTexture, timeSec: number, commandEncoder: GPUCommandEncoder) {
     const stateKey = `${layer.id}.${nodeId}`;
@@ -570,6 +521,27 @@ export class Renderer {
       primitive
     });
     this.effectLayouts.set('Oscilloscope', this.oscilloscopePipeline.getBindGroupLayout(0));
+
+    this.spectralSplitterPipeline = this.device.createRenderPipeline({
+      layout: this.device.createPipelineLayout({
+        bindGroupLayouts: [
+          this.device.createBindGroupLayout({
+            entries: [
+              { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+              { binding: 1, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } }
+            ]
+          })
+        ]
+      }),
+      vertex,
+      fragment: { 
+        module: this.device.createShaderModule({ code: SpectralSplitterWGSL }), 
+        entryPoint: 'fs_main', 
+        targets: [{ format: this.format }] 
+      },
+      primitive
+    });
+    this.effectLayouts.set('SpectralSplitter', this.spectralSplitterPipeline.getBindGroupLayout(0));
   }
 
   private getStorageBuffer(key: string, size: number): GPUBuffer {
@@ -585,11 +557,19 @@ export class Renderer {
     return buf;
   }
 
-  public getVideoElement(layerId: string): HTMLVideoElement | null {
-    return this.videoElements[layerId] || null;
+  public getVideoElement(key: string): HTMLVideoElement | null {
+    return this.videoElements[key] || null;
   }
 
-  private applyVideoState(vid: any, src: any, isMutedFromLayer: boolean, layerId: string) {
+  public getVideoProgress(key: string): { currentTime: number, duration: number } {
+    const vid = this.videoElements[key];
+    if (vid) {
+      return { currentTime: vid.currentTime, duration: vid.duration };
+    }
+    return { currentTime: 0, duration: 0 };
+  }
+
+  private applyVideoState(vid: any, src: any, isMutedFromLayer: boolean, key: string) {
     vid.playbackRate = src.playbackSpeed;
     vid.loop = false; // Disable native loop so we can intercept it manually
 
@@ -599,7 +579,7 @@ export class Renderer {
     const lastTime = vid.__lastTime ?? 0;
     const delta = vid.currentTime - lastTime;
     const isOrganicPlayback = delta > 0 && delta < 1.0;
-    const layerIsSeeking = !!this.isSeeking[layerId];
+    const layerIsSeeking = !!this.isSeeking[key];
 
     // Organic loop trigger - only when playing and NOT manually seeking
     if (src.playState === 'play' && src.loop && !layerIsSeeking && !isNaN(vid.duration) && vid.duration > 0.1 && vid.currentTime >= loopEnd && isOrganicPlayback && lastTime < loopEnd) {
@@ -624,10 +604,10 @@ export class Renderer {
     }
 
     vid.__lastTime = vid.currentTime;
-    this.applyAudioState(vid, src, isMutedFromLayer, layerId);
+    this.applyAudioState(vid, src, isMutedFromLayer, key);
   }
 
-  private applyAudioState(el: HTMLAudioElement | HTMLVideoElement, src: any, isMutedFromLayer: boolean, layerId: string) {
+  private applyAudioState(el: HTMLAudioElement | HTMLVideoElement, src: any, isMutedFromLayer: boolean, key: string) {
     const globalMute = useEngineStore.getState().globalAudioMuted;
     
     // We keep the element itself unmuted so the MediaElementAudioSourceNode captures signal
@@ -635,23 +615,23 @@ export class Renderer {
     el.volume = 1.0; // Keep full volume for the Web Audio chain
     
     const ae = AudioEngine.getInstance();
-    ae.setModuleMute(layerId, src.audioMuted || src.muted);
-    ae.setLayerMute(layerId, isMutedFromLayer);
+    ae.setModuleMute(key, src.audioMuted || src.muted);
+    ae.setLayerMute(key, isMutedFromLayer);
     ae.setMasterMute(globalMute);
   }
 
-  private manageMediaSource(layerId: string, source: any): GPUExternalTexture | ImageBitmap | null {
+  private manageMediaSource(key: string, source: any): GPUExternalTexture | ImageBitmap | null {
     // 1. Cross-type Cleanup (Video -> Audio or vice versa)
     if (source.type === 'AudioInput' || source.type === 'AudioFile' || source.type === 'SystemAudio') {
-      const vid = this.videoElements[layerId];
+      const vid = this.videoElements[key];
       if (vid && !vid.paused) { vid.pause(); vid.src = ""; vid.srcObject = null; }
     } else if (source.type === 'VideoURL' || source.type === 'VideoFile' || source.type === 'WebcamCapture') {
-      const aud = this.audioElements[layerId];
+      const aud = this.audioElements[key];
       if (aud && !aud.paused) { aud.pause(); aud.src = ""; }
     }
 
     if (source.type === 'VideoURL' || source.type === 'VideoFile' || source.type === 'WebcamCapture') {
-      let vid = this.videoElements[layerId] as any;
+      let vid = this.videoElements[key] as any;
       if (!vid) {
         vid = document.createElement('video');
         vid.muted = true;
@@ -662,13 +642,12 @@ export class Renderer {
         vid.style.width = '1px';
         vid.style.height = '1px';
         document.body.appendChild(vid);
-        vid.onerror = () => console.error(`Video Error on Layer ${layerId}:`, vid.error?.message, "Code:", vid.error?.code);
+        vid.onerror = () => console.error(`Video Error on Node ${key}:`, vid.error?.message, "Code:", vid.error?.code);
         vid.onloadedmetadata = () => {};
-        this.videoElements[layerId] = vid;
+        this.videoElements[key] = vid;
         
         // Register with AudioEngine for signal dispatching
-        // Using a slight delay to ensure it's in the DOM and ready
-        setTimeout(() => AudioEngine.getInstance().registerMediaElement(layerId, vid), 50);
+        setTimeout(() => AudioEngine.getInstance().registerMediaElement(key, vid), 50);
       }
       if (source.type === 'VideoURL') {
         const src = source as VideoURLSource;
@@ -680,7 +659,7 @@ export class Renderer {
           vid.__lastSrc = src.videoUrl;
           vid.load();
         }
-        this.applyVideoState(vid, src, src.audioMuted || (source as any)._layerAudioMuted, layerId);
+        this.applyVideoState(vid, src, src.audioMuted || (source as any)._layerAudioMuted, key);
       } else if (source.type === 'VideoFile') {
         const src = source as VideoFileSource;
         if (src.fileUrl && vid.__lastSrc !== src.fileUrl && !vid.srcObject) {
@@ -691,11 +670,11 @@ export class Renderer {
           vid.__lastSrc = src.fileUrl;
           vid.load();
         }
-        this.applyVideoState(vid, src, src.audioMuted || (source as any)._layerAudioMuted, layerId);
+        this.applyVideoState(vid, src, src.audioMuted || (source as any)._layerAudioMuted, key);
       } else if (source.type === 'WebcamCapture') {
         const src = source as WebcamCaptureSource;
-        if (this.activeDeviceIds[layerId] !== src.deviceId || (!vid.srcObject && !vid.src)) {
-          this.activeDeviceIds[layerId] = src.deviceId;
+        if (this.activeDeviceIds[key] !== src.deviceId || (!vid.srcObject && !vid.src)) {
+          this.activeDeviceIds[key] = src.deviceId;
           vid.pause();
           vid.src = '';
           
@@ -706,16 +685,16 @@ export class Renderer {
           
           navigator.mediaDevices.getUserMedia(constraints)
             .then(stream => {
-              if (this.activeDeviceIds[layerId] === src.deviceId) {
+              if (this.activeDeviceIds[key] === src.deviceId) {
                 vid.srcObject = stream;
                 vid.play().catch(() => {});
               } else {
-                // If the device ID changed while we were fetching, kill this stream
                 stream.getTracks().forEach(t => t.stop());
               }
             })
             .catch(err => console.error("Webcam error:", err));
         }
+        this.applyVideoState(vid, src, (source as any)._layerAudioMuted, key);
       }
       
       
@@ -725,39 +704,39 @@ export class Renderer {
         ? (source as ImageLoaderSource).imageUrl 
         : (source as ImageFileSource).fileUrl;
       
-      if (srcUrl && (!this.imageElements[layerId] || this.imageElements[layerId].src !== srcUrl)) {
+      if (srcUrl && (!this.imageElements[key] || this.imageElements[key].src !== srcUrl)) {
         const img = new Image();
         if (source.type === 'ImageLoader') img.crossOrigin = 'anonymous';
         img.src = srcUrl;
-        this.imageElements[layerId] = img;
+        this.imageElements[key] = img;
         img.onload = () => {
-          createImageBitmap(img).then(bmp => this.imageBitmaps[layerId] = bmp);
+          createImageBitmap(img).then(bmp => this.imageBitmaps[key] = bmp);
         };
       }
-      return this.imageBitmaps[layerId] || null;
+      return this.imageBitmaps[key] || null;
     } else if (source.type === 'AudioFile') {
-      let aud = this.audioElements[layerId];
+      let aud = this.audioElements[key];
       if (!aud) {
         aud = document.createElement('audio');
         aud.crossOrigin = 'anonymous';
-        this.audioElements[layerId] = aud;
+        this.audioElements[key] = aud;
       }
       const src = source as any;
       if (src.fileUrl && aud.src !== src.fileUrl) {
         aud.src = src.fileUrl;
         aud.load();
-        AudioEngine.getInstance().registerMediaElement(layerId, aud);
+        AudioEngine.getInstance().registerMediaElement(key, aud);
       }
       if (src.playState === 'play' && aud.paused && !useEngineStore.getState().isGlobalPaused) aud.play().catch(e => console.error("Audio Play Error:", e));
       else if (src.playState === 'pause' && !aud.paused) aud.pause();
       else if (src.playState === 'stop') { aud.pause(); aud.currentTime = 0; }
       
       aud.loop = src.loop;
-      this.applyAudioState(aud, src, source._layerAudioMuted, layerId);
+      this.applyAudioState(aud, src, source._layerAudioMuted, key);
       return null;
     } else if (source.type === 'AudioInput' || source.type === 'SystemAudio') {
       const src = source as any;
-      let stream = this.activeStreams[layerId];
+      let stream = this.activeStreams[key];
       if (!stream) {
         const constraints = source.type === 'AudioInput' 
           ? { audio: src.deviceId ? { deviceId: src.deviceId } : true }
@@ -768,24 +747,24 @@ export class Renderer {
           : navigator.mediaDevices.getDisplayMedia(constraints);
           
       promise.then(s => {
-        this.activeStreams[layerId] = s;
+        this.activeStreams[key] = s;
         // We need an element to actually "play" the stream for volume/mute to work easily
-        let aud = this.audioElements[layerId];
+        let aud = this.audioElements[key];
         if (!aud) {
           aud = document.createElement('audio');
           document.body.appendChild(aud); // Needs to be in DOM for some browsers
           aud.style.display = 'none';
-          this.audioElements[layerId] = aud;
+          this.audioElements[key] = aud;
         }
         aud.srcObject = s;
         aud.play();
-        AudioEngine.getInstance().registerMediaElement(layerId, aud);
+        AudioEngine.getInstance().registerMediaElement(key, aud);
       }).catch(e => console.error(`${source.type} Error:`, e));
       }
       
-      const aud = this.audioElements[layerId];
+      const aud = this.audioElements[key];
       if (aud) {
-        this.applyAudioState(aud, src, source._layerAudioMuted, layerId);
+        this.applyAudioState(aud, src, source._layerAudioMuted, key);
       }
       return null;
     }
@@ -822,7 +801,7 @@ export class Renderer {
   private sortNodes(layer: LayerState): string[] {
     const nodes = [
       ...(layer.source.type !== 'None' ? ['source'] : []),
-      ...layer.effects.map(e => e.id),
+      ...layer.effects.map(e => e.id as string),
       ...Object.keys(layer.modulators || {}),
       '__output__'
     ];
@@ -1003,26 +982,31 @@ export class Renderer {
     });
     masterPass.end();
 
-    // Cleanup video/audio for layers that no longer exist
-    const activeLayerIds = new Set(Object.keys(state.layers));
-    Object.keys(this.videoElements).forEach(lid => {
-      if (!activeLayerIds.has(lid)) {
-        const v = this.videoElements[lid];
+    // Cleanup video/audio for nodes (layers or effects) that no longer exist
+    const activeNodeIds = new Set<string>();
+    Object.entries(state.layers).forEach(([lid, layer]) => {
+      activeNodeIds.add(lid);
+      layer.effects.forEach(ef => { if (ef.id) activeNodeIds.add(ef.id); });
+    });
+
+    Object.keys(this.videoElements).forEach(id => {
+      if (!activeNodeIds.has(id)) {
+        const v = this.videoElements[id];
         v.pause();
         v.src = '';
         v.removeAttribute('src');
         v.load();
         v.remove();
-        delete this.videoElements[lid];
+        delete this.videoElements[id];
       }
     });
-    Object.keys(this.audioElements).forEach(lid => {
-      if (!activeLayerIds.has(lid)) {
-        const a = this.audioElements[lid];
+    Object.keys(this.audioElements).forEach(id => {
+      if (!activeNodeIds.has(id)) {
+        const a = this.audioElements[id];
         a.pause();
         a.src = '';
         a.remove();
-        delete this.audioElements[lid];
+        delete this.audioElements[id];
       }
     });
 
@@ -1140,6 +1124,18 @@ export class Renderer {
           const effect = layer.effects.find(e => e.id === nodeId);
           if (!effect) return;
 
+          if (['ShapeGenerator', 'VideoFile', 'VideoURL', 'WebcamCapture', 'NoiseSource'].includes(effect.type)) {
+            const target = this.ensureTexture(nodeId, 'video_out');
+            if (effect.type === 'ShapeGenerator') {
+              this.renderShapeSource(layer, nodeId, target, timeSec, commandEncoder);
+            } else if (effect.type === 'NoiseSource') {
+              this.renderNoiseSource(layer, nodeId, target, timeSec, commandEncoder);
+            } else {
+              this.renderVideoEffect(layer, nodeId, effect as any, target, commandEncoder);
+            }
+            return;
+          }
+
           const incomingEdges = layer.graph?.edges.filter(e => e.toNodeId === nodeId && (e.signalType === 'video' || e.toPort === 'sig_in')) || [];
           const inputTex = (incomingEdges.length > 0) ? this.getTextureForNode(incomingEdges[0].fromNodeId, incomingEdges[0].fromPort) : this.ensureTexture('__dummy__');
           if (!inputTex) return;
@@ -1222,8 +1218,11 @@ export class Renderer {
             let busId = 'master';
             if (edge) {
               const sourceEffect = layer?.effects.find(e => e.id === edge.fromNodeId);
-              if (sourceEffect?.type === 'AudioSource') busId = (sourceEffect as any).busId;
-              else if (edge.fromNodeId === 'source') busId = layer.id;
+              if (sourceEffect?.type === 'AudioSource') {
+                busId = (sourceEffect as any).busId || 'master';
+              } else if (edge.fromNodeId === 'source' || sourceEffect?.type === 'VideoFile' || sourceEffect?.type === 'VideoURL') {
+                busId = edge.fromNodeId === 'source' ? layer.id : edge.fromNodeId;
+              }
             }
 
             const busData = AudioEngine.getInstance().getBusData(busId);
@@ -1254,6 +1253,50 @@ export class Renderer {
             const bg = this.device.createBindGroup({ layout, entries });
             pass.setPipeline(pipeline); pass.setBindGroup(0, bg); pass.draw(3); pass.end();
             pipeline = null; // Prevent redundant common pass
+          } else if (effect.type === 'SpectralSplitter') {
+            pipeline = this.spectralSplitterPipeline;
+            const ef = effect as SpectralSplitterEffect;
+            
+            const edge = layer?.graph?.edges.find(e => e.toNodeId === nodeId && e.toPort === 'audio_in');
+            let busId = 'master';
+            if (edge) {
+              const sourceEffect = layer?.effects.find(e => e.id === edge.fromNodeId);
+              if (sourceEffect?.type === 'AudioSource') busId = (sourceEffect as any).busId;
+              else if (edge.fromNodeId === 'source') busId = layer.id;
+            }
+
+            const busData = AudioEngine.getInstance().getBusData(busId);
+            const fft = busData ? busData.fft : new Float32Array(512);
+
+            const storageBuffer = this.getStorageBuffer(`${nodeId}.fft`, fft.byteLength);
+            this.device.queue.writeBuffer(storageBuffer, 0, fft as any);
+
+            const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 48); 
+            this.device.queue.writeBuffer(uniformBuffer, 0, new Float32Array([
+              this.getEffectiveParam(layer, ef.id, 'sensitivity', ef.sensitivity, timeSec),
+              this.getEffectiveParam(layer, ef.id, 'smoothing', ef.smoothing, timeSec),
+              this.canvas.width / this.canvas.height,
+              timeSec,
+              busData?.bands.low ?? 0,
+              busData?.bands.lowMid ?? 0,
+              busData?.bands.midGranular ?? 0,
+              busData?.bands.highMid ?? 0,
+              busData?.bands.highGranular ?? 0,
+              0, 0, 0 // Padding to 48 bytes (12 floats)
+            ]) as any);
+
+            entries = [
+              { binding: 0, resource: { buffer: uniformBuffer } },
+              { binding: 1, resource: { buffer: storageBuffer } }
+            ];
+
+            const pass = commandEncoder.beginRenderPass({
+              colorAttachments: [{ view: target.createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' }]
+            });
+            const layout = this.effectLayouts.get(effect.type) || pipeline.getBindGroupLayout(0);
+            const bg = this.device.createBindGroup({ layout, entries });
+            pass.setPipeline(pipeline); pass.setBindGroup(0, bg); pass.draw(3); pass.end();
+            pipeline = null; 
           } else if (effect.type === 'LumaSplitter') {
             pipeline = this.lumaSplitPipeline;
             const ef = effect as LumaSplitterEffect;
@@ -1654,6 +1697,120 @@ export class Renderer {
     this.analysisReadbackBuffers.forEach(buf => buf.destroy());
     this.analysisReadbackBuffers.clear();
     this.analysisWeightBuffers.clear();
+  }
+
+  private renderShapeSource(layer: LayerState, nodeId: string, target: GPUTexture, timeSec: number, commandEncoder: GPUCommandEncoder) {
+    const src = (nodeId === 'source' ? layer.source : layer.effects.find(e => e.id === nodeId)) as ShapeGeneratorSource;
+    if (!src) return;
+
+    const pass = commandEncoder.beginRenderPass({
+      colorAttachments: [{ view: target.createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' }]
+    });
+
+    const uniformBuffer = this.getUniformBuffer(`${layer.id}.${nodeId}.uniforms`, 80);
+    const buf = new ArrayBuffer(80);
+    
+    const shapeTypeMap: Record<string, number> = { rectangle: 0, ellipse: 1, polygon: 2 };
+    const u32 = new Uint32Array(buf);
+    u32[0] = shapeTypeMap[src.shapeType] || 0;
+    u32[1] = src.strokeMode === 'hollow' ? 1 : 0;
+    
+    const f32 = new Float32Array(buf);
+    f32[2] = src.strokeThreshold ?? 0.1;
+    f32.set(src.fillColor, 4); // index 4..7
+    
+    f32[8] = this.getEffectiveParam(layer, nodeId, 'edgeSoftness', src.edgeSoftness, timeSec);
+    const rawSidesSig = this.getEffectiveParam(layer, nodeId, 'sides', 0, timeSec);
+    const mappedSidesSig = Math.sign(rawSidesSig) * Math.pow(Math.abs(rawSidesSig), 2) * 29;
+    f32[9] = Math.max(3, (src.sides ?? 3) + mappedSidesSig);
+    
+    f32[10] = this.getEffectiveParam(layer, nodeId, 'roundness', src.roundness ?? 0, timeSec);
+    f32[11] = this.getEffectiveParam(layer, nodeId, 'convexity', src.convexity ?? 0, timeSec);
+    
+    const rotModVal = this.getEffectiveParam(layer, nodeId, 'rotation', 0, timeSec);
+    f32[12] = (src.rotation ?? 0) + rotModVal * 360.0;
+    
+    f32[13] = this.getEffectiveParam(layer, nodeId, 'strokeWidth', src.strokeWidth ?? 0, timeSec);
+    f32[14] = this.canvas.width / this.canvas.height;
+    f32[15] = this.getEffectiveParam(layer, nodeId, 'scale', src.scale ?? 1, timeSec);
+    
+    f32[16] = this.getEffectiveParam(layer, nodeId, 'x', src.x ?? 0, timeSec);
+    f32[17] = this.getEffectiveParam(layer, nodeId, 'y', src.y ?? 0, timeSec);
+
+    this.device.queue.writeBuffer(uniformBuffer, 0, buf);
+    const bindGroup = this.device.createBindGroup({ layout: this.shapePipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: uniformBuffer } }] });
+    pass.setPipeline(this.shapePipeline); pass.setBindGroup(0, bindGroup); pass.draw(3);
+    pass.end();
+  }
+
+  private renderVideoEffect(layer: LayerState, nodeId: string, source: AnySource, target: GPUTexture, commandEncoder: GPUCommandEncoder) {
+    const media = this.manageMediaSource(nodeId, { ...source, _layerAudioMuted: layer.audioMuted } as any);
+    if (!media) return;
+
+    const width = (media as any).videoWidth || (media as any).width || 0;
+    const height = (media as any).videoHeight || (media as any).height || 0;
+    if (width <= 0 || height <= 0) return;
+
+    const pass = commandEncoder.beginRenderPass({
+      colorAttachments: [{ view: target.createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' }]
+    });
+
+    const uniformBuffer = this.getUniformBuffer(`${layer.id}.${nodeId}.media_uniforms`, 16);
+    const fitMap: Record<string, number> = { cover: 0, contain: 1, fill: 2 };
+    const f32 = new Float32Array([ fitMap[(source as any).objectFit] ?? 0, width / height, this.canvas.width / this.canvas.height, 0]);
+    this.device.queue.writeBuffer(uniformBuffer, 0, f32);
+
+    if (media instanceof HTMLVideoElement && media.readyState >= 2) {
+      try {
+        const videoTex = this.device.importExternalTexture({ source: media });
+        const bindGroup = this.device.createBindGroup({ layout: this.videoPipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: uniformBuffer } }, { binding: 1, resource: videoTex }, { binding: 2, resource: this.sampler }] });
+        pass.setPipeline(this.videoPipeline); pass.setBindGroup(0, bindGroup); pass.draw(3);
+      } catch (e) {}
+    } else if (media instanceof ImageBitmap) {
+      let mediaTex = this.mediaTextures[nodeId];
+      if (!mediaTex || mediaTex.width !== width || mediaTex.height !== height) {
+        if (mediaTex) mediaTex.destroy();
+        mediaTex = this.device.createTexture({ size: [width, height], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT });
+        this.mediaTextures[nodeId] = mediaTex;
+      }
+      this.device.queue.copyExternalImageToTexture({ source: media }, { texture: mediaTex }, [width, height]);
+      const bindGroup = this.device.createBindGroup({ layout: this.mediaPipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: uniformBuffer } }, { binding: 1, resource: mediaTex.createView() }, { binding: 2, resource: this.sampler }] });
+      pass.setPipeline(this.mediaPipeline); pass.setBindGroup(0, bindGroup); pass.draw(3);
+    }
+    pass.end();
+  }
+
+  private renderNoiseSource(layer: LayerState, nodeId: string, target: GPUTexture, timeSec: number, commandEncoder: GPUCommandEncoder) {
+    const src = (nodeId === 'source' ? layer.source : layer.effects.find(e => e.id === nodeId)) as NoiseVideoSource;
+    if (!src) return;
+
+    const pass = commandEncoder.beginRenderPass({
+      colorAttachments: [{ view: target.createView(), clearValue: { r: 0, g: 0, b: 0, a: 1 }, loadOp: 'clear', storeOp: 'store' }]
+    });
+
+    const noiseTypeMap: Record<string, number> = { fbm: 0, worley: 1, white: 2, perlin: 3 };
+    const uniformBuffer = this.getUniformBuffer(`${layer.id}.${nodeId}.noise_uniforms`, 64);
+    const f32 = new Float32Array(16);
+    
+    const u32 = new Uint32Array(f32.buffer);
+    u32[0] = noiseTypeMap[src.noiseType] ?? 0;
+    u32[1] = src.seed ?? 123;
+    u32[2] = src.octaves ?? 4;
+    u32[3] = src.autoAnimate ? 1 : 0;
+    
+    f32[4] = this.getEffectiveParam(layer, nodeId, 'scale_cv', src.scale ?? 2.0, timeSec);
+    f32[5] = this.getEffectiveParam(layer, nodeId, 'evolution_cv', src.evolution ?? 1.0, timeSec);
+    f32[6] = this.getEffectiveParam(layer, nodeId, 'persistence_cv', src.persistence ?? 0.5, timeSec);
+    f32[7] = this.getEffectiveParam(layer, nodeId, 'brightness_cv', src.brightness ?? 0, timeSec);
+    f32[8] = this.getEffectiveParam(layer, nodeId, 'contrast_cv', src.contrast ?? 1, timeSec);
+    f32[9] = src.flowSpeed ?? 1.0;
+    f32[10] = timeSec;
+    f32[11] = this.canvas.width / this.canvas.height;
+    
+    this.device.queue.writeBuffer(uniformBuffer, 0, f32);
+    const bindGroup = this.device.createBindGroup({ layout: this.noiseSourcePipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: uniformBuffer } }] });
+    pass.setPipeline(this.noiseSourcePipeline); pass.setBindGroup(0, bindGroup); pass.draw(3);
+    pass.end();
   }
 
   private getFeedbackTexture(layerId: string): GPUTexture {

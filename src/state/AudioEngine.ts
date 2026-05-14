@@ -53,7 +53,10 @@ export class AudioEngine {
         onset: false,
         bpm: 120,
         confidence: 0,
-        bands: { bass: 0, mid: 0, high: 0 }
+        bands: { 
+          bass: 0, mid: 0, high: 0,
+          low: 0, lowMid: 0, midGranular: 0, highMid: 0, highGranular: 0
+        }
       });
     }
   }
@@ -142,12 +145,18 @@ export class AudioEngine {
       bus.bands = {
         bass: this.getAverage(bus.fft, 0, 6),
         mid: this.getAverage(bus.fft, 6, 93),
-        high: this.getAverage(bus.fft, 93, 511)
+        high: this.getAverage(bus.fft, 93, 511),
+        // Granular 5-band split (adjusted for more musical energy in highs)
+        low: this.getAverage(bus.fft, 0, 4),      // 0 - 170Hz
+        lowMid: this.getAverage(bus.fft, 4, 12),   // 170 - 500Hz
+        midGranular: this.getAverage(bus.fft, 12, 47), // 500 - 2000Hz
+        highMid: this.getAverage(bus.fft, 47, 93),  // 2000 - 4000Hz
+        highGranular: this.getAverage(bus.fft, 93, 511) // 4000 - 22000Hz (Full range)
       };
 
       // 5. Onset Detection
       const prevOnset = bus.onset;
-      bus.onset = bus.bands.bass > -40 && peak > 0.6 && !prevOnset;
+      bus.onset = bus.bands.bass > 0.4 && peak > 0.6 && !prevOnset;
     });
   }
 
@@ -157,8 +166,10 @@ export class AudioEngine {
       sum += fft[i];
     }
     const avg = sum / (end - start);
-    // Convert dB (-100 to 0) to linear (0 to 1) roughly
-    return Math.max(0, (avg + 100) / 100);
+    // Convert dB (-100 to 0) to linear (0 to 1) 
+    // We use a higher floor (-70dB) and steeper curve for better modulation sensitivity
+    const floor = -70;
+    return Math.max(0, (avg - floor) / Math.abs(floor));
   }
 
   public getBusData(id: string): AudioBusData | undefined {

@@ -1,5 +1,6 @@
 import React from 'react';
 import { AudioEngine } from '../../state/AudioEngine';
+import { useEngineStore } from '../../state/store';
 import {
   AnySource, AnyEffect,
   ShapeGeneratorSource, VideoURLSource, VideoFileSource,
@@ -11,7 +12,7 @@ import {
   InterLayerOutputEffect, InterLayerInputEffect, ColorRGBEffect, LumaSplitterEffect,
   SpawnEffect, PathEffect, LogicGateEffect, TriggeredGateEffect, InverterEffect, VideoMixerEffect,
   PatternEffect, KaleidoscopeEffect, SignalMathEffect, SampleAndHoldEffect,
-  AudioSourceEffect, OscilloscopeEffect
+  AudioSourceEffect, OscilloscopeEffect, SpectralSplitterEffect
 } from '../../state/types';
 
 // ── Context types ──────────────────────────────────────────────────────────────
@@ -38,6 +39,12 @@ export interface EffectCtx {
   onUpdate: (updates: Partial<AnyEffect>) => void;
   linkedScales?: Record<string, boolean>;
   setLinkedScales?: (s: Record<string, boolean>) => void;
+  // Support for source-as-effect
+  onFileChange?: React.ChangeEventHandler<HTMLInputElement>;
+  videoProgress?: { currentTime: number; duration: number };
+  onSeek?: React.ChangeEventHandler<HTMLInputElement>;
+  onSeekStart?: () => void;
+  onSeekEnd?: () => void;
 }
 
 export type RowCtx = SourceCtx | EffectCtx;
@@ -50,11 +57,17 @@ export interface ControlRowDef {
 
 // ── Helper shorthand ──────────────────────────────────────────────────────────
 
-const src = <T extends AnySource>(ctx: RowCtx) => (ctx as SourceCtx).source as T;
-const eff = <T extends AnyEffect>(ctx: RowCtx) => (ctx as EffectCtx).effect as T;
-const chg = (ctx: RowCtx) => (ctx as SourceCtx).onChange;
+const src = <T extends unknown>(ctx: RowCtx) => ((ctx as any).source || (ctx as any).effect) as T;
+const eff = <T extends unknown>(ctx: RowCtx) => ((ctx as any).effect || (ctx as any).source) as T;
+const chg = (ctx: RowCtx) => {
+  if ((ctx as any).onChange) return (ctx as any).onChange;
+  return (key: string, val: any) => (ctx as EffectCtx).onUpdate({ [key]: val } as any);
+};
 const sup = (ctx: RowCtx) => (ctx as SourceCtx).onUpdate;
-const upd = (ctx: RowCtx) => (ctx as EffectCtx).onUpdate;
+const upd = (ctx: RowCtx) => {
+  if ((ctx as any).onUpdate) return (ctx as any).onUpdate;
+  return (upd: any) => (ctx as SourceCtx).onChange?.(Object.keys(upd)[0], Object.values(upd)[0]); // Minimal shim
+};
 
 const KEY_COLORS: Record<string, string> = {
   '1': '#ff4444', '2': '#ff8844', '3': '#ffcc44', '4': '#88cc00', '5': '#44ffcc',
@@ -242,7 +255,10 @@ export const SOURCE_ROWS: Record<string, ControlRowDef[]> = {
       render: ctx => {
         const s = src<VideoURLSource>(ctx);
         return (
-          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} onDragStart={e => e.stopPropagation()}>
+          <div className="rack-row-content" 
+            onPointerDown={e => { if (!(e.target instanceof HTMLInputElement)) e.stopPropagation(); }} 
+            onDragStart={e => e.stopPropagation()}
+          >
             <span className="rack-row-label">Transport</span>
             <div className="rack-transport">
               <button className={s.playState === 'play' ? 'active' : ''} onClick={(e) => { e.stopPropagation(); chg(ctx)('playState','play'); }}>▶</button>
@@ -259,7 +275,10 @@ export const SOURCE_ROWS: Record<string, ControlRowDef[]> = {
         const vp = sCtx.videoProgress;
         const s = src<VideoURLSource>(ctx);
         return (
-          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} onDragStart={e => e.stopPropagation()}>
+          <div className="rack-row-content" 
+            onPointerDown={e => { if (!(e.target instanceof HTMLInputElement)) e.stopPropagation(); }} 
+            onDragStart={e => e.stopPropagation()}
+          >
             <span className="rack-row-label">Timeline</span>
             <div className="rack-timeline-wrap">
               <span className="rack-timeline-time">{(vp?.currentTime ?? 0).toFixed(1)}s</span>
@@ -268,20 +287,20 @@ export const SOURCE_ROWS: Record<string, ControlRowDef[]> = {
                 <input type="range" className="timeline-input" min={0} max={vp?.duration || 0.001} step={0.1}
                   value={vp?.currentTime ?? 0} 
                   onChange={e => { e.stopPropagation(); sCtx.onSeek?.(e); }}
-                  onPointerDown={e => { e.stopPropagation(); sCtx.onSeekStart?.(); }}
-                  onPointerUp={e => { e.stopPropagation(); sCtx.onSeekEnd?.(); }}
+                  onPointerDown={() => { sCtx.onSeekStart?.(); }}
+                  onPointerUp={() => { sCtx.onSeekEnd?.(); }}
                 />
                 <input type="range" className="timeline-input flag-input flag-start" min={0} max={vp?.duration || 0.001} step={0.1}
                   value={s.loopStart ?? 0} 
                   onChange={e => { e.stopPropagation(); chg(ctx)('loopStart', parseFloat(e.target.value) || 0); }} 
-                  onPointerDown={e => { e.stopPropagation(); sCtx.onSeekStart?.(); }}
-                  onPointerUp={e => { e.stopPropagation(); sCtx.onSeekEnd?.(); }}
+                  onPointerDown={() => { sCtx.onSeekStart?.(); }}
+                  onPointerUp={() => { sCtx.onSeekEnd?.(); }}
                 />
                 <input type="range" className="timeline-input flag-input flag-end" min={0} max={vp?.duration || 0.001} step={0.1}
                   value={s.loopEnd ?? (vp?.duration || 0.001)} 
                   onChange={e => { e.stopPropagation(); chg(ctx)('loopEnd', parseFloat(e.target.value) || 0); }} 
-                  onPointerDown={e => { e.stopPropagation(); sCtx.onSeekStart?.(); }}
-                  onPointerUp={e => { e.stopPropagation(); sCtx.onSeekEnd?.(); }}
+                  onPointerDown={() => { sCtx.onSeekStart?.(); }}
+                  onPointerUp={() => { sCtx.onSeekEnd?.(); }}
                 />
               </div>
               <span className="rack-timeline-time">{(vp?.duration ?? 0).toFixed(1)}s</span>
@@ -337,7 +356,10 @@ export const SOURCE_ROWS: Record<string, ControlRowDef[]> = {
       render: ctx => {
         const sCtx = ctx as SourceCtx;
         return (
-          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} onDragStart={e => e.stopPropagation()}>
+          <div className="rack-row-content" 
+            onPointerDown={e => { if (!(e.target instanceof HTMLInputElement)) e.stopPropagation(); }} 
+            onDragStart={e => e.stopPropagation()}
+          >
             <span className="rack-row-label">Local Video</span>
             <input type="file" accept="video/*" onChange={e => { e.stopPropagation(); sCtx.onFileChange?.(e); }} />
             <span style={{ fontSize: 8, color: '#555', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -351,7 +373,10 @@ export const SOURCE_ROWS: Record<string, ControlRowDef[]> = {
       render: ctx => {
         const s = src<VideoFileSource>(ctx);
         return (
-          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} onDragStart={e => e.stopPropagation()}>
+          <div className="rack-row-content" 
+            onPointerDown={e => { if (!(e.target instanceof HTMLInputElement)) e.stopPropagation(); }} 
+            onDragStart={e => e.stopPropagation()}
+          >
             <span className="rack-row-label">Transport</span>
             <div className="rack-transport">
               <button className={s.playState === 'play' ? 'active' : ''} onClick={(e) => { e.stopPropagation(); chg(ctx)('playState','play'); }}>▶</button>
@@ -368,7 +393,10 @@ export const SOURCE_ROWS: Record<string, ControlRowDef[]> = {
         const vp = sCtx.videoProgress;
         const s = src<VideoFileSource>(ctx);
         return (
-          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} onDragStart={e => e.stopPropagation()}>
+          <div className="rack-row-content" 
+            onPointerDown={e => { if (!(e.target instanceof HTMLInputElement)) e.stopPropagation(); }} 
+            onDragStart={e => e.stopPropagation()}
+          >
             <span className="rack-row-label">Timeline</span>
             <div className="rack-timeline-wrap">
               <span className="rack-timeline-time">{(vp?.currentTime ?? 0).toFixed(1)}s</span>
@@ -377,20 +405,20 @@ export const SOURCE_ROWS: Record<string, ControlRowDef[]> = {
                 <input type="range" className="timeline-input" min={0} max={vp?.duration || 0.001} step={0.1}
                   value={vp?.currentTime ?? 0} 
                   onChange={e => { e.stopPropagation(); sCtx.onSeek?.(e); }}
-                  onPointerDown={e => { e.stopPropagation(); sCtx.onSeekStart?.(); }}
-                  onPointerUp={e => { e.stopPropagation(); sCtx.onSeekEnd?.(); }}
+                  onPointerDown={() => { sCtx.onSeekStart?.(); }}
+                  onPointerUp={() => { sCtx.onSeekEnd?.(); }}
                 />
                 <input type="range" className="timeline-input flag-input flag-start" min={0} max={vp?.duration || 0.001} step={0.1}
                   value={s.loopStart ?? 0} 
                   onChange={e => { e.stopPropagation(); chg(ctx)('loopStart', parseFloat(e.target.value) || 0); }} 
-                  onPointerDown={e => { e.stopPropagation(); sCtx.onSeekStart?.(); }}
-                  onPointerUp={e => { e.stopPropagation(); sCtx.onSeekEnd?.(); }}
+                  onPointerDown={() => { sCtx.onSeekStart?.(); }}
+                  onPointerUp={() => { sCtx.onSeekEnd?.(); }}
                 />
                 <input type="range" className="timeline-input flag-input flag-end" min={0} max={vp?.duration || 0.001} step={0.1}
                   value={s.loopEnd ?? (vp?.duration || 0.001)} 
                   onChange={e => { e.stopPropagation(); chg(ctx)('loopEnd', parseFloat(e.target.value) || 0); }} 
-                  onPointerDown={e => { e.stopPropagation(); sCtx.onSeekStart?.(); }}
-                  onPointerUp={e => { e.stopPropagation(); sCtx.onSeekEnd?.(); }}
+                  onPointerDown={() => { sCtx.onSeekStart?.(); }}
+                  onPointerUp={() => { sCtx.onSeekEnd?.(); }}
                 />
               </div>
               <span className="rack-timeline-time">{(vp?.duration ?? 0).toFixed(1)}s</span>
@@ -445,7 +473,10 @@ export const SOURCE_ROWS: Record<string, ControlRowDef[]> = {
       render: ctx => {
         const sCtx = ctx as SourceCtx;
         return (
-          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} onDragStart={e => e.stopPropagation()}>
+          <div className="rack-row-content" 
+            onPointerDown={e => { if (!(e.target instanceof HTMLInputElement)) e.stopPropagation(); }} 
+            onDragStart={e => e.stopPropagation()}
+          >
             <span className="rack-row-label">Camera Device</span>
             <select value={src<WebcamCaptureSource>(ctx).deviceId} 
               onChange={e => { e.stopPropagation(); chg(ctx)('deviceId', e.target.value); }}>
@@ -715,7 +746,10 @@ export const SOURCE_ROWS: Record<string, ControlRowDef[]> = {
       render: ctx => {
         const sCtx = ctx as SourceCtx;
         return (
-          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} onDragStart={e => e.stopPropagation()}>
+          <div className="rack-row-content" 
+            onPointerDown={e => { if (!(e.target instanceof HTMLInputElement)) e.stopPropagation(); }} 
+            onDragStart={e => e.stopPropagation()}
+          >
             <span className="rack-row-label">Local Image</span>
             <input type="file" accept="image/*" onChange={e => { e.stopPropagation(); sCtx.onFileChange?.(e); }} />
             <span style={{ fontSize: 8, color: '#555' }}>{src<ImageFileSource>(ctx).fileName}</span>
@@ -741,7 +775,10 @@ export const SOURCE_ROWS: Record<string, ControlRowDef[]> = {
       render: ctx => {
         const sCtx = ctx as SourceCtx;
         return (
-          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} onDragStart={e => e.stopPropagation()}>
+          <div className="rack-row-content" 
+            onPointerDown={e => { if (!(e.target instanceof HTMLInputElement)) e.stopPropagation(); }} 
+            onDragStart={e => e.stopPropagation()}
+          >
             <span className="rack-row-label">Input Device</span>
             <select value={src<AudioInputSource>(ctx).deviceId} 
               onChange={e => { e.stopPropagation(); chg(ctx)('deviceId', e.target.value); }}>
@@ -764,7 +801,10 @@ export const SOURCE_ROWS: Record<string, ControlRowDef[]> = {
       render: ctx => {
         const sCtx = ctx as SourceCtx;
         return (
-          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} onDragStart={e => e.stopPropagation()}>
+          <div className="rack-row-content" 
+            onPointerDown={e => { if (!(e.target instanceof HTMLInputElement)) e.stopPropagation(); }} 
+            onDragStart={e => e.stopPropagation()}
+          >
             <span className="rack-row-label">Audio File</span>
             <input type="file" accept="audio/*" onChange={e => { e.stopPropagation(); sCtx.onFileChange?.(e); }} />
             <span style={{ fontSize: 8, color: '#555' }}>{src<AudioFileSource>(ctx).fileName}</span>
@@ -776,7 +816,10 @@ export const SOURCE_ROWS: Record<string, ControlRowDef[]> = {
       render: ctx => {
         const s = src<AudioFileSource>(ctx);
         return (
-          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} onDragStart={e => e.stopPropagation()}>
+          <div className="rack-row-content" 
+            onPointerDown={e => { if (!(e.target instanceof HTMLInputElement)) e.stopPropagation(); }} 
+            onDragStart={e => e.stopPropagation()}
+          >
             <span className="rack-row-label">Transport</span>
             <div className="rack-transport">
               <button className={s.playState === 'play' ? 'active' : ''} onClick={(e) => { e.stopPropagation(); chg(ctx)('playState','play'); }}>▶</button>
@@ -1523,7 +1566,16 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
           <div className="rack-row-content" onPointerDown={e => e.stopPropagation()}>
             <span className="rack-row-label">Bus</span>
             <select value={ef.busId} onChange={e => upd(ctx)({ busId: e.target.value })} className="mode-select" style={{ flex: 1 }}>
-              {buses.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+              {buses.map(b => {
+                const layerOrder = useEngineStore.getState().layerOrder;
+                const layerIdx = layerOrder.indexOf(b.id);
+                const label = b.id === 'master' ? 'Master Bus' : 
+                            layerIdx !== -1 ? `Layer ${layerIdx + 1}` : 
+                            b.name;
+                return (
+                  <option key={b.id} value={b.id}>{label}</option>
+                );
+              })}
             </select>
           </div>
         );
@@ -1544,6 +1596,37 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
           <input type="checkbox" checked={eff<OscilloscopeEffect>(ctx).isFrozen} onChange={e => upd(ctx)({ isFrozen: e.target.checked })} />
         </div>
       )
+    },
+  ],
+  SpectralSplitter: [
+    { id: 'busId', label: 'Source Bus',
+      render: ctx => {
+        const ef = eff<SpectralSplitterEffect>(ctx);
+        const buses = AudioEngine.getInstance().getAllBuses();
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()}>
+            <span className="rack-row-label">Bus</span>
+            <select value={ef.busId} onChange={e => upd(ctx)({ busId: e.target.value })} className="mode-select" style={{ flex: 1 }}>
+              {buses.map(b => {
+                const layerOrder = useEngineStore.getState().layerOrder;
+                const layerIdx = layerOrder.indexOf(b.id);
+                const label = b.id === 'master' ? 'Master Bus' : 
+                            layerIdx !== -1 ? `Layer ${layerIdx + 1}` : 
+                            b.name;
+                return (
+                  <option key={b.id} value={b.id}>{label}</option>
+                );
+              })}
+            </select>
+          </div>
+        );
+      }
+    },
+    { id: 'smoothing', label: 'Smoothing',
+      render: ctx => <Slider label="Smoothing" min={0} max={0.99} step={0.01} value={eff<SpectralSplitterEffect>(ctx).smoothing} resetValue={0.8} onChange={v => upd(ctx)({ smoothing: v })} />
+    },
+    { id: 'sensitivity', label: 'Sensitivity',
+      render: ctx => <Slider label="Sensitivity" min={0.1} max={10} step={0.1} value={eff<SpectralSplitterEffect>(ctx).sensitivity} resetValue={1.0} onChange={v => upd(ctx)({ sensitivity: v })} />
     },
   ],
 };

@@ -42,10 +42,10 @@ function defaultX(index: number) {
 interface NodeGraphProps {
   layerId: string | null;
   layer?: LayerState | null;
-  videoProgress: { currentTime: number; duration: number };
-  onSeek: React.ChangeEventHandler<HTMLInputElement>;
-  onSeekStart?: () => void;
-  onSeekEnd?: () => void;
+  videoProgress: Record<string, { currentTime: number; duration: number }>;
+  onSeek: (nodeId: string, e: React.ChangeEvent<HTMLInputElement>) => void;
+  onSeekStart?: (nodeId: string) => void;
+  onSeekEnd?: (nodeId: string) => void;
   cameras: MediaDeviceInfo[];
   linkedScales: Record<string, boolean>;
   setLinkedScales: (s: Record<string, boolean>) => void;
@@ -215,23 +215,28 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
     updateLayer(layer.id, { source: { ...layer.source, [key]: value } as AnySource });
   }, [layer, updateLayer]);
 
-  const handleVideoFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleNodeFileChange = useCallback((nodeId: string, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !layer) return;
     const url = URL.createObjectURL(file);
-    const src = layer.source as VideoFileSource;
-    if (src.fileUrl) URL.revokeObjectURL(src.fileUrl);
-    updateLayer(layer.id, { source: { ...layer.source, fileUrl: url, fileName: file.name } as VideoFileSource });
+    
+    if (nodeId === 'source') {
+      const src = layer.source as (VideoFileSource | ImageFileSource);
+      if (src.fileUrl) URL.revokeObjectURL(src.fileUrl);
+      updateLayer(layer.id, { source: { ...layer.source, fileUrl: url, fileName: file.name } as AnySource });
+    } else {
+      const effect = layer.effects.find(ef => ef.id === nodeId) as (VideoFileSource | ImageFileSource);
+      if (effect && effect.fileUrl) URL.revokeObjectURL(effect.fileUrl);
+      const newEffects = layer.effects.map(ef => 
+        ef.id === nodeId ? { ...ef, fileUrl: url, fileName: file.name } as AnyEffect : ef
+      );
+      updateLayer(layer.id, { effects: newEffects });
+    }
   }, [layer, updateLayer]);
 
-  const handleImageFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !layer) return;
-    const url = URL.createObjectURL(file);
-    const src = layer.source as ImageFileSource;
-    if (src.fileUrl) URL.revokeObjectURL(src.fileUrl);
-    updateLayer(layer.id, { source: { ...layer.source, fileUrl: url, fileName: file.name } as ImageFileSource });
-  }, [layer, updateLayer]);
+  const handleNodeSeek = useCallback((nodeId: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    onSeek(nodeId, e);
+  }, [onSeek]);
 
   const handleUpdateEffect = useCallback((effectId: string, updates: Partial<AnyEffect>) => {
     if (!layer) return;
@@ -435,10 +440,17 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
     const moduleType = e.dataTransfer.getData('application/terp-module') || e.dataTransfer.getData('text/plain');
     if (!moduleType || !layer) return;
     const [category, type] = moduleType.split(':');
+    
     if (category === 'effect') {
       handleAddEffect(type as AnyEffect['type']);
     } else if (category === 'source') {
-      handleSetSource(type);
+      // If we don't have a primary source yet, set it. 
+      // Otherwise, add it as an effect (since we've enabled source-as-effect in types/factory)
+      if (layer.source.type === 'None') {
+        handleSetSource(type);
+      } else {
+        handleAddEffect(type as any);
+      }
     } else if (category === 'modulator') {
       handleAddModulator(type);
     }
@@ -560,11 +572,11 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
     source: layer.source,
     layer: layer,
     onChange: handleSourceChange,
-    videoProgress,
-    onSeek,
-    onSeekStart,
-    onSeekEnd,
-    onFileChange: layer.source.type === 'VideoFile' ? handleVideoFileChange : handleImageFileChange,
+    videoProgress: videoProgress['source'] || { currentTime: 0, duration: 0 },
+    onSeek: (e) => handleNodeSeek('source', e),
+    onSeekStart: () => onSeekStart?.('source'),
+    onSeekEnd: () => onSeekEnd?.('source'),
+    onFileChange: (e) => handleNodeFileChange('source', e),
     cameras,
   };
 
@@ -671,33 +683,40 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
 
           {/* ── Effect Nodes ── */}
           {layer.effects.map((effect, idx) => {
-            const ns = getNodeUIState(effect.id, idx + 1);
-            const rows = EFFECT_ROWS[effect.type] ?? [];
+            const id = effect.id;
+            if (!id) return null;
+            const ns = getNodeUIState(id, idx + 1);
+            const rows = EFFECT_ROWS[effect.type] || SOURCE_ROWS[effect.type as any] || [];
             const effectCtx: EffectCtx = {
               effect,
               layer: layer,
-              onUpdate: (upd) => handleUpdateEffect(effect.id, upd),
+              onUpdate: (upd) => handleUpdateEffect(id, upd),
               linkedScales,
               setLinkedScales,
+              onFileChange: (e) => handleNodeFileChange(id, e),
+              onSeek: (e) => handleNodeSeek(id, e),
+              onSeekStart: () => onSeekStart?.(id),
+              onSeekEnd: () => onSeekEnd?.(id),
+              videoProgress: videoProgress[id] || { currentTime: 0, duration: 0 }
             };
             return (
               <ModuleNode
-                key={effect.id}
-                nodeId={effect.id}
+                key={id}
+                nodeId={id}
                 layerId={layer.id}
                 moduleType={effect.type}
                 title={MODULE_DISPLAY_NAMES[effect.type] || effect.type}
                 nodeState={ns}
                 rows={rows}
                 rowCtx={effectCtx}
-                patchbayOpen={patchbayNode === effect.id}
+                patchbayOpen={patchbayNode === id}
                 ghostSignalType={ghostEdge?.signalType}
                 onPortPointerDown={handlePortPointerDown}
                 onInputJackPointerDown={handleInputJackPointerDown}
                 onPatchbayDrop={handlePatchbayDrop}
-                onPositionChange={(_, x, y) => updateNodeState(effect.id, { x, y })}
-                onLayoutChange={(u) => updateNodeState(effect.id, u)}
-                onRemove={() => handleRemoveEffect(effect.id)}
+                onPositionChange={(_, x, y) => updateNodeState(id, { x, y })}
+                onLayoutChange={(u) => updateNodeState(id, u)}
+                onRemove={() => handleRemoveEffect(id)}
                 graphRef={graphRef}
                 inputSettings={layer.inputSettings}
                 onUpdateInputSettings={(portKey, updates) => updateInputSettings(layer.id, portKey, updates)}

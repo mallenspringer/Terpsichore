@@ -6,6 +6,7 @@ export interface NoneSource {
 }
 
 export interface ShapeGeneratorSource {
+  id?: string;
   type: 'ShapeGenerator';
   shapeType: 'rectangle' | 'ellipse' | 'polygon';
   sides: number;         // 3 to 32
@@ -23,6 +24,7 @@ export interface ShapeGeneratorSource {
 }
 
 export interface VideoURLSource {
+  id?: string;
   type: 'VideoURL';
   videoUrl: string;
   playbackSpeed: number;
@@ -36,6 +38,7 @@ export interface VideoURLSource {
 }
 
 export interface VideoFileSource {
+  id?: string;
   type: 'VideoFile';
   fileUrl: string;
   fileName: string;
@@ -50,6 +53,7 @@ export interface VideoFileSource {
 }
 
 export interface WebcamCaptureSource {
+  id?: string;
   type: 'WebcamCapture';
   deviceId: string;
   objectFit: 'cover' | 'contain' | 'fill';
@@ -121,6 +125,7 @@ export interface NoiseModulatorSource {
 }
 
 export interface NoiseVideoSource {
+  id?: string;
   type: 'NoiseSource';
   noiseType: 'fbm' | 'worley' | 'white' | 'perlin';
   scale: number;
@@ -307,6 +312,14 @@ export interface OscilloscopeEffect {
   timeScale: number;
 }
 
+export interface SpectralSplitterEffect {
+  id: string;
+  type: 'SpectralSplitter';
+  busId: string;
+  smoothing: number;   // 0 to 0.99
+  sensitivity: number; // 0.1 to 10
+}
+
 export type SignalType = 'video' | 'audio' | 'modulation' | 'trigger' | 'midi' | 'generic' | 'trajectory';
 
 export interface InterLayerEdge {
@@ -388,13 +401,15 @@ export type AnyEffect =
   | SpawnEffect | PathEffect | InverterEffect | VideoMixerEffect
   | LogicGateEffect | TriggeredGateEffect | PatternEffect | KaleidoscopeEffect 
   | SignalMathEffect | SampleAndHoldEffect | StepSequencerEffect 
-  | AudioSourceEffect | OscilloscopeEffect;
+  | AudioSourceEffect | OscilloscopeEffect | SpectralSplitterEffect
+  | ShapeGeneratorSource | VideoURLSource | VideoFileSource | WebcamCaptureSource | NoiseVideoSource;
 
 export type EffectType = 
   | 'Transform2D' | 'ColorAdjust' | 'LumaKey' | 'SimpleFeedback' 
   | 'InterLayerOutput' | 'InterLayerInput' 
   | 'ColorRGB' | 'LumaSplitter' | 'Spawn' | 'Path' | 'Inverter' | 'VideoMixer'
-  | 'LogicGate' | 'TriggeredGate' | 'Pattern' | 'Kaleidoscope' | 'SignalMath' | 'SampleAndHold' | 'StepSequencer' | 'AudioSource' | 'Oscilloscope';
+  | 'LogicGate' | 'TriggeredGate' | 'Pattern' | 'Kaleidoscope' | 'SignalMath' | 'SampleAndHold' | 'StepSequencer' | 'AudioSource' | 'Oscilloscope' | 'SpectralSplitter'
+  | 'ShapeGenerator' | 'VideoURL' | 'VideoFile' | 'WebcamCapture' | 'NoiseSource';
 
 // --- GRAPH ---
 export interface GraphEdge {
@@ -460,6 +475,12 @@ export interface AudioBusData {
     bass: number;
     mid: number;
     high: number;
+    // New 5-band analysis
+    low: number;
+    lowMid: number;
+    midGranular: number;
+    highMid: number;
+    highGranular: number;
   };
 }
 

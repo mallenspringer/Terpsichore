@@ -9,6 +9,7 @@ This document tracks planned features and architectural improvements to be addre
 - **v0.2.0 Architecture**: Implemented High-Frequency Signal Engine (Signal Engine 2.0) for zero-latency modulation.
 - **v0.2.0 UX**: Implemented Autoscroll and Transform-aware interaction (focus prevention) for stable graph navigation.
 - **New Modules**: Kaleidoscope, Pattern, Logic Gates, and the enhanced dual-mode Sample & Hold.
+- **Spectral Splitter**: 5-band frequency analysis with real-time WebGPU visualization and modulation outputs.
 
 ## 🚀 New Features
 
@@ -18,8 +19,7 @@ This document tracks planned features and architectural improvements to be addre
 
 ### 2. Enhanced Signal Processing
 - **MIDI Integration**: Support for MIDI clock, notes, and CC for modulation.
-- **Spectral Analysis**: Deeper audio analysis (FFT) for frequency-specific modulation.
-- **Logic Gates**: AND, OR, XOR modules for trigger-based patch logic.
+- **High-Resolution Spectral Splitter**: A 16-32 band analyzer optimized for speech and nuanced vocal frequencies, designed for high-fidelity "voice-to-color" installations.
 
 ### 3. Effects Modules
 - **Pattern Refinements**: 

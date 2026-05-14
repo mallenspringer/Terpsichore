@@ -117,6 +117,15 @@ export const PORT_DEFS: Record<string, PortDef[]> = {
     { id: 'video_out', label: 'Video Out', direction: 'out', signalType: 'video', priority: 1 },
     { id: 'freeze',    label: 'Freeze',    direction: 'in',  signalType: 'trigger' },
   ],
+  SpectralSplitter: [
+    { id: 'audio_in',     label: 'Audio In',  direction: 'in',  signalType: 'audio', priority: 0 },
+    { id: 'video_out',    label: 'Video Out', direction: 'out', signalType: 'video', priority: 1 },
+    { id: 'low_out',      label: 'Low',       direction: 'out', signalType: 'modulation' },
+    { id: 'low_mid_out',  label: 'Low Mid',   direction: 'out', signalType: 'modulation' },
+    { id: 'mid_out',      label: 'Mid',       direction: 'out', signalType: 'modulation' },
+    { id: 'high_mid_out', label: 'High Mid',  direction: 'out', signalType: 'modulation' },
+    { id: 'high_out',     label: 'High',      direction: 'out', signalType: 'modulation' },
+  ],
   Inverter: [
     { id: 'video_in',   label: 'Video In',   direction: 'in',  signalType: 'video' },
     { id: 'video_out',  label: 'Video Out',  direction: 'out', signalType: 'video', priority: 0 },

@@ -1,5 +1,5 @@
 import { useEngineStore } from './store';
-import { LayerState, TriggerPadSource, LogicGateEffect, TriggeredGateEffect, InverterEffect, SignalMathEffect, SampleAndHoldEffect, StepSequencerEffect, OscilloscopeEffect } from './types';
+import { LayerState, TriggerPadSource, LogicGateEffect, TriggeredGateEffect, InverterEffect, SignalMathEffect, SampleAndHoldEffect, StepSequencerEffect, OscilloscopeEffect, SpectralSplitterEffect } from './types';
 import { AudioEngine } from './AudioEngine';
 
 type SignalFunction = (context: DispatchContext, dt: number) => void;
@@ -29,6 +29,7 @@ export class SignalDispatcher {
   private gateLatchStates = new Map<string, boolean>();
   private gateOpenStates = new Map<string, boolean>();
   private sequencerStates = new Map<string, { phase: number; currentStep: number; lastGlobalValue: number; lastStepValues: number[]; lastResetManualTime: number; isPaused: boolean; directionState: 'up' | 'down'; lastManualPlayState?: string }>();
+  private spectralStates = new Map<string, { low: number; lowMid: number; mid: number; highMid: number; high: number }>();
   private latestSignals: Record<string, Record<string, number>> = {};
 
   private constructor() {}
@@ -64,7 +65,7 @@ export class SignalDispatcher {
 
     const nodeIds = new Set<string>();
     nodeIds.add('source');
-    layer.effects.forEach(e => nodeIds.add(e.id));
+    layer.effects.forEach(e => { if (e.id) nodeIds.add(e.id); });
     Object.keys(layer.modulators || {}).forEach(id => nodeIds.add(id));
     edges.forEach(edge => { nodeIds.add(edge.fromNodeId); nodeIds.add(edge.toNodeId); });
 
@@ -243,6 +244,55 @@ export class SignalDispatcher {
 
               // Signal that we are active for the renderer
               ctx.signalValues[`${nodeId}.video_out`] = 1.0; 
+            });
+          } else if (effect.type === 'SpectralSplitter') {
+            pipeline.push((ctx: DispatchContext) => {
+              const ef = ctx.layer.effects.find(e => e.id === nodeId) as SpectralSplitterEffect;
+              if (!ef) return;
+
+              // Smart Bus Discovery: Check input connection for audio source
+              let busId = ef.busId || 'master';
+              const edges = ctx.layer.graph?.edges || [];
+              const inputEdge = edges.find(e => e.toNodeId === nodeId && e.toPort === 'audio_in');
+              if (inputEdge) {
+                const fromNodeId = inputEdge.fromNodeId;
+                const fromEffect = ctx.layer.effects.find(e => e.id === fromNodeId);
+                if (fromEffect?.type === 'AudioSource') {
+                  busId = (fromEffect as any).busId || 'master';
+                } else if (fromNodeId === 'source' || fromEffect?.type === 'VideoFile' || fromEffect?.type === 'VideoURL') {
+                  // Media sources use their node ID as the bus ID in the AudioEngine
+                  busId = fromNodeId === 'source' ? ctx.layer.id : fromNodeId;
+                }
+              }
+
+              const bus = ctx.audioEngine.getBusData(busId);
+              if (!bus) return;
+
+              const smoothing = ef.smoothing ?? 0.8;
+              const sensitivity = ef.sensitivity ?? 1.0;
+              const stateKey = `${ctx.layer.id}.${nodeId}`;
+              
+              let state = this.spectralStates.get(stateKey) || { low: 0, lowMid: 0, mid: 0, highMid: 0, high: 0 };
+
+              const updateBand = (prev: number, instant: number) => {
+                const val = instant * sensitivity;
+                return prev * smoothing + val * (1.0 - smoothing);
+              };
+
+              state.low = updateBand(state.low, bus.bands.low);
+              state.lowMid = updateBand(state.lowMid, bus.bands.lowMid);
+              state.mid = updateBand(state.mid, bus.bands.midGranular);
+              state.highMid = updateBand(state.highMid, bus.bands.highMid);
+              state.high = updateBand(state.high, bus.bands.highGranular);
+
+              this.spectralStates.set(stateKey, state);
+
+              ctx.signalValues[`${nodeId}.low_out`] = state.low;
+              ctx.signalValues[`${nodeId}.low_mid_out`] = state.lowMid;
+              ctx.signalValues[`${nodeId}.mid_out`] = state.mid;
+              ctx.signalValues[`${nodeId}.high_mid_out`] = state.highMid;
+              ctx.signalValues[`${nodeId}.high_out`] = state.high;
+              ctx.signalValues[`${nodeId}.video_out`] = 1.0;
             });
           } else if (effect.type === 'Inverter') {
             pipeline.push((ctx: DispatchContext) => {

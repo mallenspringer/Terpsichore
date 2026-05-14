@@ -131,3 +131,85 @@ export function AudioSourceVisualizer({ busId }: { busId: string }) {
     </div>
   );
 }
+
+export function SpectralVisualizer({ busId, sensitivity }: { busId: string, sensitivity: number }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const engine = AudioEngine.getInstance();
+
+  useEffect(() => {
+    let animId: number;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const render = () => {
+      const bus = engine.getBusData(busId);
+      if (bus) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        // 1. Draw granular FFT Background
+        ctx.fillStyle = 'rgba(24, 228, 245, 0.15)';
+        const fftCount = bus.fft.length / 2; // only show positive half
+        const fftBarWidth = canvas.width / fftCount;
+        for (let i = 0; i < fftCount; i++) {
+          const val = Math.max(0, (bus.fft[i] + 100) / 100);
+          const h = val * canvas.height;
+          ctx.fillRect(i * fftBarWidth, canvas.height - h, fftBarWidth, h);
+        }
+
+        // 2. Draw background grid
+        ctx.strokeStyle = '#222';
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 4; i++) {
+          const y = (i / 4) * canvas.height;
+          ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+        }
+
+        const bands = [
+          bus.bands.low,
+          bus.bands.lowMid,
+          bus.bands.midGranular,
+          bus.bands.highMid,
+          bus.bands.highGranular
+        ];
+
+        const gap = 4;
+        const barWidth = (canvas.width - (gap * 4)) / 5;
+        
+        bands.forEach((val, i) => {
+          const h = Math.max(1, Math.min(canvas.height, val * (sensitivity || 1.0) * canvas.height));
+          const x = i * (barWidth + gap);
+          const y = canvas.height - h;
+
+          const gradient = ctx.createLinearGradient(0, y, 0, canvas.height);
+          gradient.addColorStop(0, '#18e4f5');
+          gradient.addColorStop(1, '#d918f5');
+          
+          ctx.globalAlpha = 0.5; // Reduced from 0.8 to not overwhelm granular view
+          ctx.fillStyle = gradient;
+          ctx.fillRect(x, y, barWidth, h);
+          ctx.globalAlpha = 1.0;
+          
+          ctx.strokeStyle = '#18e4f5';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(x, y, barWidth, h);
+          
+          ctx.fillStyle = '#666';
+          ctx.font = 'bold 8px Inter';
+          const labels = ['LO', 'LM', 'MD', 'HM', 'HI'];
+          ctx.fillText(labels[i], x + 2, canvas.height - 4);
+        });
+      }
+      animId = requestAnimationFrame(render);
+    };
+
+    render();
+    return () => cancelAnimationFrame(animId);
+  }, [busId, sensitivity]);
+
+  return (
+    <div className="visualizer-container" style={{ padding: '6px', background: '#000', borderRadius: '4px', margin: '4px 0', border: '1px solid #222' }}>
+      <canvas ref={canvasRef} width={240} height={40} style={{ width: '100%', height: '40px', display: 'block' }} />
+    </div>
+  );
+}

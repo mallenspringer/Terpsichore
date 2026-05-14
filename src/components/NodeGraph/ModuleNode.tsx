@@ -2,10 +2,10 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { PORT_DEFS, SIGNAL_COLORS, getShortLabel } from './portDefs';
 import { ControlRowDef, RowCtx, EffectCtx } from './moduleControls';
 import { 
-  SpawnEffect, StepSequencerEffect, AudioSourceEffect, OscilloscopeEffect 
+  SpawnEffect, StepSequencerEffect, AudioSourceEffect, OscilloscopeEffect, SpectralSplitterEffect 
 } from '../../state/types';
 import { useEngineStore } from '../../state/store';
-import { OscilloscopeVisualizer, AudioSourceVisualizer } from './AudioVisualizers';
+import { OscilloscopeVisualizer, AudioSourceVisualizer, SpectralVisualizer } from './AudioVisualizers';
 
 // ── Mini Components ─────────────────────────────────────────────────────────
 
@@ -624,9 +624,9 @@ export function ModuleNode({
       const effect = (rowCtx as EffectCtx).effect as AudioSourceEffect;
       return effect?.busId || 'master';
     }
-    if (moduleType === 'Oscilloscope') {
+    if (moduleType === 'Oscilloscope' || moduleType === 'SpectralSplitter') {
       const edge = layer?.graph?.edges.find(e => e.toNodeId === nodeId && e.toPort === 'audio_in');
-      if (!edge) return null;
+      if (!edge) return (moduleType === 'SpectralSplitter' ? ((rowCtx as EffectCtx).effect as any).busId || 'master' : null);
       const sourceEffect = layer?.effects.find(e => e.id === edge.fromNodeId);
       if (sourceEffect?.type === 'AudioSource') return (sourceEffect as AudioSourceEffect).busId;
       if (edge.fromNodeId === 'source') return layerId;
@@ -1021,6 +1021,12 @@ export function ModuleNode({
             {moduleType === 'AudioSource' && (
               <AudioSourceVisualizer busId={connectedBusId} />
             )}
+            {moduleType === 'SpectralSplitter' && (
+              <SpectralVisualizer 
+                busId={connectedBusId}
+                sensitivity={((rowCtx as EffectCtx).effect as SpectralSplitterEffect).sensitivity}
+              />
+            )}
           </div>
         )}
 
@@ -1050,9 +1056,9 @@ export function ModuleNode({
           {/* Module-level Mute Toggle */}
           {(() => {
             if (isOutput) return null;
-            const s = (rowCtx as any).source;
+            const s = (rowCtx as any).source || (rowCtx as any).effect;
             if (!s) return null;
-            const muteKey = s.audioMuted !== undefined ? 'audioMuted' : s.muted !== undefined ? 'muted' : null;
+            const muteKey = (s.audioMuted !== undefined || s.type === 'VideoFile' || s.type === 'VideoURL') ? 'audioMuted' : s.muted !== undefined ? 'muted' : null;
             if (!muteKey) return null;
             const isMuted = s[muteKey];
             return (
@@ -1060,7 +1066,14 @@ export function ModuleNode({
                 className={`node-mute-toggle ${isMuted ? 'muted' : ''}`}
                 title={isMuted ? 'Unmute module' : 'Mute module'}
                 onPointerDown={e => e.preventDefault()}
-                onClick={(e) => { e.stopPropagation(); (rowCtx as any).onChange(muteKey, !isMuted); }}
+                onClick={(e) => { 
+                  e.stopPropagation(); 
+                  if ((rowCtx as any).onChange) {
+                    (rowCtx as any).onChange(muteKey, !isMuted); 
+                  } else {
+                    (rowCtx as any).onUpdate({ [muteKey]: !isMuted });
+                  }
+                }}
               >
                 {isMuted ? '🔇' : '🔊'}
               </button>

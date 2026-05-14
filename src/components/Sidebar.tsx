@@ -47,6 +47,7 @@ const ALL_MODULES: ModuleEntry[] = [
   { id: 'LayerIn',        glyph: '⎆', label: 'Layer In',  tooltip: 'Receive signal from other layer', category: 'Utility', moduleType: 'effect:InterLayerInput' },
   { id: 'AudioSource',    glyph: '📻', label: 'Audio Src', tooltip: 'Global Bus Tune-in',     category: 'Audio',   moduleType: 'effect:AudioSource'  },
   { id: 'Oscilloscope',   glyph: '〰️', label: 'Scope',     tooltip: 'Signal Visualizer',       category: 'Audio',   moduleType: 'effect:Oscilloscope' },
+  { id: 'SpectralSplit',  glyph: '📊', label: 'Spectral',  tooltip: 'Multi-band Analysis',     category: 'Audio',   moduleType: 'effect:SpectralSplitter' },
   { id: 'Path',           glyph: '🛤️', label: 'Path',      tooltip: 'Trajectory Generator',    category: 'Utility', moduleType: 'effect:Path'           },
   { id: 'Noise',          glyph: '🎲', label: 'Noise',     tooltip: 'Stochastic Signal Gen',   category: 'Utility', moduleType: 'modulator:Noise'        },
   { id: 'Inverter',       glyph: '⇅', label: 'Inverter',  tooltip: 'Polarity/Color Inversion', category: 'Utility', moduleType: 'effect:Inverter'         },
