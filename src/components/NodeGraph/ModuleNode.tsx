@@ -1,5 +1,5 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
-import { PORT_DEFS, SIGNAL_COLORS, getShortLabel } from './portDefs';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { PORT_DEFS, SIGNAL_COLORS, PortDef } from './portDefs';
 import { ControlRowDef, RowCtx, EffectCtx } from './moduleControls';
 import { 
   SpawnEffect, StepSequencerEffect, AudioSourceEffect, OscilloscopeEffect, SpectralSplitterEffect 
@@ -599,6 +599,7 @@ export function ModuleNode({
   onPositionChange, onLayoutChange, onRemove, graphRef,
   inputSettings, onUpdateInputSettings, hoveredPortId, zoom
 }: ModuleNodeProps) {
+  const [expandedGroups, setExpandedGroups] = React.useState<Set<string>>(new Set());
   const rawPorts = PORT_DEFS[moduleType] || [];
   
   // Filter ports for InterLayer modules based on portCount
@@ -780,6 +781,86 @@ export function ModuleNode({
     onPatchbayDrop(nodeId, portId);
   };
 
+  const renderPatchbayRow = (port: PortDef, isGrid: boolean = false) => {
+    const eCtx = rowCtx as EffectCtx;
+    const isLinked = (moduleType === 'Transform2D' && port.id === 'scaleY') && (eCtx.linkedScales?.[nodeId] ?? true);
+    const effectivePortId = isLinked ? 'scaleX' : port.id;
+    const settingsKey = `${nodeId}.${effectivePortId}`;
+    const settings = inputSettings?.[settingsKey] || { amount: 1.0, bipolar: false };
+    
+    const isGeneric = port.signalType === 'generic' || ghostSignalType === 'generic';
+    const compatible = isGeneric ||
+                        (ghostSignalType === port.signalType) || 
+                        (ghostSignalType !== 'video' && port.signalType !== 'video' && ghostSignalType !== 'audio' && port.signalType !== 'audio' && ghostSignalType !== undefined) ||
+                        (ghostSignalType === 'video' && port.signalType === 'modulation');
+    const isTargeted = patchbayOpen && compatible;
+    const isHovered = hoveredPortId === port.id;
+
+    return (
+      <div key={port.id} className={`patchbay-row ${isGrid ? 'is-grid' : ''}`}>
+        <div 
+          className={`patchbay-controls ${patchbayOpen && !compatible ? 'incompatible' : ''} ${isTargeted && !isHovered ? 'targeted' : ''} ${isHovered ? 'hovered-jack' : ''}`}
+          data-port-id={port.id}
+          data-node-id={nodeId}
+        >
+          <div 
+            className="port-dot patchbay-jack-dot"
+            style={{ 
+              color: portColor(port.id, port.signalType, port.direction), 
+              backgroundColor: isHovered ? portColor(port.id, port.signalType, port.direction) : 'transparent',
+              opacity: (patchbayOpen && !compatible) ? 0.3 : 1 
+            }}
+            onPointerDown={e => {
+              e.stopPropagation();
+              if (onInputJackPointerDown) onInputJackPointerDown(nodeId, port.id, e);
+            }}
+            onPointerUp={e => handleJackPointerUp(e, port.id, port.signalType)}
+          />
+          
+          {nodeState.patchbayExpanded && (
+            <>
+              <span className="patchbay-jack-label" title={port.label} style={{ opacity: isLinked ? 0.6 : 1 }}>
+                {isLinked && <span style={{ marginRight: 2, fontSize: '0.8em' }}>🔗</span>}
+                {port.label.replace('CV', '').replace('In', '').trim()}
+              </span>
+              
+              <div className="patchbay-amount-knob-container">
+                <Knob 
+                  value={settings.amount} 
+                  max={2.0}
+                  resetValue={1.0}
+                  color={portColor(port.id, port.signalType, port.direction)}
+                  onChange={(v) => useEngineStore.getState().updateInputSettings(layerId, settingsKey, { amount: v })} 
+                />
+              </div>
+
+              {!port.disableBipolar && (
+                <button 
+                  className={`patchbay-bipolar-toggle ${settings.bipolar ? 'active' : ''}`}
+                  onPointerDown={e => { e.stopPropagation(); e.preventDefault(); }}
+                  onClick={(e) => { e.stopPropagation(); useEngineStore.getState().updateInputSettings(layerId, settingsKey, { bipolar: !settings.bipolar }); }}
+                  title="Toggle Bipolar (-1 to 1)"
+                >
+                  ⩲
+                </button>
+              )}
+            </>
+          )}
+        </div>
+        
+        {nodeState.patchbayExpanded && (
+          <SignalMeter 
+            layerId={layerId}
+            nodeId={nodeId}
+            portId={effectivePortId}
+            bipolar={settings.bipolar}
+            color={portColor(port.id, port.signalType, port.direction)}
+          />
+        )}
+      </div>
+    );
+  };
+
   if (moduleType === 'StepSequencer') {
     const seq = (rowCtx as EffectCtx).effect as StepSequencerEffect;
     return (
@@ -844,143 +925,61 @@ export function ModuleNode({
                 </button>
               </div>
             )}
-            {inputs.map(port => {
-              const eCtx = rowCtx as EffectCtx;
-              const isLinked = (moduleType === 'Transform2D' && port.id === 'scaleY') && (eCtx.linkedScales?.[nodeId] ?? true);
-              const effectivePortId = isLinked ? 'scaleX' : port.id;
-              const settingsKey = `${nodeId}.${effectivePortId}`;
-              const settings = inputSettings?.[settingsKey] || { amount: 1.0, bipolar: false };
+            
+            {(() => {
+              // Determine which groups should be hidden in a collapsed subgroup
+              const hasSubGroups = inputs.some(p => p.group && !p.alwaysShow);
               
-              
-              // Smart adoption for generic ports: 
-              // If we are dragging, and either side is generic, it's compatible.
-              const isGeneric = port.signalType === 'generic' || ghostSignalType === 'generic';
-              const compatible = isGeneric ||
-                                 (ghostSignalType === port.signalType) || 
-                                 (ghostSignalType !== 'video' && port.signalType !== 'video' && ghostSignalType !== 'audio' && port.signalType !== 'audio' && ghostSignalType !== undefined) ||
-                                 (ghostSignalType === 'video' && port.signalType === 'modulation');
-              const isTargeted = patchbayOpen && compatible;
-              const isHovered = hoveredPortId === port.id;
-              
-              return (
-                <div key={port.id} className="patchbay-row">
-                  <div 
-                    className={`patchbay-controls ${patchbayOpen && !compatible ? 'incompatible' : ''} ${isTargeted && !isHovered ? 'targeted' : ''} ${isHovered ? 'hovered-jack' : ''}`}
-                    data-port-id={port.id}
-                    data-node-id={nodeId}
-                  >
-                    <div 
-                      className="port-dot patchbay-jack-dot"
-                      style={{ 
-                        color: portColor(port.id, port.signalType, port.direction), 
-                        backgroundColor: isHovered ? portColor(port.id, port.signalType, port.direction) : 'transparent',
-                        opacity: (patchbayOpen && !compatible) ? 0.3 : 1 
-                      }}
-                      onPointerDown={e => {
-                        e.stopPropagation();
-                        if (onInputJackPointerDown) onInputJackPointerDown(nodeId, port.id, e);
-                      }}
-                      onPointerUp={e => handleJackPointerUp(e, port.id, port.signalType)}
-                    />
-                    
-                    {nodeState.patchbayExpanded && (
-                      <>
-                        <span className="patchbay-jack-label" title={port.label} style={{ opacity: isLinked ? 0.6 : 1 }}>
-                          {isLinked && <span style={{ marginRight: 2, fontSize: '0.8em' }}>🔗</span>}
-                          {getShortLabel(port.id, port.label)}
-                        </span>
-                        
-                        <div className="patchbay-amount-knob-container">
-                          <Knob 
-                            value={settings.amount} 
-                            max={2.0}
-                            resetValue={1.0}
-                            color={portColor(port.id, port.signalType, port.direction)}
-                            onChange={(v) => useEngineStore.getState().updateInputSettings(layerId, settingsKey, { amount: v })} 
-                          />
-                        </div>
+              const primaryPorts = inputs.filter(p => !p.group || p.alwaysShow || !hasSubGroups);
+              const secondaryPorts = inputs.filter(p => p.group && !p.alwaysShow);
 
-                        {moduleType === 'Spawn' && port.signalType === 'modulation' && (
-                          <button
-                            className={`patchbay-latch-toggle ${((rowCtx as EffectCtx).effect as SpawnEffect).latchedPorts?.includes(port.id) ? 'active' : ''}`}
-                            onPointerDown={e => e.stopPropagation()}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              const effect = (rowCtx as EffectCtx).effect as SpawnEffect;
-                              const current = effect.latchedPorts || [];
-                              const next = current.includes(port.id) ? current.filter(p => p !== port.id) : [...current, port.id];
-                              (rowCtx as EffectCtx).onUpdate({ latchedPorts: next } as any);
-                            }}
-                            title="Snapshot at Birth"
-                          >
-                            ✨
-                          </button>
-                        )}
-                        
-                        {!port.disableBipolar && (
-                          <button 
-                            className={`patchbay-bipolar-toggle ${settings.bipolar ? 'active' : ''}`}
-                            onPointerDown={e => { e.stopPropagation(); e.preventDefault(); }}
-                            onClick={(e) => { e.stopPropagation(); useEngineStore.getState().updateInputSettings(layerId, settingsKey, { bipolar: !settings.bipolar }); }}
-                            title="Toggle Bipolar (-1 to 1)"
-                          >
-                            ⩲
-                          </button>
-                        )}
+              const content = [];
+              
+              // 1. Primary Ports
+              content.push(...primaryPorts.map(port => renderPatchbayRow(port)));
 
-                        {moduleType === 'ShapeGenerator' && port.id === 'strokeWidth' && (rowCtx as any).source && (
-                          <>
-                            <button
-                              className={`patchbay-bipolar-toggle ${((rowCtx as any).source as import('../../state/types').ShapeGeneratorSource).strokeMode === 'hollow' ? 'active' : ''}`}
-                              style={{ border: '1px solid #444', background: ((rowCtx as any).source as import('../../state/types').ShapeGeneratorSource).strokeMode === 'hollow' ? '#88cc00' : '#222', color: ((rowCtx as any).source as import('../../state/types').ShapeGeneratorSource).strokeMode === 'hollow' ? '#000' : '#aaa' }}
-                              title={((rowCtx as any).source as import('../../state/types').ShapeGeneratorSource).strokeMode === 'hollow' ? 'Mode 2: Hollow Out' : 'Mode 1: Classic (Gate)'}
-                              onPointerDown={e => { e.stopPropagation(); e.preventDefault(); }}
-                              onClick={e => {
-                                e.stopPropagation();
-                                const current = ((rowCtx as any).source as import('../../state/types').ShapeGeneratorSource).strokeMode ?? 'classic';
-                                (rowCtx as any).onChange('strokeMode', current === 'classic' ? 'hollow' : 'classic');
-                              }}
-                            >
-                              {((rowCtx as any).source as import('../../state/types').ShapeGeneratorSource).strokeMode === 'hollow' ? '◎' : '◩'}
-                            </button>
-                            <div className="patchbay-amount-knob-container" title={((rowCtx as any).source as import('../../state/types').ShapeGeneratorSource).strokeMode === 'classic' ? 'Gate Threshold' : 'Hollow Threshold'}>
-                              <Knob 
-                                value={((rowCtx as any).source as import('../../state/types').ShapeGeneratorSource).strokeThreshold ?? 0.1}
-                                max={1.0}
-                                resetValue={0.1}
-                                color="#f58c18"
-                                onChange={(v) => (rowCtx as any).onChange('strokeThreshold', v)}
-                              />
-                            </div>
-                            <input type="number" value={((rowCtx as any).source as import('../../state/types').ShapeGeneratorSource).strokeThreshold ?? 0.1} 
-                              title={((rowCtx as any).source as import('../../state/types').ShapeGeneratorSource).strokeMode === 'classic' ? 'Gate Threshold' : 'Hollow Threshold'}
-                              onPointerDown={e => e.stopPropagation()}
-                              onChange={e => {
-                                e.stopPropagation();
-                                (rowCtx as any).onChange('strokeThreshold', parseFloat(e.target.value) || 0);
-                              }}
-                              step={0.01} min={0} max={1}
-                              style={{ width: 35, background: '#111', color: '#f58c18', border: '1px solid #333', fontSize: 9, padding: '0 2px' }} />
-                          </>
-                        )}
-                      </>
-                    )}
-                  </div>
+              // 2. Secondary Subgroup Toggles
+              if (hasSubGroups && (patchbayOpen || nodeState.patchbayExpanded)) {
+                // Group secondary ports by their group name
+                const secondaryGroups: Record<string, PortDef[]> = {};
+                secondaryPorts.forEach(p => {
+                  if (p.group) {
+                    if (!secondaryGroups[p.group]) secondaryGroups[p.group] = [];
+                    secondaryGroups[p.group].push(p);
+                  }
+                });
+
+                Object.entries(secondaryGroups).forEach(([groupName, groupPorts]) => {
+                  const isExpanded = expandedGroups.has(groupName);
                   
-                  {nodeState.patchbayExpanded && (
-                    <SignalMeter 
-                      layerId={layerId}
-                      nodeId={nodeId}
-                      portId={effectivePortId}
-                      bipolar={settings.bipolar}
-                      color={portColor(port.id, port.signalType, port.direction)}
-                      threshold={moduleType === 'ShapeGenerator' && port.id === 'strokeWidth' && (rowCtx as any).source ? ((rowCtx as any).source as import('../../state/types').ShapeGeneratorSource).strokeThreshold ?? 0.1 : undefined}
-                      onThresholdChange={moduleType === 'ShapeGenerator' && port.id === 'strokeWidth' && (rowCtx as any).source ? (v) => (rowCtx as any).onChange('strokeThreshold', v) : undefined}
-                    />
-                  )}
-                </div>
-              );
-            })}
+                  content.push(
+                    <div 
+                      key={`subgroup-header-${groupName}`} 
+                      className={`patchbay-subgroup-header ${isExpanded ? 'expanded' : ''}`}
+                      onClick={() => {
+                        const next = new Set(expandedGroups);
+                        if (isExpanded) next.delete(groupName);
+                        else next.add(groupName);
+                        setExpandedGroups(next);
+                      }}
+                    >
+                      <span className="subgroup-arrow">{isExpanded ? '▼' : '▶'}</span>
+                      Channel {groupName}
+                    </div>
+                  );
+
+                  if (isExpanded) {
+                    content.push(
+                      <div key={`subgroup-content-${groupName}`} className="patchbay-subgroup-content">
+                        {groupPorts.map(port => renderPatchbayRow(port))}
+                      </div>
+                    );
+                  }
+                });
+              }
+
+              return content;
+            })()}
           </div>
         </div>
       )}

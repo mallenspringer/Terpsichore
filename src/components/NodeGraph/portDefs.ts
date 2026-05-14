@@ -6,6 +6,8 @@ export interface PortDef {
   direction: 'in' | 'out';
   signalType: SignalType;
   priority?: number; // lower = higher priority for auto-connection
+  group?: string;    // for grid/columnar layouts
+  alwaysShow?: boolean; // show even when collapsed/nested
   bipolar?: boolean; // native range of the output
   disableBipolar?: boolean; // hide bipolar switch for this input
 }
@@ -34,6 +36,16 @@ export const PORT_DEFS: Record<string, PortDef[]> = {
     { id: 'trigger_in',     label: 'Sample',   direction: 'in',  signalType: 'trigger',    priority: 4 }
   ],
   NoiseSource: [
+    { id: 'video_out',      label: 'Video Out', direction: 'out', signalType: 'video', priority: 0 },
+    { id: 'scale_cv',       label: 'Scale CV',  direction: 'in',  signalType: 'modulation' },
+    { id: 'evolution_cv',   label: 'Evol CV',   direction: 'in',  signalType: 'modulation' },
+    { id: 'octaves_cv',     label: 'Oct CV',    direction: 'in',  signalType: 'modulation' },
+    { id: 'persistence_cv', label: 'Pers CV',   direction: 'in',  signalType: 'modulation' },
+    { id: 'seed_cv',        label: 'Seed CV',   direction: 'in',  signalType: 'modulation' },
+    { id: 'brightness_cv',  label: 'Brght CV',  direction: 'in',  signalType: 'modulation' },
+    { id: 'contrast_cv',    label: 'Cont CV',   direction: 'in',  signalType: 'modulation' },
+  ],
+  ColorNoise: [
     { id: 'video_out',      label: 'Video Out', direction: 'out', signalType: 'video', priority: 0 },
     { id: 'scale_cv',       label: 'Scale CV',  direction: 'in',  signalType: 'modulation' },
     { id: 'evolution_cv',   label: 'Evol CV',   direction: 'in',  signalType: 'modulation' },
@@ -77,6 +89,14 @@ export const PORT_DEFS: Record<string, PortDef[]> = {
     { id: 'scale',       label: 'Scale',       direction: 'in',  signalType: 'modulation' },
     { id: 'rotation',    label: 'Rotation',    direction: 'in',  signalType: 'modulation' },
     { id: 'path_in',     label: 'Path In',     direction: 'in',  signalType: 'trajectory', priority: 3 },
+  ],
+  PixelProcessor: [
+    { id: 'video_in',        label: 'Video In',     direction: 'in',  signalType: 'video' },
+    { id: 'video_out',       label: 'Video Out',    direction: 'out', signalType: 'video', priority: 0 },
+    { id: 'posterize_cv',   label: 'Levels',       direction: 'in',  signalType: 'modulation' },
+    { id: 'threshold_cv',   label: 'Threshold',    direction: 'in',  signalType: 'modulation' },
+    { id: 'edge_amount_cv', label: 'Edge Amt',     direction: 'in',  signalType: 'modulation' },
+    { id: 'bypass_trig',    label: 'Bypass',       direction: 'in',  signalType: 'trigger' },
   ],
   ColorAdjust: [
     { id: 'video_in',   label: 'Video In',   direction: 'in',  signalType: 'video' },
@@ -223,15 +243,25 @@ export const PORT_DEFS: Record<string, PortDef[]> = {
     { id: 'sig_out',   label: 'Sig Out',  direction: 'out', signalType: 'modulation', priority: 1 },
   ],
   VideoMixer: [
-    { id: 'v1_in', label: 'V1 In', direction: 'in', signalType: 'video' },
-    { id: 'v2_in', label: 'V2 In', direction: 'in', signalType: 'video' },
-    { id: 'v3_in', label: 'V3 In', direction: 'in', signalType: 'video' },
-    { id: 'v4_in', label: 'V4 In', direction: 'in', signalType: 'video' },
-    { id: 'v1_cv', label: 'V1 Lvl', direction: 'in', signalType: 'modulation' },
-    { id: 'v2_cv', label: 'V2 Lvl', direction: 'in', signalType: 'modulation' },
-    { id: 'v3_cv', label: 'V3 Lvl', direction: 'in', signalType: 'modulation' },
-    { id: 'v4_cv', label: 'V4 Lvl', direction: 'in', signalType: 'modulation' },
-    { id: 'master_cv', label: 'Master', direction: 'in', signalType: 'modulation' },
+    { id: 'v1_in', label: 'V1 In', direction: 'in', signalType: 'video', group: 'V1', alwaysShow: true },
+    { id: 'v2_in', label: 'V2 In', direction: 'in', signalType: 'video', group: 'V2' },
+    { id: 'v3_in', label: 'V3 In', direction: 'in', signalType: 'video', group: 'V3' },
+    { id: 'v4_in', label: 'V4 In', direction: 'in', signalType: 'video', group: 'V4' },
+    { id: 'v1_cv', label: 'V1 Lvl', direction: 'in', signalType: 'modulation', group: 'V1', alwaysShow: true },
+    { id: 'v2_cv', label: 'V2 Lvl', direction: 'in', signalType: 'modulation', group: 'V2' },
+    { id: 'v3_cv', label: 'V3 Lvl', direction: 'in', signalType: 'modulation', group: 'V3' },
+    { id: 'v4_cv', label: 'V4 Lvl', direction: 'in', signalType: 'modulation', group: 'V4' },
+    { id: 'v1_alpha_cv', label: 'V1 α', direction: 'in', signalType: 'modulation', group: 'V1', alwaysShow: true },
+    { id: 'v2_alpha_cv', label: 'V2 α', direction: 'in', signalType: 'modulation', group: 'V2' },
+    { id: 'v3_alpha_cv', label: 'V3 α', direction: 'in', signalType: 'modulation', group: 'V3' },
+    { id: 'v4_alpha_cv', label: 'V4 α', direction: 'in', signalType: 'modulation', group: 'V4' },
+    { id: 'master_cv', label: 'Master', direction: 'in', signalType: 'modulation', group: 'MST', alwaysShow: true },
+    { id: 'video_out', label: 'Video Out', direction: 'out', signalType: 'video', priority: 0 },
+  ],
+  AlphaAdjust: [
+    { id: 'video_in', label: 'Video In', direction: 'in', signalType: 'video' },
+    { id: 'amount_cv', label: 'α CV', direction: 'in', signalType: 'modulation' },
+    { id: 'bypass_trig', label: 'Bypass', direction: 'in', signalType: 'trigger' },
     { id: 'video_out', label: 'Video Out', direction: 'out', signalType: 'video', priority: 0 },
   ],
   StepSequencer: [
@@ -353,4 +383,5 @@ export const MODULE_DISPLAY_NAMES: Record<string, string> = {
   Kaleidoscope: 'K-Scope',
   SignalMath: 'Math',
   StepSequencer: 'Sequencer',
+  AlphaAdjust: 'Alpha Adjust',
 };

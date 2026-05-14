@@ -39,10 +39,21 @@ Captures live video feed.
 ### Noise Source (🌫️)
 Generates 2D procedural noise textures (GPU-bound).
 *   **Parameters**:
-    *   **Noise Type**: Perlin, Simplex, White.
+    *   **Noise Type**: White, Perlin, Simplex, Ridged, Billow, Worley, Voronoi, Domain Warp.
     *   **Scale**: Zoom level of the noise grain.
-    *   **Evolution**: Speed of the temporal morphing.
+    *   **Evolution**: Speed of the temporal morphing (3D evolution).
+*   **Update**: Now uses a unified 3D engine. White noise uses per-pixel screen-space hashing to eliminate grid artifacts.
 *   **Use Cases**: Creating organic backgrounds, displacement maps, or complex mask textures.
+
+### Color Noise (🌈🌫️)
+New procedural source generating independent RGB noise (GPU-bound).
+*   **Parameters**:
+    *   **Noise Type**: White, Perlin, Simplex, Ridged, Billow, Worley, Voronoi, Domain Warp.
+    *   **Scale**: Density of the color grain.
+    *   **Evolution**: Speed of the 3D morphing (True Z-axis evolution).
+    *   **Brightness / Contrast**: Post-processing for the color channels.
+*   **Visual Behavior**: Generates "color static" by running independent noise functions for R, G, and B channels. White noise mode uses high-precision screen-space coordinates to avoid aliasing.
+*   **Use Cases**: Creating psychedelic textures, chromatic aberration simulations, or dense glitch-art foundations.
 
 ---
 
@@ -99,7 +110,7 @@ Low-Frequency Oscillator for modulation.
 *   **Global Sync**: Resets phase when the Global Reset signal is triggered.
 
 ### Signal Math (∑)
-Algebraic processor for two control signals.
+Algebra processor for two control signals.
 *   **Operators**:
     *   **Add / Subtract**: Mixing and biasing.
     *   **Multiply**: Signal scaling and ring modulation.
@@ -143,7 +154,7 @@ Flips signal polarity or video colors.
 *   **Modes**:
     *   **Video**: Inverts RGB channels.
     *   **CV**: Inverts modulation values (`1.0 - x` for unipolar, `-x` for bipolar).
-*   **Trigger Modes**: `Momentary` (while button/gate is held) or `Latch` (toggles on rising edge).
+    *   **Trigger Modes**: `Momentary` (while button/gate is held) or `Latch` (toggles on rising edge).
 
 ### Path (🛤️)
 Trajectory and movement generator.
@@ -190,6 +201,7 @@ A dual-mode capture module for both video and control signals.
 *   **Signal Behavior**: 
     *   **Zero-Latency**: Uses the high-frequency engine path to ensure the captured value is frame-accurate to the trigger.
 *   **Use Cases**: Strobe-like video freezing, creating "staircase" modulation from smooth LFOs, or holding a specific visual state while tweaking other parameters.
+
 ### Step Sequencer (🪜)
 A high-density 16-step modular modulation engine.
 *   **Parameters**:

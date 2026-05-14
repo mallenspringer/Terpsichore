@@ -151,7 +151,22 @@ export interface TriggerPadSource {
   release?: number;
 }
 
-export type AnySource = NoneSource | ShapeGeneratorSource | VideoURLSource | VideoFileSource | WebcamCaptureSource | ImageLoaderSource | ImageFileSource | AudioInputSource | AudioFileSource | SystemAudioSource | SignalProcessorSource | LFOModulatorSource | TriggerPadSource | NoiseModulatorSource | NoiseVideoSource;
+export interface ColorNoiseSource {
+  id?: string;
+  type: 'ColorNoise';
+  noiseType: 'fbm' | 'worley' | 'white' | 'perlin' | 'simplex' | 'ridged' | 'billow' | 'voronoi' | 'warped';
+  scale: number;
+  evolution: number;
+  octaves: number;
+  persistence: number;
+  seed: number;
+  brightness: number;
+  contrast: number;
+  flowSpeed: number;
+  autoAnimate: boolean;
+}
+
+export type AnySource = NoneSource | ShapeGeneratorSource | VideoURLSource | VideoFileSource | WebcamCaptureSource | ImageLoaderSource | ImageFileSource | AudioInputSource | AudioFileSource | SystemAudioSource | SignalProcessorSource | LFOModulatorSource | TriggerPadSource | NoiseModulatorSource | NoiseVideoSource | ColorNoiseSource;
 
 // --- EFFECTS ---
 
@@ -263,6 +278,10 @@ export interface VideoMixerEffect {
   v2: number;
   v3: number;
   v4: number;
+  v1Alpha: number;
+  v2Alpha: number;
+  v3Alpha: number;
+  v4Alpha: number;
   v1Mode: 'add' | 'normal' | 'screen' | 'mult';
   v2Mode: 'add' | 'normal' | 'screen' | 'mult';
   v3Mode: 'add' | 'normal' | 'screen' | 'mult';
@@ -395,21 +414,45 @@ export interface SignalMathEffect {
   operandB: number;
 }
 
+export interface AlphaAdjustEffect {
+  id: string;
+  type: 'AlphaAdjust';
+  amount: number;
+  invertAmount: boolean;
+  bypass: boolean;
+  bypassMode: 'momentary' | 'latch';
+}
+
+export interface PixelProcessorEffect {
+  id: string;
+  type: 'PixelProcessor';
+  posterizeActive: boolean;
+  posterizeLevels: number;
+  thresholdActive: boolean;
+  thresholdValue: number;
+  thresholdSoftness: number;
+  edgeActive: boolean;
+  edgeAmount: number;
+  edgeThreshold: number;
+  bypass: boolean;
+}
+
+
 export type AnyEffect = 
   | Transform2DEffect | ColorAdjustEffect | LumaKeyEffect | SimpleFeedbackEffect
   | InterLayerOutputEffect | InterLayerInputEffect | ColorRGBEffect | LumaSplitterEffect 
-  | SpawnEffect | PathEffect | InverterEffect | VideoMixerEffect
+  | SpawnEffect | PathEffect | InverterEffect | VideoMixerEffect | AlphaAdjustEffect
   | LogicGateEffect | TriggeredGateEffect | PatternEffect | KaleidoscopeEffect 
-  | SignalMathEffect | SampleAndHoldEffect | StepSequencerEffect 
+  | SignalMathEffect | SampleAndHoldEffect | StepSequencerEffect | PixelProcessorEffect
   | AudioSourceEffect | OscilloscopeEffect | SpectralSplitterEffect
-  | ShapeGeneratorSource | VideoURLSource | VideoFileSource | WebcamCaptureSource | NoiseVideoSource;
+  | ShapeGeneratorSource | VideoURLSource | VideoFileSource | WebcamCaptureSource | NoiseVideoSource | ColorNoiseSource;
 
 export type EffectType = 
   | 'Transform2D' | 'ColorAdjust' | 'LumaKey' | 'SimpleFeedback' 
   | 'InterLayerOutput' | 'InterLayerInput' 
-  | 'ColorRGB' | 'LumaSplitter' | 'Spawn' | 'Path' | 'Inverter' | 'VideoMixer'
-  | 'LogicGate' | 'TriggeredGate' | 'Pattern' | 'Kaleidoscope' | 'SignalMath' | 'SampleAndHold' | 'StepSequencer' | 'AudioSource' | 'Oscilloscope' | 'SpectralSplitter'
-  | 'ShapeGenerator' | 'VideoURL' | 'VideoFile' | 'WebcamCapture' | 'NoiseSource';
+  | 'ColorRGB' | 'LumaSplitter' | 'Spawn' | 'Path' | 'Inverter' | 'VideoMixer' | 'AlphaAdjust'
+  | 'LogicGate' | 'TriggeredGate' | 'Pattern' | 'Kaleidoscope' | 'SignalMath' | 'SampleAndHold' | 'StepSequencer' | 'AudioSource' | 'Oscilloscope' | 'SpectralSplitter' | 'PixelProcessor'
+  | 'ShapeGenerator' | 'VideoURL' | 'VideoFile' | 'WebcamCapture' | 'NoiseSource' | 'ColorNoise';
 
 // --- GRAPH ---
 export interface GraphEdge {

@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.1] - 2026-05-14
+
+### Added
+- **ColorNoise Module**: New procedural source generating independent RGB noise. Features include 3D Perlin, Simplex, Ridged, Billow, Worley, and Voronoi modes.
+- **Unified Noise Engine**: Refactored all procedural noise to use a shared 3D WGSL engine, enabling true "Evolution" (morphing) over time.
+
+### Fixed
+- **Webcam Pipeline Stability**: Resolved `TypeError` when setting `playbackRate` on live `MediaStream` objects.
+- **Webcam Source Errors**: Fixed "Empty src attribute" errors by correctly removing attributes during media source disposal.
+- **White Noise Artifacts**: Eliminated grid patterns in white noise by switching to screen-space pixel coordinates for randomization.
+
 ## [0.2.0] - 2026-05-12
 
 ### Added

@@ -26,6 +26,7 @@ const ALL_MODULES: ModuleEntry[] = [
   { id: 'ImageURL',       glyph: '🔗', label: 'Img URL',   tooltip: 'Image from URL',          category: 'Sources', moduleType: 'source:ImageLoader'    },
   { id: 'ShapeGen',       glyph: '⬜', label: 'Shape',     tooltip: 'Shape Generator',         category: 'Sources', moduleType: 'source:ShapeGenerator' },
   { id: 'NoiseSource',    glyph: '🌫️', label: 'Noise Gen',  tooltip: '2D Procedural Noise',    category: 'Sources', moduleType: 'source:NoiseSource'    },
+  { id: 'ColorNoise',     glyph: '🌈🌫️', label: 'Color Noise', tooltip: 'Multichromatic Procedural Noise', category: 'Sources', moduleType: 'source:ColorNoise' },
   { id: 'AudioInput',     glyph: '🎤', label: 'Audio In',  tooltip: 'Live Audio Input',        category: 'Audio',   moduleType: 'source:AudioInput'     },
   { id: 'AudioFile',      glyph: '🎵', label: 'Audio File',tooltip: 'Local Audio File',       category: 'Audio',   moduleType: 'source:AudioFile'      },
   { id: 'SystemAudio',    glyph: '🔊', label: 'Sys Audio', tooltip: 'System Audio Capture',    category: 'Audio',   moduleType: 'source:SystemAudio'    },
@@ -38,6 +39,8 @@ const ALL_MODULES: ModuleEntry[] = [
   { id: 'SimpleFeedback', glyph: '🔄', label: 'Feedback',  tooltip: 'Simple Feedback Loop',    category: 'Effects', moduleType: 'effect:SimpleFeedback' },
   { id: 'Pattern',        glyph: '▦', label: 'Pattern',   tooltip: 'Tiling & Grid Layout',    category: 'Effects', moduleType: 'effect:Pattern'         },
   { id: 'Kaleidoscope',   glyph: '✺', label: 'Kaleido',   tooltip: 'Radial Reflections',      category: 'Effects', moduleType: 'effect:Kaleidoscope'    },
+  { id: 'AlphaAdjust',    glyph: 'α', label: 'Alpha',     tooltip: 'Transparency & Bypass',   category: 'Effects', moduleType: 'effect:AlphaAdjust'     },
+  { id: 'PixelProcessor', glyph: '🎞️', label: 'PixelProc', tooltip: 'Advanced Visual Styling (Posterize/Threshold/Edge)', category: 'Effects', moduleType: 'effect:PixelProcessor' },
   { id: 'LumaSplit',      glyph: '▤', label: 'LumaSplit', tooltip: 'Split by luminance bands', category: 'Utility', moduleType: 'effect:LumaSplitter'   },
   { id: 'VideoMixer',     glyph: '⧉', label: 'Mixer',     tooltip: '4-Ch Video Compositor',   category: 'Utility', moduleType: 'effect:VideoMixer'      },
   // Utility

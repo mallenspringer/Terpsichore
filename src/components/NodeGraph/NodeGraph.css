@@ -405,6 +405,58 @@
   overflow: hidden;
 }
 
+/* --- Patchbay Subgroup Layout --- */
+.patchbay-subgroup-header {
+  font-size: 8px;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  padding: 6px 8px;
+  background: rgba(0,0,0,0.25);
+  border-top: 1px solid rgba(255,255,255,0.03);
+  border-bottom: 1px solid rgba(0,0,0,0.5);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+  user-select: none;
+  margin: 4px -4px; /* bleed into padding */
+}
+
+.patchbay-subgroup-header:hover {
+  background: rgba(255,255,255,0.03);
+  color: #aaa;
+}
+
+.patchbay-subgroup-header.expanded {
+  color: var(--global-green);
+  border-bottom-color: var(--global-green-low);
+}
+
+.subgroup-arrow {
+  font-size: 7px;
+  opacity: 0.5;
+  width: 8px;
+  transition: transform 0.2s ease;
+}
+
+.patchbay-subgroup-content {
+  background: rgba(0,0,0,0.1);
+  border-bottom: 1px solid rgba(0,0,0,0.3);
+  margin-bottom: 8px;
+}
+
+/* Compact rows inside subgroup if desired */
+.patchbay-subgroup-content .patchbay-row {
+  background: transparent;
+  border-bottom: 1px solid rgba(255,255,255,0.01);
+}
+
+.patchbay-subgroup-content .patchbay-row:hover {
+  background: rgba(255,255,255,0.02);
+}
+
 .patchbay-amount-knob-container {
   flex: 1;
   display: flex;

@@ -1,5 +1,5 @@
 import { useEngineStore } from './store';
-import { LayerState, TriggerPadSource, LogicGateEffect, TriggeredGateEffect, InverterEffect, SignalMathEffect, SampleAndHoldEffect, StepSequencerEffect, OscilloscopeEffect, SpectralSplitterEffect } from './types';
+import { LayerState, TriggerPadSource, LogicGateEffect, TriggeredGateEffect, InverterEffect, SignalMathEffect, SampleAndHoldEffect, StepSequencerEffect, OscilloscopeEffect, SpectralSplitterEffect, AlphaAdjustEffect } from './types';
 import { AudioEngine } from './AudioEngine';
 
 type SignalFunction = (context: DispatchContext, dt: number) => void;
@@ -43,6 +43,10 @@ export class SignalDispatcher {
 
   public getGateState(layerId: string, nodeId: string): boolean {
     return this.gateOpenStates.get(`${layerId}.${nodeId}`) ?? false;
+  }
+
+  public setGateState(layerId: string, nodeId: string, state: boolean) {
+    this.gateOpenStates.set(`${layerId}.${nodeId}`, state);
   }
 
   public getLatestSignals(layerId: string): Record<string, number> {
@@ -306,6 +310,41 @@ export class SignalDispatcher {
                 cvOut = cvIn + (inverted - cvIn) * mix;
               }
               ctx.signalValues[`${nodeId}.cv_out`] = cvOut;
+            });
+          } else if (effect.type === 'AlphaAdjust') {
+            pipeline.push((ctx: DispatchContext) => {
+              const ef = ctx.layer.effects.find(e => e.id === nodeId) as AlphaAdjustEffect;
+              if (!ef) return;
+
+              const trigger = ctx.signalValues[`${nodeId}.bypass_trig`] ?? 0;
+              const lastValKey = `${ctx.layer.id}.${nodeId}.bypass_trig`;
+              const lastVal = this.lastTriggerVals.get(lastValKey) ?? 0;
+              const isActive = trigger > 0.5;
+              const wasActive = lastVal > 0.5;
+
+              const gateId = `${ctx.layer.id}.${nodeId}`;
+              let currentBypass = this.gateLatchStates.get(gateId) ?? false;
+
+              if (ef.bypassMode === 'latch') {
+                // Sync with manual UI bypass (from store)
+                if (ef.bypass !== currentBypass) {
+                  currentBypass = ef.bypass;
+                  this.gateLatchStates.set(gateId, currentBypass);
+                }
+
+                if (isActive && !wasActive) {
+                  currentBypass = !currentBypass;
+                  this.gateLatchStates.set(gateId, currentBypass);
+                  useEngineStore.getState().updateEffect(ctx.layer.id, nodeId, { bypass: currentBypass } as any);
+                }
+              } else {
+                // Momentary: combine external trigger and manual store state
+                currentBypass = isActive || ef.bypass;
+              }
+
+              this.lastTriggerVals.set(lastValKey, trigger);
+              this.setGateState(ctx.layer.id, nodeId, currentBypass);
+              ctx.signalValues[`${nodeId}.bypass_active`] = currentBypass ? 1.0 : 0.0;
             });
           } else if (effect.type === 'LogicGate') {
             pipeline.push((ctx: DispatchContext) => {

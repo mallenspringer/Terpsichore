@@ -39,6 +39,8 @@ export function createDefaultSource(type: string): AnySource {
       return { type: 'NoiseSource', noiseType: 'perlin', scale: 2.0, evolution: 1.0, octaves: 4, persistence: 0.5, seed: 123, brightness: 0, contrast: 1, flowSpeed: 1.0, autoAnimate: true };
     case 'ImageLoader':
       return { type: 'ImageLoader', imageUrl: "/logo.png", objectFit: 'cover' };
+    case 'ColorNoise':
+      return { type: 'ColorNoise', noiseType: 'perlin', scale: 2.0, evolution: 1.0, octaves: 4, persistence: 0.5, seed: 123, brightness: 0, contrast: 1, flowSpeed: 1.0, autoAnimate: true };
     default:
       return { type: 'None' } as any;
   }
@@ -62,7 +64,8 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
     case 'LogicGate': return { id, type: 'LogicGate', mode: 'and', thresholdA: 0.5, thresholdB: 0.5 };
     case 'TriggeredGate': return { id, type: 'TriggeredGate', gateMode: 'momentary', defaultState: 'off', threshold: 0.5, active: false, gateOpen: false };
     case 'Pattern': return { id, type: 'Pattern', countX: 2, countY: 2, spacingX: 0, spacingY: 0, offsetX: 0, offsetY: 0, alternateMirrorX: false, alternateMirrorY: false, syncCount: true, syncSpacing: true, syncOffset: true, mirrorXTrigger: false, mirrorYTrigger: false } as any;
-    case 'VideoMixer': return { id, type: 'VideoMixer', v1: 1, v2: 0, v3: 0, v4: 0, v1Mode: 'normal', v2Mode: 'add', v3Mode: 'add', v4Mode: 'add', masterGain: 1.0 };
+    case 'VideoMixer': return { id, type: 'VideoMixer', v1: 1, v2: 0, v3: 0, v4: 0, v1Alpha: 1.0, v2Alpha: 1.0, v3Alpha: 1.0, v4Alpha: 1.0, v1Mode: 'normal', v2Mode: 'add', v3Mode: 'add', v4Mode: 'add', masterGain: 1.0 };
+    case 'AlphaAdjust': return { id, type: 'AlphaAdjust', amount: 1.0, invertAmount: false, bypass: false, bypassMode: 'momentary' };
     case 'Kaleidoscope': return { id, type: 'Kaleidoscope', segments: 6, angle: 0, zoom: 1.0, center: [0.5, 0.5] };
     case 'SignalMath':
     case 'Math': 
@@ -97,6 +100,14 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
       return { id, ...createDefaultSource('VideoURL') } as any;
     case 'WebcamCapture':
       return { id, ...createDefaultSource('WebcamCapture') } as any;
+    case 'PixelProcessor':
+      return { 
+        id, type: 'PixelProcessor', 
+        posterizeActive: false, posterizeLevels: 8,
+        thresholdActive: false, thresholdValue: 0.5, thresholdSoftness: 0.05,
+        edgeActive: false, edgeAmount: 1.0, edgeThreshold: 0.1,
+        bypass: false 
+      };
     case 'NoiseSource':
       return { id, ...createDefaultSource('NoiseSource') } as any;
     default:
