@@ -132,6 +132,18 @@ export const PORT_DEFS: Record<string, PortDef[]> = {
     { id: 'mid_out',   label: 'Mid Out',   direction: 'out', signalType: 'modulation', priority: 4 },
     { id: 'high_out',  label: 'High Out',  direction: 'out', signalType: 'modulation', priority: 5 },
   ],
+  AudioInput: [
+    { id: 'audio_out', label: 'Audio Out', direction: 'out', signalType: 'audio', priority: 0 },
+    { id: 'peak_out',  label: 'Peak Out',  direction: 'out', signalType: 'modulation', priority: 1 },
+  ],
+  AudioFile: [
+    { id: 'audio_out', label: 'Audio Out', direction: 'out', signalType: 'audio', priority: 0 },
+    { id: 'peak_out',  label: 'Peak Out',  direction: 'out', signalType: 'modulation', priority: 1 },
+  ],
+  SystemAudio: [
+    { id: 'audio_out', label: 'Audio Out', direction: 'out', signalType: 'audio', priority: 0 },
+    { id: 'peak_out',  label: 'Peak Out',  direction: 'out', signalType: 'modulation', priority: 1 },
+  ],
   Oscilloscope: [
     { id: 'audio_in',  label: 'Audio In',  direction: 'in',  signalType: 'audio', priority: 0 },
     { id: 'video_out', label: 'Video Out', direction: 'out', signalType: 'video', priority: 1 },
@@ -145,6 +157,24 @@ export const PORT_DEFS: Record<string, PortDef[]> = {
     { id: 'mid_out',      label: 'Mid',       direction: 'out', signalType: 'modulation' },
     { id: 'high_mid_out', label: 'High Mid',  direction: 'out', signalType: 'modulation' },
     { id: 'high_out',     label: 'High',      direction: 'out', signalType: 'modulation' },
+  ],
+  AudioTransformer: [
+    { id: 'audio_in',       label: 'Audio In',    direction: 'in',  signalType: 'audio', priority: 0 },
+    { id: 'audio_out',      label: 'Audio Out',   direction: 'out', signalType: 'audio', priority: 1 },
+    { id: 'filter_freq_cv', label: 'Filter Freq', direction: 'in',  signalType: 'modulation' },
+    { id: 'filter_res_cv',  label: 'Res CV',      direction: 'in',  signalType: 'modulation' },
+    { id: 'comp_sustain_cv',label: 'Sustain CV',  direction: 'in',  signalType: 'modulation' },
+    { id: 'bypass_cv',      label: 'Bypass CV',   direction: 'in',  signalType: 'trigger' },
+    { id: 'env_attack_cv',  label: 'Env Atk',     direction: 'in',  signalType: 'modulation' },
+    { id: 'env_release_cv', label: 'Env Rel',     direction: 'in',  signalType: 'modulation' },
+    { id: 'env_out',        label: 'Env Out',     direction: 'out', signalType: 'modulation' },
+  ],
+  AudioModulator: [
+    { id: 'audio_in',   label: 'Audio In',   direction: 'in',  signalType: 'audio', priority: 0 },
+    { id: 'audio_out',  label: 'Audio Out',  direction: 'out', signalType: 'audio', priority: 1 },
+    { id: 'ring_freq_cv', label: 'Ring Freq', direction: 'in',  signalType: 'modulation' },
+    { id: 'ring_mix_cv',  label: 'Ring Mix',  direction: 'in',  signalType: 'modulation' },
+    { id: 'octave_cv',    label: 'Octave CV', direction: 'in',  signalType: 'modulation' },
   ],
   Inverter: [
     { id: 'video_in',   label: 'Video In',   direction: 'in',  signalType: 'video' },
@@ -232,7 +262,11 @@ export const PORT_DEFS: Record<string, PortDef[]> = {
   ],
   None: [],
   __OUTPUT__: [
-    { id: 'composite_in', label: 'Composite In', direction: 'in', signalType: 'video' },
+    { id: 'composite_in', label: 'Video In', direction: 'in', signalType: 'video' },
+    { id: 'audio_in',     label: 'Audio In', direction: 'in', signalType: 'audio' },
+    { id: 'send_0',       label: 'Send 1',   direction: 'in', signalType: 'generic' },
+    { id: 'send_1',       label: 'Send 2',   direction: 'in', signalType: 'generic' },
+    { id: 'send_2',       label: 'Send 3',   direction: 'in', signalType: 'generic' },
   ],
   SampleAndHold: [
     { id: 'video_in',  label: 'Video In', direction: 'in',  signalType: 'video' },
@@ -384,4 +418,5 @@ export const MODULE_DISPLAY_NAMES: Record<string, string> = {
   SignalMath: 'Math',
   StepSequencer: 'Sequencer',
   AlphaAdjust: 'Alpha Adjust',
+  AudioTransformer: 'Audio Utility',
 };

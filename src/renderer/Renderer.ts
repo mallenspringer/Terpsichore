@@ -22,10 +22,10 @@ import { PixelProcessorFragmentWGSL } from './shaders/PixelProcessor';
 
 import { PORT_DEFS } from '../components/NodeGraph/portDefs';
 import { SignalDispatcher } from '../state/SignalDispatcher';
-import { 
-  ShapeGeneratorSource, Transform2DEffect, ColorAdjustEffect, LumaKeyEffect, 
+import {
+  ShapeGeneratorSource, Transform2DEffect, ColorAdjustEffect, LumaKeyEffect,
   SimpleFeedbackEffect, ColorRGBEffect, LumaSplitterEffect, VideoMixerEffect,
-  VideoURLSource, VideoFileSource, WebcamCaptureSource, ImageLoaderSource, ImageFileSource, 
+  VideoURLSource, VideoFileSource, WebcamCaptureSource, ImageLoaderSource, ImageFileSource,
   SpawnEffect, PathEffect, NoiseVideoSource, ColorNoiseSource, InverterEffect, PixelProcessorEffect,
   PatternEffect, KaleidoscopeEffect, SampleAndHoldEffect, OscilloscopeEffect, SpectralSplitterEffect,
   LayerState, AnySource
@@ -50,11 +50,11 @@ export class Renderer {
   private device!: GPUDevice;
   private context!: GPUCanvasContext;
   private format!: GPUTextureFormat;
-  
+
   private masterFBO!: GPUTexture;
   private layerFBO_A!: GPUTexture;
   private layerFBO_B!: GPUTexture;
-  
+
   private prevFrameFBOs: Record<string, GPUTexture> = {};
   private videoElements: Record<string, HTMLVideoElement> = {};
   private audioElements: Record<string, HTMLAudioElement> = {};
@@ -86,7 +86,7 @@ export class Renderer {
   private spectralSplitterPipeline!: GPURenderPipeline;
   private pixelProcessorPipeline!: GPURenderPipeline;
   private colorNoisePipeline!: GPURenderPipeline;
-  
+
   // Isolated layouts to prevent 'Minimum Binding Size' collisions
   private effectLayouts: Map<string, GPUBindGroupLayout> = new Map();
 
@@ -184,7 +184,7 @@ export class Renderer {
     const width = target.width;
     const height = target.height;
     const aspect = width / height;
-    
+
     const effect = layer.effects.find(e => e.id === nodeId);
     if (!effect || effect.type !== 'Spawn') return;
     const sp = effect as SpawnEffect;
@@ -235,7 +235,7 @@ export class Renderer {
 
     if (spawns.length > 0) {
       pass.setPipeline(this.spawnPipeline);
-      
+
       const instanceData = new Float32Array(spawns.length * 8); // 8 floats per instance
       spawns.forEach((obj, idx) => {
         const age = timeSec - obj.birthTime;
@@ -305,7 +305,7 @@ export class Renderer {
     this.transformPipeline = this.device.createRenderPipeline({ layout, vertex, fragment: { module: this.device.createShaderModule({ code: Transform2DWGSL }), entryPoint: 'fs_main', targets }, primitive });
     this.colorAdjustPipeline = this.device.createRenderPipeline({ layout, vertex, fragment: { module: this.device.createShaderModule({ code: ColorAdjustWGSL }), entryPoint: 'fs_main', targets }, primitive });
     this.lumaKeyPipeline = this.device.createRenderPipeline({ layout, vertex, fragment: { module: this.device.createShaderModule({ code: LumaKeyWGSL }), entryPoint: 'fs_main', targets }, primitive });
-    this.colorRGBPipeline = this.device.createRenderPipeline({ 
+    this.colorRGBPipeline = this.device.createRenderPipeline({
       layout: this.device.createPipelineLayout({
         bindGroupLayouts: [
           this.device.createBindGroupLayout({
@@ -320,26 +320,26 @@ export class Renderer {
           })
         ]
       }),
-      vertex, 
-      fragment: { 
-        module: this.device.createShaderModule({ code: ColorRGBWGSL }), 
-        entryPoint: 'fs_main', 
+      vertex,
+      fragment: {
+        module: this.device.createShaderModule({ code: ColorRGBWGSL }),
+        entryPoint: 'fs_main',
         targets: [
           { format: this.format },
           { format: this.format },
           { format: this.format },
           { format: this.format },
-        ] 
-      }, 
-      primitive 
+        ]
+      },
+      primitive
     });
     this.effectLayouts.set('ColorRGB', this.colorRGBPipeline.getBindGroupLayout(0));
     this.feedbackPipeline = this.device.createRenderPipeline({ layout, vertex, fragment: { module: this.device.createShaderModule({ code: SimpleFeedbackWGSL }), entryPoint: 'fs_main', targets }, primitive });
 
-    this.videoPipeline = this.device.createRenderPipeline({ 
-      layout, vertex, 
-      fragment: { module: this.device.createShaderModule({ code: VideoSourceWGSL }), entryPoint: 'fs_video', targets }, 
-      primitive 
+    this.videoPipeline = this.device.createRenderPipeline({
+      layout, vertex,
+      fragment: { module: this.device.createShaderModule({ code: VideoSourceWGSL }), entryPoint: 'fs_video', targets },
+      primitive
     });
 
     this.blitPipeline = this.device.createRenderPipeline({
@@ -353,11 +353,11 @@ export class Renderer {
       },
       primitive,
     });
-    
-    this.triggeredGatePipeline = this.device.createRenderPipeline({ 
-      layout, vertex, 
-      fragment: { module: this.device.createShaderModule({ code: TriggeredGateWGSL }), entryPoint: 'fs_main', targets }, 
-      primitive 
+
+    this.triggeredGatePipeline = this.device.createRenderPipeline({
+      layout, vertex,
+      fragment: { module: this.device.createShaderModule({ code: TriggeredGateWGSL }), entryPoint: 'fs_main', targets },
+      primitive
     });
 
     this.videoMixerPipeline = this.device.createRenderPipeline({
@@ -376,15 +376,15 @@ export class Renderer {
         ]
       }),
       vertex,
-      fragment: { 
-        module: this.device.createShaderModule({ code: VideoMixerWGSL }), 
-        entryPoint: 'fs_main', 
-        targets: [{ format: this.format }] 
+      fragment: {
+        module: this.device.createShaderModule({ code: VideoMixerWGSL }),
+        entryPoint: 'fs_main',
+        targets: [{ format: this.format }]
       },
       primitive
     });
-    
-    
+
+
 
 
     this.lumaSplitPipeline = this.device.createRenderPipeline({
@@ -475,16 +475,16 @@ export class Renderer {
         module: this.device.createShaderModule({ code: SpawnVertexWGSL }),
         entryPoint: 'vs_main'
       },
-      fragment: { 
-        module: this.device.createShaderModule({ code: SpawnWGSL }), 
-        entryPoint: 'fs_main', 
-        targets: [{ 
+      fragment: {
+        module: this.device.createShaderModule({ code: SpawnWGSL }),
+        entryPoint: 'fs_main',
+        targets: [{
           format: this.format,
           blend: {
             color: { operation: 'add', srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha' },
             alpha: { operation: 'add', srcFactor: 'one', dstFactor: 'one-minus-src-alpha' }
           }
-        }] 
+        }]
       },
       primitive
     });
@@ -524,10 +524,10 @@ export class Renderer {
         ]
       }),
       vertex,
-      fragment: { 
-        module: this.device.createShaderModule({ code: OscilloscopeWGSL }), 
-        entryPoint: 'fs_main', 
-        targets: [{ format: this.format }] 
+      fragment: {
+        module: this.device.createShaderModule({ code: OscilloscopeWGSL }),
+        entryPoint: 'fs_main',
+        targets: [{ format: this.format }]
       },
       primitive
     });
@@ -545,22 +545,22 @@ export class Renderer {
         ]
       }),
       vertex,
-      fragment: { 
-        module: this.device.createShaderModule({ code: SpectralSplitterWGSL }), 
-        entryPoint: 'fs_main', 
-        targets: [{ format: this.format }] 
+      fragment: {
+        module: this.device.createShaderModule({ code: SpectralSplitterWGSL }),
+        entryPoint: 'fs_main',
+        targets: [{ format: this.format }]
       },
       primitive
     });
     this.effectLayouts.set('SpectralSplitter', this.spectralSplitterPipeline.getBindGroupLayout(0));
-    
+
     this.colorNoisePipeline = this.device.createRenderPipeline({
       layout: 'auto',
       vertex: { module: this.device.createShaderModule({ code: NoiseSourceVertexWGSL }), entryPoint: 'vs_main' },
-      fragment: { 
-        module: this.device.createShaderModule({ code: ColorNoiseFragmentWGSL }), 
-        entryPoint: 'fs_main', 
-        targets: [{ format: this.format }] 
+      fragment: {
+        module: this.device.createShaderModule({ code: ColorNoiseFragmentWGSL }),
+        entryPoint: 'fs_main',
+        targets: [{ format: this.format }]
       },
       primitive
     });
@@ -579,64 +579,64 @@ export class Renderer {
     return buf;
   }
 
-  public getVideoElement(key: string): HTMLVideoElement | null {
-    return this.videoElements[key] || null;
+  public getMediaElement(key: string): HTMLVideoElement | HTMLAudioElement | null {
+    return this.videoElements[key] || this.audioElements[key] || null;
   }
 
-  public getVideoProgress(key: string): { currentTime: number, duration: number } {
-    const vid = this.videoElements[key];
-    if (vid) {
-      return { currentTime: vid.currentTime, duration: vid.duration };
+  public getMediaProgress(key: string): { currentTime: number, duration: number } {
+    const el = this.getMediaElement(key);
+    if (el) {
+      return { currentTime: el.currentTime, duration: el.duration };
     }
     return { currentTime: 0, duration: 0 };
   }
 
-  private applyVideoState(vid: any, src: any, isMutedFromLayer: boolean, key: string) {
+  private syncMediaPlayback(el: HTMLAudioElement | HTMLVideoElement, src: any, isMutedFromLayer: boolean, key: string) {
     const speed = typeof src.playbackSpeed === 'number' && isFinite(src.playbackSpeed) ? src.playbackSpeed : 1.0;
-    vid.playbackRate = speed;
-    vid.loop = false; // Disable native loop so we can intercept it manually
+    el.playbackRate = speed;
+    el.loop = false; // We handle loop manually for start/end flags
 
     const loopStart = src.loopStart ?? 0;
-    const loopEnd = (src.loopEnd && src.loopEnd > loopStart) ? src.loopEnd : (vid.duration || Infinity);
+    const loopEnd = (src.loopEnd && src.loopEnd > loopStart) ? src.loopEnd : (el.duration || Infinity);
 
-    const lastTime = vid.__lastTime ?? 0;
-    const delta = vid.currentTime - lastTime;
+    const lastTime = (el as any).__lastTime ?? 0;
+    const delta = el.currentTime - lastTime;
     const isOrganicPlayback = delta > 0 && delta < 1.0;
     const layerIsSeeking = !!this.isSeeking[key];
 
-    // Organic loop trigger - only when playing and NOT manually seeking
-    if (src.playState === 'play' && src.loop && !layerIsSeeking && !isNaN(vid.duration) && vid.duration > 0.1 && vid.currentTime >= loopEnd && isOrganicPlayback && lastTime < loopEnd) {
-      vid.currentTime = loopStart;
+    // Manual loop logic
+    if (src.playState === 'play' && src.loop && !layerIsSeeking && !isNaN(el.duration) && el.duration > 0.1 && el.currentTime >= loopEnd && isOrganicPlayback && lastTime < loopEnd) {
+      el.currentTime = loopStart;
     }
 
-    // EOF fallback (if user scrubs outside the loop flags and hits the absolute end of the file)
-    if (src.playState === 'play' && src.loop && !layerIsSeeking && !isNaN(vid.duration) && vid.duration > 0.1 && vid.currentTime >= vid.duration - 0.05) {
-      vid.currentTime = loopStart;
-      vid.play().catch(() => {});
+    if (src.playState === 'play' && src.loop && !layerIsSeeking && !isNaN(el.duration) && el.duration > 0.1 && el.currentTime >= el.duration - 0.05) {
+      el.currentTime = loopStart;
+      el.play().catch(() => { });
     }
 
-    if (src.playState === 'play' && vid.paused && !layerIsSeeking && vid.currentTime < (vid.duration || Infinity) - 0.05 && !useEngineStore.getState().isGlobalPaused) {
-      vid.play().catch(() => {});
+    if (src.playState === 'play' && el.paused && !layerIsSeeking && el.currentTime < (el.duration || Infinity) - 0.05 && !useEngineStore.getState().isGlobalPaused) {
+      el.play().catch(() => { });
     }
-    if (src.playState === 'pause' && !vid.paused) vid.pause();
+    
+    if (src.playState === 'pause' && !el.paused) el.pause();
     if (src.playState === 'stop') {
-      if (!vid.paused) vid.pause();
-      if (!layerIsSeeking && Math.abs(vid.currentTime - loopStart) > 0.01) {
-        vid.currentTime = loopStart;
+      if (!el.paused) el.pause();
+      if (!layerIsSeeking && Math.abs(el.currentTime - loopStart) > 0.01) {
+        el.currentTime = loopStart;
       }
     }
 
-    vid.__lastTime = vid.currentTime;
-    this.applyAudioState(vid, src, isMutedFromLayer, key);
+    (el as any).__lastTime = el.currentTime;
+    this.applyAudioState(el, src, isMutedFromLayer, key);
   }
 
   private applyAudioState(el: HTMLAudioElement | HTMLVideoElement, src: any, isMutedFromLayer: boolean, key: string) {
     const globalMute = useEngineStore.getState().globalAudioMuted;
-    
+
     // We keep the element itself unmuted so the MediaElementAudioSourceNode captures signal
-    el.muted = false; 
+    el.muted = false;
     el.volume = 1.0; // Keep full volume for the Web Audio chain
-    
+
     const ae = AudioEngine.getInstance();
     ae.setModuleMute(key, src.audioMuted || src.muted);
     ae.setLayerMute(key, isMutedFromLayer);
@@ -666,9 +666,9 @@ export class Renderer {
         vid.style.height = '1px';
         document.body.appendChild(vid);
         vid.onerror = () => console.error(`Video Error on Node ${key}:`, vid.error?.message, "Code:", vid.error?.code);
-        vid.onloadedmetadata = () => {};
+        vid.onloadedmetadata = () => { };
         this.videoElements[key] = vid;
-        
+
         // Register with AudioEngine for signal dispatching
         setTimeout(() => AudioEngine.getInstance().registerMediaElement(key, vid), 50);
       }
@@ -682,7 +682,7 @@ export class Renderer {
           vid.__lastSrc = src.videoUrl;
           vid.load();
         }
-        this.applyVideoState(vid, src, src.audioMuted || (source as any)._layerAudioMuted, key);
+        this.syncMediaPlayback(vid, src, src.audioMuted || (source as any)._layerAudioMuted, key);
       } else if (source.type === 'VideoFile') {
         const src = source as VideoFileSource;
         if (src.fileUrl && vid.__lastSrc !== src.fileUrl && !vid.srcObject) {
@@ -693,7 +693,7 @@ export class Renderer {
           vid.__lastSrc = src.fileUrl;
           vid.load();
         }
-        this.applyVideoState(vid, src, src.audioMuted || (source as any)._layerAudioMuted, key);
+        this.syncMediaPlayback(vid, src, src.audioMuted || (source as any)._layerAudioMuted, key);
       } else if (source.type === 'WebcamCapture') {
         const src = source as WebcamCaptureSource;
         if (this.activeDeviceIds[key] !== src.deviceId || (!vid.srcObject && !vid.src)) {
@@ -701,31 +701,31 @@ export class Renderer {
           vid.pause();
           vid.removeAttribute('src');
           vid.__lastSrc = undefined;
-          
+
           const constraints: MediaStreamConstraints = {
             video: src.deviceId ? { deviceId: { exact: src.deviceId } } : true,
             audio: false
           };
-          
+
           navigator.mediaDevices.getUserMedia(constraints)
             .then(stream => {
               if (this.activeDeviceIds[key] === src.deviceId) {
                 vid.srcObject = stream;
-                vid.play().catch(() => {});
+                vid.play().catch(() => { });
               } else {
                 stream.getTracks().forEach(t => t.stop());
               }
             })
             .catch(err => console.error("Webcam error:", err));
         }
-        this.applyVideoState(vid, src, (source as any)._layerAudioMuted, key);
+        this.syncMediaPlayback(vid, src, (source as any)._layerAudioMuted, key);
       }
       return vid as any;
     } else if (source.type === 'ImageLoader' || source.type === 'ImageFile') {
-      const srcUrl = source.type === 'ImageLoader' 
-        ? (source as ImageLoaderSource).imageUrl 
+      const srcUrl = source.type === 'ImageLoader'
+        ? (source as ImageLoaderSource).imageUrl
         : (source as ImageFileSource).fileUrl;
-      
+
       if (srcUrl && (!this.imageElements[key] || this.imageElements[key].src !== srcUrl)) {
         const img = new Image();
         if (source.type === 'ImageLoader') img.crossOrigin = 'anonymous';
@@ -744,46 +744,47 @@ export class Renderer {
         this.audioElements[key] = aud;
       }
       const src = source as any;
-      if (src.fileUrl && aud.src !== src.fileUrl) {
-        aud.src = src.fileUrl;
-        aud.load();
+      if (src.fileUrl && (aud.src !== src.fileUrl || !AudioEngine.getInstance().getBusData(key))) {
+        if (aud.src !== src.fileUrl) {
+          aud.src = src.fileUrl;
+          aud.load();
+        }
         AudioEngine.getInstance().registerMediaElement(key, aud);
       }
       if (src.playState === 'play' && aud.paused && !useEngineStore.getState().isGlobalPaused) aud.play().catch(e => console.error("Audio Play Error:", e));
       else if (src.playState === 'pause' && !aud.paused) aud.pause();
       else if (src.playState === 'stop') { aud.pause(); aud.currentTime = 0; }
-      
-      aud.loop = src.loop;
-      this.applyAudioState(aud, src, source._layerAudioMuted, key);
+
+      this.syncMediaPlayback(aud, src, source._layerAudioMuted, key);
       return null;
     } else if (source.type === 'AudioInput' || source.type === 'SystemAudio') {
       const src = source as any;
       let stream = this.activeStreams[key];
       if (!stream) {
-        const constraints = source.type === 'AudioInput' 
+        const constraints = source.type === 'AudioInput'
           ? { audio: src.deviceId ? { deviceId: src.deviceId } : true }
           : { audio: true, video: true }; // System audio often requires video track in getDisplayMedia
-        
+
         const promise = source.type === 'AudioInput'
           ? navigator.mediaDevices.getUserMedia(constraints)
           : navigator.mediaDevices.getDisplayMedia(constraints);
-          
-      promise.then(s => {
-        this.activeStreams[key] = s;
-        // We need an element to actually "play" the stream for volume/mute to work easily
-        let aud = this.audioElements[key];
-        if (!aud) {
-          aud = document.createElement('audio');
-          document.body.appendChild(aud); // Needs to be in DOM for some browsers
-          aud.style.display = 'none';
-          this.audioElements[key] = aud;
-        }
-        aud.srcObject = s;
-        aud.play();
-        AudioEngine.getInstance().registerMediaElement(key, aud);
-      }).catch(e => console.error(`${source.type} Error:`, e));
+
+        promise.then(s => {
+          this.activeStreams[key] = s;
+          // We need an element to actually "play" the stream for volume/mute to work easily
+          let aud = this.audioElements[key];
+          if (!aud) {
+            aud = document.createElement('audio');
+            document.body.appendChild(aud); // Needs to be in DOM for some browsers
+            aud.style.display = 'none';
+            this.audioElements[key] = aud;
+          }
+          aud.srcObject = s;
+          aud.play();
+          AudioEngine.getInstance().registerMediaElement(key, aud);
+        }).catch(e => console.error(`${source.type} Error:`, e));
       }
-      
+
       const aud = this.audioElements[key];
       if (aud) {
         this.applyAudioState(aud, src, source._layerAudioMuted, key);
@@ -836,9 +837,9 @@ export class Renderer {
       if (temp.has(id)) return; // Cycle
       if (visited.has(id)) return;
       temp.add(id);
-      
+
       edges.filter(e => e.toNodeId === id).forEach(e => visit(e.fromNodeId));
-      
+
       temp.delete(id);
       visited.add(id);
       sorted.push(id);
@@ -894,11 +895,11 @@ export class Renderer {
   private lastRenderRealTime = performance.now();
   private lastResetSignal = 0;
   private wasPaused = false;
-  
+
   private render() {
     const state = useEngineStore.getState();
     const commandEncoder = this.device.createCommandEncoder();
-    
+
     const now = performance.now();
     const deltaSec = (now - this.lastRenderRealTime) / 1000.0;
     this.lastRenderRealTime = now;
@@ -907,33 +908,33 @@ export class Renderer {
     if (state.globalResetSignal !== this.lastResetSignal) {
       this.lastResetSignal = state.globalResetSignal;
       this.accumulatedTimeSec = 0;
-      Object.entries(this.videoElements).forEach(([layerId, v]) => { 
+      Object.entries(this.videoElements).forEach(([layerId, v]) => {
         const layer = state.layers[layerId];
         const loopStart = (layer?.source as any)?.loopStart ?? 0;
-        v.currentTime = loopStart; 
+        v.currentTime = loopStart;
       });
-      Object.entries(this.audioElements).forEach(([layerId, a]) => { 
+      Object.entries(this.audioElements).forEach(([layerId, a]) => {
         const layer = state.layers[layerId];
         const loopStart = (layer?.source as any)?.loopStart ?? 0;
-        a.currentTime = loopStart; 
+        a.currentTime = loopStart;
       });
     }
 
     if (!state.isGlobalPaused) {
       this.accumulatedTimeSec += deltaSec;
-      
+
       // If we just unpaused, play media
       if (this.wasPaused) {
-         Object.values(this.videoElements).forEach(v => v.play().catch(e=>e));
-         Object.values(this.audioElements).forEach(a => a.play().catch(e=>e));
-         this.wasPaused = false;
+        Object.values(this.videoElements).forEach(v => v.play().catch(e => e));
+        Object.values(this.audioElements).forEach(a => a.play().catch(e => e));
+        this.wasPaused = false;
       }
     } else {
       // If we just paused, pause media
       if (!this.wasPaused) {
-         Object.values(this.videoElements).forEach(v => v.pause());
-         Object.values(this.audioElements).forEach(a => a.pause());
-         this.wasPaused = true;
+        Object.values(this.videoElements).forEach(v => v.pause());
+        Object.values(this.audioElements).forEach(a => a.pause());
+        this.wasPaused = true;
       }
     }
 
@@ -1015,20 +1016,32 @@ export class Renderer {
       if (!activeNodeIds.has(id)) {
         const v = this.videoElements[id];
         v.pause();
+        if (v.srcObject) {
+          (v.srcObject as MediaStream).getTracks().forEach(t => t.stop());
+          v.srcObject = null;
+        }
         v.src = '';
         v.removeAttribute('src');
         v.load();
         v.remove();
+        AudioEngine.getInstance().unregisterMediaElement(id);
         delete this.videoElements[id];
+        delete (this as any).activeStreams?.[id];
       }
     });
     Object.keys(this.audioElements).forEach(id => {
       if (!activeNodeIds.has(id)) {
         const a = this.audioElements[id];
         a.pause();
+        if (a.srcObject) {
+          (a.srcObject as MediaStream).getTracks().forEach(t => t.stop());
+          a.srcObject = null;
+        }
         a.src = '';
         a.remove();
+        AudioEngine.getInstance().unregisterMediaElement(id);
         delete this.audioElements[id];
+        delete (this as any).activeStreams?.[id];
       }
     });
 
@@ -1060,7 +1073,7 @@ export class Renderer {
       }
 
       const sortedNodeIds = this.sortNodes(layer);
-      
+
       sortedNodeIds.forEach(nodeId => {
         if (nodeId === '__output__') return;
 
@@ -1074,32 +1087,32 @@ export class Renderer {
             const src = layer.source as ShapeGeneratorSource;
             const uniformBuffer = this.getUniformBuffer(`${layer.id}.source.uniforms`, 80);
             const buf = new ArrayBuffer(80);
-            
+
             const shapeTypeMap: Record<string, number> = { rectangle: 0, ellipse: 1, polygon: 2 };
             const u32 = new Uint32Array(buf);
             u32[0] = shapeTypeMap[src.shapeType] || 0;
             u32[1] = src.strokeMode === 'hollow' ? 1 : 0;
-            
+
             const f32 = new Float32Array(buf);
             f32[2] = src.strokeThreshold ?? 0.1;
             f32.set(src.fillColor, 4); // index 4..7
-            
+
             f32[8] = this.getEffectiveParam(layer, 'source', 'edgeSoftness', src.edgeSoftness, timeSec);
-            
+
             const rawSidesSig = this.getEffectiveParam(layer, 'source', 'sides', 0, timeSec);
             const mappedSidesSig = Math.sign(rawSidesSig) * Math.pow(Math.abs(rawSidesSig), 2) * 29;
             f32[9] = Math.max(3, (src.sides ?? 3) + mappedSidesSig);
-            
+
             f32[10] = this.getEffectiveParam(layer, 'source', 'roundness', src.roundness ?? 0, timeSec);
             f32[11] = this.getEffectiveParam(layer, 'source', 'convexity', src.convexity ?? 0, timeSec);
-            
+
             const rotModVal = this.getEffectiveParam(layer, 'source', 'rotation', 0, timeSec);
             f32[12] = (src.rotation ?? 0) + rotModVal * 360.0;
-            
+
             f32[13] = this.getEffectiveParam(layer, 'source', 'strokeWidth', src.strokeWidth ?? 0, timeSec);
             f32[14] = this.canvas.width / this.canvas.height;
             f32[15] = this.getEffectiveParam(layer, 'source', 'scale', src.scale ?? 1, timeSec);
-            
+
             f32[16] = this.getEffectiveParam(layer, 'source', 'x', src.x ?? 0, timeSec);
             f32[17] = this.getEffectiveParam(layer, 'source', 'y', src.y ?? 0, timeSec);
 
@@ -1122,7 +1135,7 @@ export class Renderer {
               if (width > 0 && height > 0) {
                 const uniformBuffer = this.getUniformBuffer(`${layer.id}.source.media_uniforms`, 16);
                 const fitMap: Record<string, number> = { cover: 0, contain: 1, fill: 2 };
-                const f32 = new Float32Array([ fitMap[(layer.source as any).objectFit] ?? 0, width / height, this.canvas.width / this.canvas.height, 0]);
+                const f32 = new Float32Array([fitMap[(layer.source as any).objectFit] ?? 0, width / height, this.canvas.width / this.canvas.height, 0]);
                 this.device.queue.writeBuffer(uniformBuffer, 0, f32);
 
                 if (media instanceof HTMLVideoElement && media.readyState >= 2) {
@@ -1130,7 +1143,7 @@ export class Renderer {
                     const videoTex = this.device.importExternalTexture({ source: media });
                     const bindGroup = this.device.createBindGroup({ layout: this.videoPipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: uniformBuffer } }, { binding: 1, resource: videoTex }, { binding: 2, resource: this.sampler }] });
                     pass.setPipeline(this.videoPipeline); pass.setBindGroup(0, bindGroup); pass.draw(3);
-                  } catch (e) {}
+                  } catch (e) { }
                 } else if (!(media instanceof HTMLVideoElement)) {
                   let mediaTex = this.mediaTextures[layer.id];
                   if (!mediaTex || mediaTex.width !== width || mediaTex.height !== height) {
@@ -1150,23 +1163,36 @@ export class Renderer {
           const effect = layer.effects.find(e => e.id === nodeId);
           if (!effect) return;
 
-          if (['ShapeGenerator', 'VideoFile', 'VideoURL', 'WebcamCapture', 'NoiseSource', 'ColorNoise'].includes(effect.type)) {
-            const target = this.ensureTexture(nodeId, 'video_out');
+          // Category A: Generators (Sources or Visualizers that don't REQUIRE an input texture)
+          if (['ShapeGenerator', 'VideoFile', 'VideoURL', 'WebcamCapture', 'NoiseSource', 'ColorNoise', 'SpectralSplitter', 'Oscilloscope'].includes(effect.type)) {
+            const genTarget = this.ensureTexture(nodeId, 'video_out');
             if (effect.type === 'ShapeGenerator') {
-              this.renderShapeSource(layer, nodeId, target, timeSec, commandEncoder);
+              this.renderShapeSource(layer, nodeId, genTarget, timeSec, commandEncoder);
+              return;
             } else if (effect.type === 'NoiseSource') {
-              this.renderNoiseSource(layer, nodeId, target, timeSec, commandEncoder);
+              this.renderNoiseSource(layer, nodeId, genTarget, timeSec, commandEncoder);
+              return;
             } else if (effect.type === 'ColorNoise') {
-              this.renderColorNoise(layer, nodeId, target, timeSec, commandEncoder);
+              this.renderColorNoise(layer, nodeId, genTarget, timeSec, commandEncoder);
+              return;
+            } else if (effect.type === 'SpectralSplitter' || effect.type === 'Oscilloscope') {
+              // Fall through to the specialized render blocks below
             } else {
-              this.renderVideoEffect(layer, nodeId, effect as any, target, commandEncoder);
+              this.renderVideoEffect(layer, nodeId, effect as any, genTarget, commandEncoder);
+              return;
             }
-            return;
           }
 
           const incomingEdges = layer.graph?.edges.filter(e => e.toNodeId === nodeId && (e.signalType === 'video' || e.toPort === 'sig_in')) || [];
-          const inputTex = (incomingEdges.length > 0) ? this.getTextureForNode(incomingEdges[0].fromNodeId, incomingEdges[0].fromPort) : this.ensureTexture('__dummy__');
-          if (!inputTex) return;
+          let inputTex = (incomingEdges.length > 0) ? this.getTextureForNode(incomingEdges[0].fromNodeId, incomingEdges[0].fromPort) : this.nodeTextures.get('__dummy__');
+          
+          // Fallback to dummy if still null for any reason
+          if (!inputTex) inputTex = this.nodeTextures.get('__dummy__')!;
+          
+          // Only skip if we are NOT an audio visualizer AND we have no valid input (redundant now but safe)
+          if (!inputTex && effect.type !== 'SpectralSplitter' && effect.type !== 'Oscilloscope') return;
+          
+          const tex = inputTex!; // Local non-null reference for TS safety
 
           const targetPort = effect.type === 'TriggeredGate' ? 'sig_out' : 'video_out';
           const target = this.ensureTexture(nodeId, targetPort);
@@ -1176,7 +1202,7 @@ export class Renderer {
           if (effect.type === 'ColorRGB') {
             pipeline = this.colorRGBPipeline;
             const ef = effect as ColorRGBEffect;
-            
+
             const hasV = incomingEdges.some(e => e.toPort === 'video_in');
             const hasR = incomingEdges.some(e => e.toPort === 'r_in');
             const hasG = incomingEdges.some(e => e.toPort === 'g_in');
@@ -1189,24 +1215,24 @@ export class Renderer {
             const buf = new ArrayBuffer(64);
             const f32 = new Float32Array(buf);
             const u32 = new Uint32Array(buf);
-            
+
             f32[0] = this.getEffectiveParam(layer, ef.id, 'r_cv', mapVal(ef.r, ef.rMode), timeSec);
             f32[1] = this.getEffectiveParam(layer, ef.id, 'g_cv', mapVal(ef.g, ef.gMode), timeSec);
             f32[2] = this.getEffectiveParam(layer, ef.id, 'b_cv', mapVal(ef.b, ef.bMode), timeSec);
-            
+
             u32[3] = hasV ? 1 : 0;
             u32[4] = hasR ? 1 : 0;
             u32[5] = hasG ? 1 : 0;
             u32[6] = hasB ? 1 : 0;
-            
+
             u32[7] = ef.rMode === 'mult' ? 1 : 0;
             u32[8] = ef.gMode === 'mult' ? 1 : 0;
             u32[9] = ef.bMode === 'mult' ? 1 : 0;
-            
+
             u32[10] = ef.rInputMode === 'luma' ? 1 : 0;
             u32[11] = ef.gInputMode === 'luma' ? 1 : 0;
             u32[12] = ef.bInputMode === 'luma' ? 1 : 0;
-            
+
             this.device.queue.writeBuffer(uniformBuffer, 0, buf);
 
             const rIn = this.getTextureForNode(nodeId, 'r_in')?.createView() ?? inputTex.createView();
@@ -1214,18 +1240,18 @@ export class Renderer {
             const bIn = this.getTextureForNode(nodeId, 'b_in')?.createView() ?? inputTex.createView();
 
             entries = [
-              { binding: 0, resource: { buffer: uniformBuffer } }, 
-              { binding: 1, resource: inputTex.createView() }, 
+              { binding: 0, resource: { buffer: uniformBuffer } },
+              { binding: 1, resource: tex.createView() },
               { binding: 2, resource: this.sampler },
               { binding: 3, resource: rIn },
               { binding: 4, resource: gIn },
               { binding: 5, resource: bIn },
             ];
 
-            const rTex = this.ensureTexture(nodeId, 'r_out'); 
-            const gTex = this.ensureTexture(nodeId, 'g_out'); 
+            const rTex = this.ensureTexture(nodeId, 'r_out');
+            const gTex = this.ensureTexture(nodeId, 'g_out');
             const bTex = this.ensureTexture(nodeId, 'b_out');
-            
+
             const pass = commandEncoder.beginRenderPass({
               colorAttachments: [
                 { view: target.createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' },
@@ -1240,7 +1266,7 @@ export class Renderer {
           } else if (effect.type === 'Oscilloscope') {
             pipeline = this.oscilloscopePipeline;
             const ef = effect as OscilloscopeEffect;
-            
+
             // 1. Find connected bus (same logic as ModuleNode)
             const edge = layer?.graph?.edges.find(e => e.toNodeId === nodeId && e.toPort === 'audio_in');
             let busId = 'master';
@@ -1248,7 +1274,7 @@ export class Renderer {
               const sourceEffect = layer?.effects.find(e => e.id === edge.fromNodeId);
               if (sourceEffect?.type === 'AudioSource') {
                 busId = (sourceEffect as any).busId || 'master';
-              } else if (edge.fromNodeId === 'source' || sourceEffect?.type === 'VideoFile' || sourceEffect?.type === 'VideoURL') {
+              } else if (edge.fromNodeId === 'source' || sourceEffect?.type === 'VideoFile' || sourceEffect?.type === 'VideoURL' || sourceEffect?.type === 'AudioFile' || sourceEffect?.type === 'AudioInput' || sourceEffect?.type === 'SystemAudio' || sourceEffect?.type === 'AudioTransformer') {
                 busId = edge.fromNodeId === 'source' ? layer.id : edge.fromNodeId;
               }
             }
@@ -1284,33 +1310,44 @@ export class Renderer {
           } else if (effect.type === 'SpectralSplitter') {
             pipeline = this.spectralSplitterPipeline;
             const ef = effect as SpectralSplitterEffect;
-            
             const edge = layer?.graph?.edges.find(e => e.toNodeId === nodeId && e.toPort === 'audio_in');
-            let busId = 'master';
+            let busId = ef.busId || 'master';
+            
             if (edge) {
               const sourceEffect = layer?.effects.find(e => e.id === edge.fromNodeId);
               if (sourceEffect?.type === 'AudioSource') busId = (sourceEffect as any).busId;
-              else if (edge.fromNodeId === 'source') busId = layer.id;
+              else if (edge.fromNodeId === 'source' || sourceEffect?.type === 'VideoFile' || sourceEffect?.type === 'VideoURL' || sourceEffect?.type === 'AudioFile' || sourceEffect?.type === 'AudioInput' || sourceEffect?.type === 'SystemAudio' || sourceEffect?.type === 'AudioTransformer') {
+                busId = edge.fromNodeId === 'source' ? layer.id : edge.fromNodeId;
+              }
             }
 
-            const busData = AudioEngine.getInstance().getBusData(busId);
+            let busData = AudioEngine.getInstance().getBusData(busId);
+            // Fallback to manual bus selection if patched bus is not found
+            if (!busData) {
+              busData = AudioEngine.getInstance().getBusData(ef.busId || 'master');
+            }
+            
             const fft = busData ? busData.fft : new Float32Array(512);
 
             const storageBuffer = this.getStorageBuffer(`${nodeId}.fft`, fft.byteLength);
             this.device.queue.writeBuffer(storageBuffer, 0, fft as any);
 
-            const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 48); 
+            const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 64);
             this.device.queue.writeBuffer(uniformBuffer, 0, new Float32Array([
               this.getEffectiveParam(layer, ef.id, 'sensitivity', ef.sensitivity, timeSec),
               this.getEffectiveParam(layer, ef.id, 'smoothing', ef.smoothing, timeSec),
               this.canvas.width / this.canvas.height,
               timeSec,
-              busData?.bands.low ?? 0,
-              busData?.bands.lowMid ?? 0,
-              busData?.bands.midGranular ?? 0,
-              busData?.bands.highMid ?? 0,
-              busData?.bands.highGranular ?? 0,
-              0, 0, 0 // Padding to 48 bytes (12 floats)
+              
+              // bands_1 (vec4) - Safe access with double optional chaining
+              busData?.bands?.low ?? 0,
+              busData?.bands?.lowMid ?? 0,
+              busData?.bands?.midGranular ?? 0,
+              busData?.bands?.highMid ?? 0,
+
+              // bands_2 (vec4)
+              busData?.bands?.highGranular ?? 0,
+              0, 0, 0 // Padding
             ]) as any);
 
             entries = [
@@ -1324,7 +1361,7 @@ export class Renderer {
             const layout = this.effectLayouts.get(effect.type) || pipeline.getBindGroupLayout(0);
             const bg = this.device.createBindGroup({ layout, entries });
             pass.setPipeline(pipeline); pass.setBindGroup(0, bg); pass.draw(3); pass.end();
-            pipeline = null; 
+            pipeline = null;
           } else if (effect.type === 'LumaSplitter') {
             pipeline = this.lumaSplitPipeline;
             const ef = effect as LumaSplitterEffect;
@@ -1335,7 +1372,7 @@ export class Renderer {
               this.getEffectiveParam(layer, ef.id, 'softness', ef.softness, timeSec),
               0
             ]));
-            entries = [{ binding: 0, resource: { buffer: uniformBuffer } }, { binding: 1, resource: inputTex.createView() }, { binding: 2, resource: this.sampler }];
+            entries = [{ binding: 0, resource: { buffer: uniformBuffer } }, { binding: 1, resource: tex.createView() }, { binding: 2, resource: this.sampler }];
 
             const lowTex = this.ensureTexture(nodeId, 'low_out'); const midTex = this.ensureTexture(nodeId, 'mid_out'); const highTex = this.ensureTexture(nodeId, 'high_out');
             const pass = commandEncoder.beginRenderPass({
@@ -1355,16 +1392,16 @@ export class Renderer {
               const ef = effect as Transform2DEffect;
               const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 32);
               this.device.queue.writeBuffer(uniformBuffer, 0, new Float32Array([
-                this.getEffectiveParam(layer, ef.id, 'translateX', ef.translateX, timeSec), 
+                this.getEffectiveParam(layer, ef.id, 'translateX', ef.translateX, timeSec),
                 this.getEffectiveParam(layer, ef.id, 'translateY', ef.translateY, timeSec),
-                this.getEffectiveParam(layer, ef.id, 'scaleX', ef.scaleX, timeSec), 
+                this.getEffectiveParam(layer, ef.id, 'scaleX', ef.scaleX, timeSec),
                 this.getEffectiveParam(layer, ef.id, 'scaleY', ef.scaleY, timeSec),
                 this.getEffectiveParam(layer, ef.id, 'rotation', ef.rotation, timeSec), // already rad in eff state
                 this.getEffectiveParam(layer, ef.id, 'spin', ef.spin ?? 0, timeSec),
                 timeSec,
                 this.canvas.width / this.canvas.height
               ]));
-              entries = [{ binding: 0, resource: { buffer: uniformBuffer } }, { binding: 1, resource: inputTex.createView() }, { binding: 2, resource: this.sampler }];
+              entries = [{ binding: 0, resource: { buffer: uniformBuffer } }, { binding: 1, resource: tex.createView() }, { binding: 2, resource: this.sampler }];
             } else if (effect.type === 'Spawn') {
               this.renderSpawn(layer, nodeId, inputTex, target, timeSec, commandEncoder);
               return; // Done
@@ -1376,7 +1413,7 @@ export class Renderer {
               new Float32Array(buf).set([this.getEffectiveParam(layer, ef.id, 'contrast', ef.contrast, timeSec), this.getEffectiveParam(layer, ef.id, 'saturation', ef.saturation, timeSec), this.getEffectiveParam(layer, ef.id, 'brightness', ef.brightness, timeSec)]);
               new Uint32Array(buf)[4] = ef.invert ? 1 : 0;
               this.device.queue.writeBuffer(uniformBuffer, 0, buf);
-              entries = [{ binding: 0, resource: { buffer: uniformBuffer } }, { binding: 1, resource: inputTex.createView() }, { binding: 2, resource: this.sampler }];
+              entries = [{ binding: 0, resource: { buffer: uniformBuffer } }, { binding: 1, resource: tex.createView() }, { binding: 2, resource: this.sampler }];
             } else if (effect.type === 'LumaKey') {
               pipeline = this.lumaKeyPipeline;
               const ef = effect as LumaKeyEffect;
@@ -1385,7 +1422,7 @@ export class Renderer {
               new Float32Array(buf).set([this.getEffectiveParam(layer, ef.id, 'threshold', ef.threshold, timeSec), this.getEffectiveParam(layer, ef.id, 'tolerance', ef.tolerance, timeSec)]);
               new Uint32Array(buf)[2] = ef.invertKey ? 1 : 0;
               this.device.queue.writeBuffer(uniformBuffer, 0, buf);
-              entries = [{ binding: 0, resource: { buffer: uniformBuffer } }, { binding: 1, resource: inputTex.createView() }, { binding: 2, resource: this.sampler }];
+              entries = [{ binding: 0, resource: { buffer: uniformBuffer } }, { binding: 1, resource: tex.createView() }, { binding: 2, resource: this.sampler }];
             } else if (effect.type === 'Inverter') {
               pipeline = this.inverterPipeline;
               const ef = effect as InverterEffect;
@@ -1396,9 +1433,9 @@ export class Renderer {
                 mixVal,
                 videoModeIdx,
                 ef.active ? 1.0 : 0.0,
-                0 
+                0
               ]));
-              entries = [{ binding: 0, resource: { buffer: uniformBuffer } }, { binding: 1, resource: inputTex.createView() }, { binding: 2, resource: this.sampler }];
+              entries = [{ binding: 0, resource: { buffer: uniformBuffer } }, { binding: 1, resource: tex.createView() }, { binding: 2, resource: this.sampler }];
             } else if (effect.type === 'SimpleFeedback') {
               pipeline = this.feedbackPipeline;
               const ef = effect as SimpleFeedbackEffect;
@@ -1410,7 +1447,7 @@ export class Renderer {
                 0
               ]));
               const fbTex = this.getFeedbackTexture(layer.id);
-              entries = [{ binding: 0, resource: { buffer: uniformBuffer } }, { binding: 1, resource: inputTex.createView() }, { binding: 2, resource: fbTex.createView() }, { binding: 3, resource: this.sampler }];
+              entries = [{ binding: 0, resource: { buffer: uniformBuffer } }, { binding: 1, resource: tex.createView() }, { binding: 2, resource: fbTex.createView() }, { binding: 3, resource: this.sampler }];
             } else if (effect.type === 'TriggeredGate') {
               pipeline = this.triggeredGatePipeline;
               const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 16); // Only 1 f32 (padded to 16 for alignment)
@@ -1418,14 +1455,14 @@ export class Renderer {
               this.device.queue.writeBuffer(uniformBuffer, 0, new Float32Array([
                 gateOpen ? 1.0 : 0.0, 0, 0, 0
               ]));
-              entries = [{ binding: 0, resource: { buffer: uniformBuffer } }, { binding: 1, resource: inputTex.createView() }, { binding: 2, resource: this.sampler }];
+              entries = [{ binding: 0, resource: { buffer: uniformBuffer } }, { binding: 1, resource: tex.createView() }, { binding: 2, resource: this.sampler }];
             } else if (effect.type === 'Pattern') {
               pipeline = this.patternPipeline;
               const ef = effect as PatternEffect;
               const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 32);
               const buf = new ArrayBuffer(32);
               const f32 = new Float32Array(buf);
-              
+
               const applyLogScale = (manual: number, mod: number) => {
                 if (mod > 0) return manual * Math.pow(32 / manual, mod);
                 if (mod < 0) return manual * Math.pow(manual, mod);
@@ -1473,15 +1510,15 @@ export class Renderer {
               u32[6] = mState.x ? 1 : 0;
               u32[7] = mState.y ? 1 : 0;
               this.device.queue.writeBuffer(uniformBuffer, 0, buf);
-              entries = [{ binding: 0, resource: { buffer: uniformBuffer } }, { binding: 1, resource: this.sampler }, { binding: 2, resource: inputTex.createView() }];
+              entries = [{ binding: 0, resource: { buffer: uniformBuffer } }, { binding: 1, resource: this.sampler }, { binding: 2, resource: tex.createView() }];
             } else if (effect.type === 'Kaleidoscope') {
               pipeline = this.kaleidoscopePipeline;
               const ef = effect as KaleidoscopeEffect;
               const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 32);
-              
+
               const rawAngleMod = layer.signalValues?.[`${nodeId}.angle`] ?? 0;
               const angle = ef.angle + rawAngleMod * 360.0;
-              
+
               const rawCountMod = layer.signalValues?.[`${nodeId}.segments`] ?? 0;
               const manualCount = ef.segments;
               let finalCount = manualCount;
@@ -1501,12 +1538,12 @@ export class Renderer {
                 ef.center[1],
                 0, 0, 0
               ]));
-              entries = [{ binding: 0, resource: { buffer: uniformBuffer } }, { binding: 1, resource: this.sampler }, { binding: 2, resource: inputTex.createView() }];
+              entries = [{ binding: 0, resource: { buffer: uniformBuffer } }, { binding: 1, resource: this.sampler }, { binding: 2, resource: tex.createView() }];
             } else if (effect.type === 'SampleAndHold') {
               const sh = effect as SampleAndHoldEffect;
               const trigger = layer.signalValues?.[`${nodeId}.trigger`] ?? 0;
               const lastTrig = this.lastTriggerVals.get(`${nodeId}.trigger`) ?? 0;
-              
+
               const currentManualTime = sh.manualTriggerTime ?? 0;
               const lastManualTime = this.lastTriggerVals.get(`${nodeId}.manualTrigger`) ?? 0;
               const isManualRising = currentManualTime > lastManualTime;
@@ -1582,19 +1619,19 @@ export class Renderer {
               const ef = effect as VideoMixerEffect;
               const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 48);
               const modeMap: Record<string, number> = { normal: 0, add: 1, screen: 2, mult: 3 };
-              
+
               const f32 = new Float32Array(12);
               f32[0] = this.getEffectiveParam(layer, ef.id, 'v1_cv', ef.v1, timeSec);
               f32[1] = this.getEffectiveParam(layer, ef.id, 'v2_cv', ef.v2, timeSec);
               f32[2] = this.getEffectiveParam(layer, ef.id, 'v3_cv', ef.v3, timeSec);
               f32[3] = this.getEffectiveParam(layer, ef.id, 'v4_cv', ef.v4, timeSec);
-              
+
               const u32 = new Uint32Array(f32.buffer);
               u32[4] = modeMap[ef.v1Mode] || 0;
               u32[5] = modeMap[ef.v2Mode] || 0;
               u32[6] = modeMap[ef.v3Mode] || 0;
               u32[7] = modeMap[ef.v4Mode] || 0;
-              
+
               f32[8] = this.getEffectiveParam(layer, ef.id, 'master_cv', ef.masterGain, timeSec);
 
               this.device.queue.writeBuffer(uniformBuffer, 0, f32);
@@ -1603,7 +1640,7 @@ export class Renderer {
               const v2 = this.getTextureForNode(nodeId, 'v2_in')?.createView() ?? inputTex.createView();
               const v3 = this.getTextureForNode(nodeId, 'v3_in')?.createView() ?? inputTex.createView();
               const v4 = this.getTextureForNode(nodeId, 'v4_in')?.createView() ?? inputTex.createView();
-              
+
               entries = [
                 { binding: 0, resource: { buffer: uniformBuffer } },
                 { binding: 1, resource: v1 },
@@ -1632,9 +1669,11 @@ export class Renderer {
               this.device.queue.writeBuffer(uniformBuffer, 0, f32);
               entries = [
                 { binding: 0, resource: { buffer: uniformBuffer } },
-                { binding: 1, resource: inputTex.createView() },
+                { binding: 1, resource: tex.createView() },
                 { binding: 2, resource: this.sampler }
               ];
+            } else if (effect.type === 'AudioFile' || effect.type === 'AudioInput' || effect.type === 'SystemAudio') {
+              this.manageMediaSource(nodeId, { ...effect, _layerAudioMuted: layer.audioMuted } as any);
             }
 
             if (pipeline) {
@@ -1663,7 +1702,7 @@ export class Renderer {
         const fromEffect = layer.effects.find(e => e.id === edge.fromNodeId);
         const fromType = (edge.fromNodeId === 'source') ? layer.source.type : (fromEffect ? fromEffect.type : edge.fromNodeId.split('_')[0]);
         const fromPortDef = (PORT_DEFS[fromType] || []).find(p => p.id === edge.fromPort);
-        
+
         // Find the target port's definition
         const targetEffect = layer.effects.find(e => e.id === edge.toNodeId);
         const targetType = (edge.toNodeId === '__output__') ? '__OUTPUT__' : (targetEffect ? targetEffect.type : edge.toNodeId.split('_')[0]);
@@ -1679,7 +1718,7 @@ export class Renderer {
       vToMEdges.forEach(edge => {
         const srcTex = this.getTextureForNode(edge.fromNodeId, edge.fromPort);
         const analysisKey = `${edge.fromNodeId}.${edge.fromPort}`;
-        
+
         // Skip if buffer is currently being mapped by CPU
         if (this.analysisBusy.has(analysisKey)) return;
 
@@ -1701,13 +1740,13 @@ export class Renderer {
           if (edge.fromPort === 'r_out') weights = [1, 0, 0, 0];
           else if (edge.fromPort === 'g_out') weights = [0, 1, 0, 0];
           else if (edge.fromPort === 'b_out') weights = [0, 0, 1, 0];
-          
+
           this.device.queue.writeBuffer(weightBuf, 0, new Float32Array(weights));
           const bg = this.device.createBindGroup({ layout: this.lumaAnalysisPipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: weightBuf } }, { binding: 1, resource: srcTex.createView() }, { binding: 2, resource: this.sampler }] });
           pass.setPipeline(this.lumaAnalysisPipeline); pass.setBindGroup(0, bg); pass.draw(3); pass.end();
-          
+
           commandEncoder.copyTextureToBuffer({ texture: this.lumaAnalysisTexture }, { buffer: readbackBuf }, [1, 1]);
-          
+
           this.analysisBusy.add(analysisKey);
           readbackBuf.mapAsync(GPUMapMode.READ).then(() => {
             if (this._isDestroyed) return;
@@ -1737,9 +1776,9 @@ export class Renderer {
     if (this.layerFBO_A) this.layerFBO_A.destroy();
     if (this.layerFBO_B) this.layerFBO_B.destroy();
     Object.values(this.prevFrameFBOs).forEach(fbo => fbo.destroy());
-    Object.values(this.videoElements).forEach(v => { 
-      v.pause(); 
-      v.src = ''; 
+    Object.values(this.videoElements).forEach(v => {
+      v.pause();
+      v.src = '';
       if (v.srcObject) {
         (v.srcObject as MediaStream).getTracks().forEach(t => t.stop());
         v.srcObject = null;
@@ -1760,31 +1799,31 @@ export class Renderer {
 
     const uniformBuffer = this.getUniformBuffer(`${layer.id}.${nodeId}.uniforms`, 80);
     const buf = new ArrayBuffer(80);
-    
+
     const shapeTypeMap: Record<string, number> = { rectangle: 0, ellipse: 1, polygon: 2 };
     const u32 = new Uint32Array(buf);
     u32[0] = shapeTypeMap[src.shapeType] || 0;
     u32[1] = src.strokeMode === 'hollow' ? 1 : 0;
-    
+
     const f32 = new Float32Array(buf);
     f32[2] = src.strokeThreshold ?? 0.1;
     f32.set(src.fillColor, 4); // index 4..7
-    
+
     f32[8] = this.getEffectiveParam(layer, nodeId, 'edgeSoftness', src.edgeSoftness, timeSec);
     const rawSidesSig = this.getEffectiveParam(layer, nodeId, 'sides', 0, timeSec);
     const mappedSidesSig = Math.sign(rawSidesSig) * Math.pow(Math.abs(rawSidesSig), 2) * 29;
     f32[9] = Math.max(3, (src.sides ?? 3) + mappedSidesSig);
-    
+
     f32[10] = this.getEffectiveParam(layer, nodeId, 'roundness', src.roundness ?? 0, timeSec);
     f32[11] = this.getEffectiveParam(layer, nodeId, 'convexity', src.convexity ?? 0, timeSec);
-    
+
     const rotModVal = this.getEffectiveParam(layer, nodeId, 'rotation', 0, timeSec);
     f32[12] = (src.rotation ?? 0) + rotModVal * 360.0;
-    
+
     f32[13] = this.getEffectiveParam(layer, nodeId, 'strokeWidth', src.strokeWidth ?? 0, timeSec);
     f32[14] = this.canvas.width / this.canvas.height;
     f32[15] = this.getEffectiveParam(layer, nodeId, 'scale', src.scale ?? 1, timeSec);
-    
+
     f32[16] = this.getEffectiveParam(layer, nodeId, 'x', src.x ?? 0, timeSec);
     f32[17] = this.getEffectiveParam(layer, nodeId, 'y', src.y ?? 0, timeSec);
 
@@ -1793,6 +1832,7 @@ export class Renderer {
     pass.setPipeline(this.shapePipeline); pass.setBindGroup(0, bindGroup); pass.draw(3);
     pass.end();
   }
+
 
   private renderVideoEffect(layer: LayerState, nodeId: string, source: AnySource, target: GPUTexture, commandEncoder: GPUCommandEncoder) {
     const media = this.manageMediaSource(nodeId, { ...source, _layerAudioMuted: layer.audioMuted } as any);
@@ -1808,7 +1848,7 @@ export class Renderer {
 
     const uniformBuffer = this.getUniformBuffer(`${layer.id}.${nodeId}.media_uniforms`, 16);
     const fitMap: Record<string, number> = { cover: 0, contain: 1, fill: 2 };
-    const f32 = new Float32Array([ fitMap[(source as any).objectFit] ?? 0, width / height, this.canvas.width / this.canvas.height, 0]);
+    const f32 = new Float32Array([fitMap[(source as any).objectFit] ?? 0, width / height, this.canvas.width / this.canvas.height, 0]);
     this.device.queue.writeBuffer(uniformBuffer, 0, f32);
 
     if (media instanceof HTMLVideoElement && media.readyState >= 2) {
@@ -1816,7 +1856,7 @@ export class Renderer {
         const videoTex = this.device.importExternalTexture({ source: media });
         const bindGroup = this.device.createBindGroup({ layout: this.videoPipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: uniformBuffer } }, { binding: 1, resource: videoTex }, { binding: 2, resource: this.sampler }] });
         pass.setPipeline(this.videoPipeline); pass.setBindGroup(0, bindGroup); pass.draw(3);
-      } catch (e) {}
+      } catch (e) { }
     } else if (media instanceof ImageBitmap) {
       let mediaTex = this.mediaTextures[nodeId];
       if (!mediaTex || mediaTex.width !== width || mediaTex.height !== height) {
@@ -1838,7 +1878,7 @@ export class Renderer {
     const noiseTypeMap: Record<string, number> = { white: 0, perlin: 1, simplex: 2, ridged: 3, billow: 4, worley: 5, voronoi: 6, warped: 7 };
     const uniformBuffer = this.getUniformBuffer(`${layer.id}.${nodeId}.noise_uniforms`, 64);
     const f32 = new Float32Array(16);
-    
+
     f32[0] = this.getEffectiveParam(layer, nodeId, 'scale_cv', src.scale ?? 2.0, timeSec);
     f32[1] = this.getEffectiveParam(layer, nodeId, 'evolution_cv', src.evolution ?? 1.0, timeSec);
     f32[2] = this.getEffectiveParam(layer, nodeId, 'octaves_cv', src.octaves ?? 4, timeSec);
@@ -1847,13 +1887,13 @@ export class Renderer {
     f32[5] = this.getEffectiveParam(layer, nodeId, 'brightness_cv', src.brightness ?? 0, timeSec);
     f32[6] = this.getEffectiveParam(layer, nodeId, 'contrast_cv', src.contrast ?? 1, timeSec);
     f32[7] = timeSec * (src.flowSpeed ?? 1.0);
-    
+
     const u32 = new Uint32Array(f32.buffer);
     u32[8] = noiseTypeMap[src.noiseType] ?? 0;
     u32[9] = src.autoAnimate ? 1 : 0;
     u32[10] = 0; // Padding
     f32[11] = this.canvas.width / this.canvas.height;
-    
+
     this.device.queue.writeBuffer(uniformBuffer, 0, f32);
 
     const pass = commandEncoder.beginRenderPass({
@@ -1869,9 +1909,9 @@ export class Renderer {
     const source = (nodeId === 'source') ? layer.source as ColorNoiseSource : layer.effects.find(e => e.id === nodeId) as any as ColorNoiseSource;
     const pipeline = this.colorNoisePipeline;
     const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 64);
-    
+
     const noiseTypeMap: Record<string, number> = { white: 0, perlin: 1, simplex: 2, ridged: 3, billow: 4, worley: 5, voronoi: 6, warped: 7 };
-    
+
     const f32 = new Float32Array(16);
     f32[0] = this.getEffectiveParam(layer, nodeId, 'scale_cv', source.scale, timeSec);
     f32[1] = this.getEffectiveParam(layer, nodeId, 'evolution_cv', source.evolution, timeSec);
@@ -1881,15 +1921,15 @@ export class Renderer {
     f32[5] = this.getEffectiveParam(layer, nodeId, 'brightness_cv', source.brightness, timeSec);
     f32[6] = this.getEffectiveParam(layer, nodeId, 'contrast_cv', source.contrast, timeSec);
     f32[7] = timeSec * source.flowSpeed;
-    
+
     const u32 = new Uint32Array(f32.buffer);
     u32[8] = noiseTypeMap[source.noiseType] || 0;
     u32[9] = source.autoAnimate ? 1 : 0;
     u32[10] = 0; // Padding
     f32[11] = this.canvas.width / this.canvas.height;
-    
+
     this.device.queue.writeBuffer(uniformBuffer, 0, f32);
-    
+
     const pass = commandEncoder.beginRenderPass({
       colorAttachments: [{
         view: target.createView(),
@@ -1898,12 +1938,12 @@ export class Renderer {
         storeOp: 'store'
       }]
     });
-    
+
     const bindGroup = this.device.createBindGroup({
       layout: pipeline.getBindGroupLayout(0),
       entries: [{ binding: 0, resource: { buffer: uniformBuffer } }]
     });
-    
+
     pass.setPipeline(pipeline);
     pass.setBindGroup(0, bindGroup);
     pass.draw(3);

@@ -126,17 +126,17 @@ function App() {
         const nextProgress: Record<string, {currentTime: number, duration: number}> = {};
         
         // Track primary source
-        const primaryVid = rendererRef.current.getVideoElement(activeLayerId);
-        if (primaryVid && !isNaN(primaryVid.duration) && primaryVid.duration > 0) {
-          nextProgress['source'] = { currentTime: primaryVid.currentTime, duration: primaryVid.duration };
+        const primaryMedia = rendererRef.current.getMediaElement(activeLayerId);
+        if (primaryMedia && !isNaN(primaryMedia.duration)) {
+          nextProgress['source'] = { currentTime: primaryMedia.currentTime, duration: primaryMedia.duration };
         }
         
         // Track effects
         activeLayer.effects.forEach(ef => {
-          if (ef.id && ['VideoFile', 'VideoURL', 'WebcamCapture'].includes(ef.type)) {
-            const vid = rendererRef.current!.getVideoElement(ef.id);
-            if (vid && !isNaN(vid.duration) && vid.duration > 0) {
-              nextProgress[ef.id] = { currentTime: vid.currentTime, duration: vid.duration };
+          if (ef.id && ['VideoFile', 'VideoURL', 'WebcamCapture', 'AudioFile'].includes(ef.type)) {
+            const media = rendererRef.current!.getMediaElement(ef.id);
+            if (media && !isNaN(media.duration)) {
+              nextProgress[ef.id] = { currentTime: media.currentTime, duration: media.duration };
             }
           }
         });
@@ -160,9 +160,9 @@ function App() {
   const handleSeek = (nodeId: string, e: React.ChangeEvent<HTMLInputElement>) => {
     const time = parseFloat(e.target.value);
     if (activeLayerId && rendererRef.current) {
-      const vidKey = nodeId === 'source' ? activeLayerId : nodeId;
-      const vid = rendererRef.current.getVideoElement(vidKey);
-      if (vid) vid.currentTime = time;
+      const mediaKey = nodeId === 'source' ? activeLayerId : nodeId;
+      const media = rendererRef.current.getMediaElement(mediaKey);
+      if (media) media.currentTime = time;
       setVideoProgress(p => ({ ...p, [nodeId]: { ...(p[nodeId] || { duration: 0 }), currentTime: time } }));
     }
   };
@@ -175,8 +175,18 @@ function App() {
       onUpdate: (upd: any) => setSource(activeLayerId, { ...activeLayer.source, ...upd }),
       videoProgress: videoProgress['source'] || { currentTime: 0, duration: 0 },
       onSeek: handleSeek,
-      onSeekStart: () => { if (rendererRef.current) rendererRef.current.isSeeking[activeLayerId] = true; },
-      onSeekEnd: () => { if (rendererRef.current) rendererRef.current.isSeeking[activeLayerId] = false; },
+      onSeekStart: (nodeId) => { 
+        if (rendererRef.current && activeLayerId) {
+          const key = nodeId === 'source' ? activeLayerId : nodeId;
+          rendererRef.current.isSeeking[key] = true;
+        }
+      },
+      onSeekEnd: (nodeId) => { 
+        if (rendererRef.current && activeLayerId) {
+          const key = nodeId === 'source' ? activeLayerId : nodeId;
+          rendererRef.current.isSeeking[key] = false;
+        }
+      },
       cameras,
       layerOpacity: activeLayer.opacity,
       layerBlendMode: activeLayer.blendMode,
@@ -185,8 +195,16 @@ function App() {
     };
   }, [activeLayerId, activeLayer, cameras, videoProgress]);
 
+  const handlePointerDown = () => {
+    import('./state/AudioEngine').then(({ AudioEngine }) => {
+      AudioEngine.getInstance().resume();
+    });
+  };
+
   return (
-    <div className="app-root" style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw', color: '#eee' }}>
+    <div className="app-root" 
+      onPointerDown={handlePointerDown}
+      style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw', color: '#eee' }}>
       {/* Top Menu */}
       <div className="top-menu" style={{ height: 40, background: '#111', display: 'flex', alignItems: 'center', padding: '0 15px', borderBottom: '1px solid #222' }}>
         <div style={{ fontWeight: 'bold', letterSpacing: 2 }}>
@@ -233,14 +251,25 @@ function App() {
                 layer={activeLayer}
                 videoProgress={videoProgress}
                 onSeek={handleSeek}
-                onSeekStart={(nodeId) => { if (rendererRef.current) rendererRef.current.isSeeking[nodeId] = true; }}
-                onSeekEnd={(nodeId) => { if (rendererRef.current) rendererRef.current.isSeeking[nodeId] = false; }}
+                onSeekStart={(nodeId) => { 
+                  if (rendererRef.current && activeLayerId) {
+                    const key = nodeId === 'source' ? activeLayerId : nodeId;
+                    rendererRef.current.isSeeking[key] = true; 
+                  }
+                }}
+                onSeekEnd={(nodeId) => { 
+                  if (rendererRef.current && activeLayerId) {
+                    const key = nodeId === 'source' ? activeLayerId : nodeId;
+                    rendererRef.current.isSeeking[key] = false; 
+                  }
+                }}
                 cameras={cameras}
                 linkedScales={activeLayer?.linkedScales || {}}
                 setLinkedScales={(s) => {
                   if (activeLayerId) updateLayer(activeLayerId, { linkedScales: s });
                 }}
               />
+
             </div>
           </div>
         </div>

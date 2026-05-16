@@ -73,6 +73,7 @@ export interface ImageFileSource {
 }
 
 export interface AudioInputSource {
+  id?: string;
   type: 'AudioInput';
   deviceId: string;
   volume: number;
@@ -80,6 +81,7 @@ export interface AudioInputSource {
 }
 
 export interface AudioFileSource {
+  id?: string;
   type: 'AudioFile';
   fileUrl: string;
   fileName: string;
@@ -87,9 +89,13 @@ export interface AudioFileSource {
   muted: boolean;
   loop: boolean;
   playState: 'play' | 'pause' | 'stop';
+  loopStart?: number;
+  loopEnd?: number;
+  playbackSpeed: number;
 }
 
 export interface SystemAudioSource {
+  id?: string;
   type: 'SystemAudio';
   volume: number;
   muted: boolean;
@@ -339,6 +345,33 @@ export interface SpectralSplitterEffect {
   sensitivity: number; // 0.1 to 10
 }
 
+export interface AudioTransformerEffect {
+  id: string;
+  type: 'AudioTransformer';
+  filterType: 'lowpass' | 'highpass' | 'bandpass';
+  filterFreq: number;
+  filterResonance: number; // Mapping from filterDepth
+  compSustain: number;    // Macro for threshold/ratio
+  outputGain: number;     // Final output level
+  envelopeAttack: number;
+  envelopeRelease: number;
+  bypass: boolean;
+  bypassLatching: boolean;
+}
+
+export interface AudioModulatorEffect {
+  id: string;
+  type: 'AudioModulator';
+  ringFreq: number;
+  ringMix: number;
+  octaveSub2: number; // -2 oct
+  octaveSub1: number; // -1 oct
+  octaveClean: number; // dry
+  octaveHigh1: number; // +1 oct
+  octaveHigh2: number; // +2 oct
+  bypass: boolean;
+}
+
 export type SignalType = 'video' | 'audio' | 'modulation' | 'trigger' | 'midi' | 'generic' | 'trajectory';
 
 export interface InterLayerEdge {
@@ -444,15 +477,16 @@ export type AnyEffect =
   | SpawnEffect | PathEffect | InverterEffect | VideoMixerEffect | AlphaAdjustEffect
   | LogicGateEffect | TriggeredGateEffect | PatternEffect | KaleidoscopeEffect 
   | SignalMathEffect | SampleAndHoldEffect | StepSequencerEffect | PixelProcessorEffect
-  | AudioSourceEffect | OscilloscopeEffect | SpectralSplitterEffect
-  | ShapeGeneratorSource | VideoURLSource | VideoFileSource | WebcamCaptureSource | NoiseVideoSource | ColorNoiseSource;
+  | AudioSourceEffect | OscilloscopeEffect | SpectralSplitterEffect | AudioTransformerEffect | AudioModulatorEffect
+  | ShapeGeneratorSource | VideoURLSource | VideoFileSource | WebcamCaptureSource | NoiseVideoSource | ColorNoiseSource
+  | AudioInputSource | AudioFileSource | SystemAudioSource;
 
 export type EffectType = 
   | 'Transform2D' | 'ColorAdjust' | 'LumaKey' | 'SimpleFeedback' 
   | 'InterLayerOutput' | 'InterLayerInput' 
   | 'ColorRGB' | 'LumaSplitter' | 'Spawn' | 'Path' | 'Inverter' | 'VideoMixer' | 'AlphaAdjust'
-  | 'LogicGate' | 'TriggeredGate' | 'Pattern' | 'Kaleidoscope' | 'SignalMath' | 'SampleAndHold' | 'StepSequencer' | 'AudioSource' | 'Oscilloscope' | 'SpectralSplitter' | 'PixelProcessor'
-  | 'ShapeGenerator' | 'VideoURL' | 'VideoFile' | 'WebcamCapture' | 'NoiseSource' | 'ColorNoise';
+  | 'LogicGate' | 'TriggeredGate' | 'Pattern' | 'Kaleidoscope' | 'SignalMath' | 'SampleAndHold' | 'StepSequencer' | 'AudioSource' | 'Oscilloscope' | 'SpectralSplitter' | 'PixelProcessor' | 'AudioTransformer' | 'AudioModulator'
+  | 'ShapeGenerator' | 'VideoURL' | 'VideoFile' | 'WebcamCapture' | 'NoiseSource' | 'ColorNoise' | 'AudioInput' | 'AudioFile' | 'SystemAudio';
 
 // --- GRAPH ---
 export interface GraphEdge {

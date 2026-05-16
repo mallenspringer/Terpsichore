@@ -4,11 +4,8 @@ struct Uniforms {
     smoothing: f32,
     aspect: f32,
     time: f32,
-    low: f32,
-    lowMid: f32,
-    mid: f32,
-    highMid: f32,
-    high: f32,
+    bands_1: vec4<f32>, // low, lowMid, mid, highMid
+    bands_2: vec4<f32>, // high, unused, unused, unused
 };
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -37,8 +34,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let uv = in.uv;
     
     // Background: Raw FFT Spectrum (Ghost)
-    let fftSize = 512.0;
-    let fftIdx = u32(uv.x * fftSize);
+    let numSamples = arrayLength(&fftData);
+    let fftIdx = min(u32(uv.x * f32(numSamples)), numSamples - 1u);
     
     // Improved dB to linear for the ghost spectrum visibility
     let db = fftData[fftIdx];
@@ -48,11 +45,11 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // Foreground: 5 Bands
     let bandIdx = i32(uv.x * 5.0);
     var bandVal: f32 = 0.0;
-    if (bandIdx == 0) { bandVal = uniforms.low; }
-    else if (bandIdx == 1) { bandVal = uniforms.lowMid; }
-    else if (bandIdx == 2) { bandVal = uniforms.mid; }
-    else if (bandIdx == 3) { bandVal = uniforms.highMid; }
-    else { bandVal = uniforms.high; }
+    if (bandIdx == 0) { bandVal = uniforms.bands_1.x; }
+    else if (bandIdx == 1) { bandVal = uniforms.bands_1.y; }
+    else if (bandIdx == 2) { bandVal = uniforms.bands_1.z; }
+    else if (bandIdx == 3) { bandVal = uniforms.bands_1.w; }
+    else { bandVal = uniforms.bands_2.x; }
     
     let scaledVal = bandVal * uniforms.sensitivity;
     

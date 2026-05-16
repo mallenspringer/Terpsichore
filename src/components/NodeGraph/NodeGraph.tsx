@@ -66,17 +66,37 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
 
   const graphRef = useRef<HTMLDivElement>(null);
 
+  // ── Zoom & Pan State ────────────────────────────────────────────────────────
+  const [zoom, setZoom] = useState(1.0);
+  const zoomRef = useRef(zoom);
+  useEffect(() => { zoomRef.current = zoom; }, [zoom]);
+
   const { getNodeState, updateNodeState } = useNodeLayout(layer?.id ?? null);
+  const [stripX, setStripX] = useState(1200);
 
   // Ghost edge for drag-connect
   const [ghostEdge, setGhostEdge] = useState<GhostEdge | null>(null);
   const [patchbayNode, setPatchbayNode] = useState<string | null>(null);
   const [hoveredPortId, setHoveredPortId] = useState<string | null>(null);
 
-  // ── Zoom & Pan State ────────────────────────────────────────────────────────
-  const [zoom, setZoom] = useState(1.0);
-  const zoomRef = useRef(zoom);
-  useEffect(() => { zoomRef.current = zoom; }, [zoom]);
+  // Keep output strip pinned to right edge
+  useEffect(() => {
+    const el = graphRef.current;
+    if (!el) return;
+    const updateStrip = () => {
+      const scrollL = el.scrollLeft;
+      const viewW = el.clientWidth;
+      const targetX = (scrollL + viewW - 80) / zoomRef.current;
+      setStripX(targetX);
+    };
+    el.addEventListener('scroll', updateStrip);
+    window.addEventListener('resize', updateStrip);
+    updateStrip();
+    return () => {
+      el.removeEventListener('scroll', updateStrip);
+      window.removeEventListener('resize', updateStrip);
+    };
+  }, [layerId, zoom]);
 
   // Initial setup: scroll to top-left ONLY when the layer actually changes
   useEffect(() => {
@@ -87,17 +107,11 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
     }
   }, [layerId]);
 
-  // Position output node if it's new
+  // Position output node
   useEffect(() => {
-    const el = graphRef.current;
-    if (el && layerId) {
-      const currentState = getNodeState(OUTPUT_ID, { x: -9999, y: -9999 });
-      if (currentState.x === -9999) {
-        const spawnX = Math.min(el.clientWidth - 300, 1000);
-        updateNodeState(OUTPUT_ID, { x: spawnX, y: 20 });
-      }
-    }
-  }, [layerId, getNodeState, updateNodeState]);
+     updateNodeState(OUTPUT_ID, { x: stripX, y: 0 });
+  }, [stripX, updateNodeState]);
+
 
   const applyZoom = useCallback((nextK: number, mouseX: number, mouseY: number) => {
     const el = graphRef.current;
@@ -521,7 +535,20 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
     } else {
       // IN port (Patchbay for regular nodes, port-row for __output__)
       if (nodeId === OUTPUT_ID) {
-        return [ns.x, ns.y + 48];
+        const ports = PORT_DEFS.__OUTPUT__;
+        const inputs = ports.filter(p => p.direction === 'in');
+        const portIndex = inputs.findIndex(p => p.id === portId);
+        
+        // Match CSS: .output-node .node-port-row has padding: 20px 4px, gap: 12px
+        // .port-dot-wrap (column) has gap 6px, dot 12px, label 8px
+        const headerH = 25;
+        const paddingT = 20;
+        const rowH = 12 + 6 + 8; // dot + gap + label
+        const gapH = 12; // row gap
+        
+        const x = ns.x + 40; // Center of 80px strip
+        const y = ns.y + headerH + paddingT + (portIndex * (rowH + gapH)) + 6; // +6 is half of 12px dot
+        return [x, y];
       }
       
       const x = ns.x + 19; // 15px tab + 6px padding - 2px margin
@@ -771,7 +798,7 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
           {/* ── Output Node ── */}
           {(() => {
             const outputIdx = nodeIds.length - 1;
-            const ns = getNodeUIState(OUTPUT_ID, outputIdx);
+            const ns = { ...getNodeUIState(OUTPUT_ID, outputIdx), x: stripX, y: 0 };
             const isEmpty = layer.source.type === 'None' && layer.effects.length === 0;
             return (
               <div key={OUTPUT_ID} style={{ opacity: isEmpty ? 0.3 : 1, pointerEvents: isEmpty ? 'none' : 'auto' }}>
@@ -789,7 +816,7 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
                   onPortPointerDown={handlePortPointerDown}
                   onInputJackPointerDown={handleInputJackPointerDown}
                   onPatchbayDrop={handlePatchbayDrop}
-                  onPositionChange={(_, x, y) => updateNodeState(OUTPUT_ID, { x, y })}
+                  onPositionChange={() => {}} // Disable dragging
                   onLayoutChange={u => updateNodeState(OUTPUT_ID, u)}
                   graphRef={graphRef}
                   inputSettings={layer.inputSettings}

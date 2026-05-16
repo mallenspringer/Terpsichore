@@ -3,10 +3,16 @@ import { PORT_DEFS, getPrimaryOutput } from '../components/NodeGraph/portDefs';
 
 const OUTPUT_ID = '__output__';
 
+interface NodeMeta {
+  id: string;
+  type: string;
+  isDuplicate?: boolean;
+}
+
 export function buildAutoEdges(layer: LayerState, existingGraph?: LayerGraph): GraphEdge[] {
-  const nodes = [
+  const nodes: NodeMeta[] = [
     ...(layer.source.type !== 'None' ? [{ id: 'source', type: layer.source.type }] : []),
-    ...layer.effects.map(ef => ({ id: ef.id, type: ef.type })),
+    ...layer.effects.map(ef => ({ id: ef.id || 'unknown', type: ef.type })),
     ...Object.entries(layer.modulators || {}).map(([id, mod]) => ({ id, type: mod.type })),
   ];
 
@@ -14,7 +20,7 @@ export function buildAutoEdges(layer: LayerState, existingGraph?: LayerGraph): G
 
   // Track type counts to implement the "no auto-route for duplicates" rule
   const typeCounts: Record<string, number> = {};
-  const nodesWithCounts = nodes.map(n => {
+  const nodesWithCounts: NodeMeta[] = nodes.map(n => {
     const count = (typeCounts[n.type] || 0) + 1;
     typeCounts[n.type] = count;
     return { ...n, isDuplicate: count > 1 };
@@ -38,7 +44,7 @@ export function buildAutoEdges(layer: LayerState, existingGraph?: LayerGraph): G
   const manualStillExists = manualOutputTarget && nodes.some(n => n.id === manualOutputTarget);
 
   const lastNode = nodes[nodes.length - 1];
-  const outputTarget = (() => {
+  const outputTarget: string | undefined = (() => {
     if (!manualStillExists) return lastNode?.id;
     const manualIdx = nodes.findIndex(n => n.id === manualOutputTarget);
     if (manualIdx < nodes.length - 1) return lastNode.id;
@@ -80,7 +86,7 @@ export function buildAutoEdges(layer: LayerState, existingGraph?: LayerGraph): G
   const outSrcNode = videoNodes.find(n => n.id === outputTarget) ?? lastVideoNode;
   const outPort = outSrcNode ? getPrimaryOutput(outSrcNode.type) : null;
   
-  if (outPort && !isPortOccupied(OUTPUT_ID, 'composite_in')) {
+  if (outSrcNode && outPort && !isPortOccupied(OUTPUT_ID, 'composite_in')) {
     autoEdges.push({
       id: 'auto_to_output',
       fromNodeId: outSrcNode.id,

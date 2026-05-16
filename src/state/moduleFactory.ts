@@ -32,7 +32,7 @@ export function createDefaultSource(type: string): AnySource {
     case 'AudioInput':
       return { type: 'AudioInput', deviceId: "", volume: 1.0, muted: false };
     case 'AudioFile':
-      return { type: 'AudioFile', fileUrl: "", fileName: "No file selected", volume: 1.0, muted: false, loop: true, playState: 'pause' };
+      return { type: 'AudioFile', fileUrl: "", fileName: "No file selected", volume: 1.0, muted: false, loop: true, playState: 'pause', playbackSpeed: 1.0 };
     case 'SystemAudio':
       return { type: 'SystemAudio', volume: 1.0, muted: false };
     case 'NoiseSource':
@@ -54,6 +54,19 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
     case 'AudioSource': return { id, type: 'AudioSource', busId: 'master' };
     case 'Oscilloscope': return { id, type: 'Oscilloscope', isFrozen: false, triggerLevel: 0.5, timeScale: 1.0 };
     case 'SpectralSplitter': return { id, type: 'SpectralSplitter', busId: 'master', smoothing: 0.8, sensitivity: 1.0 };
+    case 'AudioTransformer': return { 
+      id, type: 'AudioTransformer', 
+      filterType: 'lowpass', filterFreq: 1000, filterResonance: 0.5, 
+      compSustain: 0.2, outputGain: 1.0,
+      envelopeAttack: 0.01, envelopeRelease: 0.1,
+      bypass: false, bypassLatching: true
+    };
+    case 'AudioModulator': return {
+      id, type: 'AudioModulator',
+      ringFreq: 440, ringMix: 0,
+      octaveSub2: 0, octaveSub1: 0, octaveClean: 1, octaveHigh1: 0, octaveHigh2: 0,
+      bypass: false
+    };
     case 'InterLayerOutput': return { id, type: 'InterLayerOutput', portCount: 1 };
     case 'InterLayerInput': return { id, type: 'InterLayerInput', portCount: 1 };
     case 'ColorRGB': return { id, type: 'ColorRGB', r: 0.5, g: 0.5, b: 0.5, rMode: 'add', gMode: 'add', bMode: 'add', rInputMode: 'channel', gInputMode: 'channel', bInputMode: 'channel' };

@@ -212,6 +212,67 @@
   box-shadow: 0 0 12px rgba(74,158,255,0.3);
 }
 
+/* ===== LAYER OUTPUT STRIP (Fixed Node Style) ===== */
+.module-node.output-node {
+  width: 80px !important;
+  min-width: 80px !important;
+  background: #0a0a0a !important;
+  border: 1px solid #2a2a2a !important;
+  border-left: 2px solid #f5c518 !important;
+  border-radius: 4px 0 0 4px !important;
+  box-shadow: -4px 0 20px rgba(0,0,0,0.6) !important;
+  height: 100%;
+  min-height: 400px;
+}
+
+.output-node .node-header {
+  background: #111 !important;
+  border-bottom: 1px solid #222 !important;
+  padding: 8px 4px !important;
+  justify-content: center;
+}
+
+.output-node .node-title {
+  color: #f5c518 !important;
+  text-align: center;
+  font-size: 9px !important;
+}
+
+.output-node .node-drag-handle, 
+.output-node .node-remove-btn, 
+.output-node .node-collapse-btn {
+  display: none !important;
+}
+
+.output-node .module-body {
+  width: 80px !important;
+}
+
+.output-node .node-port-row {
+  flex-direction: column !important;
+  gap: 12px !important;
+  padding: 20px 4px !important;
+  border: none !important;
+  align-items: center !important;
+}
+
+.output-node .port-dot-wrap {
+  flex-direction: column !important;
+  gap: 6px !important;
+}
+
+.output-node .port-label {
+  font-size: 8px !important;
+  color: #555 !important;
+  text-align: center;
+}
+
+.output-node .port-dot {
+  width: 12px !important;
+  height: 12px !important;
+  border-width: 2px !important;
+}
+
 /* Node header */
 .node-header {
   display: flex;

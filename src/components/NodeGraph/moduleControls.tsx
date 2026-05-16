@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { AudioEngine } from '../../state/AudioEngine';
 import { useEngineStore } from '../../state/store';
 import {
@@ -12,7 +12,7 @@ import {
   InterLayerOutputEffect, InterLayerInputEffect, ColorRGBEffect, LumaSplitterEffect,
   SpawnEffect, PathEffect, LogicGateEffect, TriggeredGateEffect, InverterEffect, VideoMixerEffect,
   PatternEffect, KaleidoscopeEffect, SignalMathEffect, SampleAndHoldEffect,
-  AudioSourceEffect, OscilloscopeEffect, SpectralSplitterEffect, PixelProcessorEffect, ColorNoiseSource
+  AudioSourceEffect, OscilloscopeEffect, SpectralSplitterEffect, PixelProcessorEffect, ColorNoiseSource, AudioTransformerEffect, AudioModulatorEffect
 } from '../../state/types';
 
 // ── Context types ──────────────────────────────────────────────────────────────
@@ -98,7 +98,7 @@ const KeyMappingRow = ({ label, value, onChange, ctx }: { label: string, value: 
           <option value="none">None</option>
           {['1','2','3','4','5','6','7','8','9','0'].map(k => (
             <option key={k} value={k}>
-              {k} {usedKeys.has(k) ? '●' : '○'}
+              Key {k} {usedKeys.has(k) && k !== value ? '(Used)' : ''}
             </option>
           ))}
         </select>
@@ -106,7 +106,7 @@ const KeyMappingRow = ({ label, value, onChange, ctx }: { label: string, value: 
           <div style={{ 
             width: 8, height: 8, borderRadius: '50%', 
             background: KEY_COLORS[value] || '#fff',
-            boxShadow: `0 0 4px ${KEY_COLORS[value] || '#fff'}`
+            boxShadow: `0 0 5px ${KEY_COLORS[value] || '#fff'}`
           }} />
         )}
       </div>
@@ -114,25 +114,69 @@ const KeyMappingRow = ({ label, value, onChange, ctx }: { label: string, value: 
   );
 };
 
+const VUMeter = ({ busId }: { busId: string }) => {
+  const [peak, setPeak] = useState(0);
+  const requestRef = useRef<number>(0);
+
+  useEffect(() => {
+    const animate = () => {
+      const p = AudioEngine.getInstance().getPeakVolume(busId);
+      setPeak(prev => {
+        // Slow decay for smoother visualization
+        const next = Math.max(p, prev * 0.9);
+        return next;
+      });
+      requestRef.current = requestAnimationFrame(animate);
+    };
+    requestRef.current = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(requestRef.current);
+  }, [busId]);
+
+  // Color gradient for the VU meter
+  const getMeterColor = (val: number) => {
+    if (val > 0.9) return '#ff4444'; // Clip
+    if (val > 0.7) return '#ffcc44'; // Warning
+    return '#88cc00'; // Good
+  };
+
+  return (
+    <div className="vu-meter-container" style={{ width: '100%', height: 4, background: '#111', borderRadius: 2, overflow: 'hidden', marginTop: 2, border: '1px solid #333' }}>
+      <div 
+        className="vu-meter-bar" 
+        style={{ 
+          width: `${Math.min(100, peak * 100)}%`, 
+          height: '100%', 
+          background: getMeterColor(peak),
+          transition: 'width 0.05s ease-out',
+          boxShadow: peak > 0.8 ? `0 0 10px ${getMeterColor(peak)}` : 'none'
+        }} 
+      />
+    </div>
+  );
+};
+
 const Slider = ({ label, min, max, step, value, onChange, resetValue = 0 }: {
   label?: string; min: number; max: number; step: number; value: number;
   onChange: (v: number) => void; resetValue?: number;
-}) => (
-  <div 
-    className="rack-row-content" 
-    onPointerDown={e => e.stopPropagation()} 
-    onDragStart={e => e.stopPropagation()}
-    onDoubleClick={() => onChange(resetValue)}
-    title="Double-click to reset"
-  >
-    {label && <span className="rack-row-label">{label}: {value.toFixed(2)}</span>}
-    <input type="range" min={min} max={max} step={step} value={value}
-      onChange={e => {
-        e.stopPropagation();
-        onChange(parseFloat(e.target.value));
-      }} />
-  </div>
-);
+}) => {
+  const safeValue = typeof value === 'number' ? value : resetValue;
+  return (
+    <div 
+      className="rack-row-content" 
+      onPointerDown={e => e.stopPropagation()} 
+      onDragStart={e => e.stopPropagation()}
+      onDoubleClick={() => onChange(resetValue)}
+      title="Double-click to reset"
+    >
+      {label && <span className="rack-row-label">{label}: {safeValue.toFixed(2)}</span>}
+      <input type="range" min={min} max={max} step={step} value={safeValue}
+        onChange={e => {
+          e.stopPropagation();
+          onChange(parseFloat(e.target.value));
+        }} />
+    </div>
+  );
+};
 
 // ── SOURCE ROW DEFINITIONS ────────────────────────────────────────────────────
 
@@ -415,8 +459,8 @@ export const SOURCE_ROWS: Record<string, ControlRowDef[]> = {
                   onPointerUp={() => { sCtx.onSeekEnd?.(); }}
                 />
                 <input type="range" className="timeline-input flag-input flag-end" min={0} max={vp?.duration || 0.001} step={0.1}
-                  value={s.loopEnd ?? (vp?.duration || 0.001)} 
-                  onChange={e => { e.stopPropagation(); chg(ctx)('loopEnd', parseFloat(e.target.value) || 0); }} 
+                  value={s.loopEnd !== undefined ? s.loopEnd : (vp?.duration || 0)} 
+                  onChange={e => { e.stopPropagation(); chg(ctx)('loopEnd', parseFloat(e.target.value)); }} 
                   onPointerDown={() => { sCtx.onSeekStart?.(); }}
                   onPointerUp={() => { sCtx.onSeekEnd?.(); }}
                 />
@@ -830,19 +874,57 @@ export const SOURCE_ROWS: Record<string, ControlRowDef[]> = {
     { id: 'deviceId', label: 'Device',
       render: ctx => {
         const sCtx = ctx as SourceCtx;
+        const deviceId = src<AudioInputSource>(ctx).deviceId;
+        const effectId = (ctx as any).effect?.id;
+        const layerId = (ctx as any).layer?.id;
+        const registrationId = effectId || layerId;
+
+        // Auto-start mic when this module is active
+        useEffect(() => {
+          if (!registrationId) return;
+          let stream: MediaStream | null = null;
+          
+          const startMic = async () => {
+            try {
+              stream = await navigator.mediaDevices.getUserMedia({ 
+                audio: deviceId ? { deviceId: { exact: deviceId } } : true 
+              });
+              await AudioEngine.getInstance().resume();
+              AudioEngine.getInstance().registerStream(registrationId, stream);
+            } catch (err) {
+              console.error("Failed to start mic:", err);
+            }
+          };
+
+          startMic();
+
+          return () => {
+            if (stream) {
+              stream.getTracks().forEach(t => t.stop());
+              AudioEngine.getInstance().unregisterMediaElement(registrationId);
+            }
+          };
+        }, [deviceId, registrationId]);
+
         return (
           <div className="rack-row-content" 
             onPointerDown={e => { if (!(e.target instanceof HTMLInputElement)) e.stopPropagation(); }} 
             onDragStart={e => e.stopPropagation()}
+            style={{ flexDirection: 'column', gap: 4 }}
           >
-            <span className="rack-row-label">Input Device</span>
-            <select value={src<AudioInputSource>(ctx).deviceId} 
-              onChange={e => { e.stopPropagation(); chg(ctx)('deviceId', e.target.value); }}>
-              <option value="">Default Input</option>
-              {(sCtx.cameras ?? []).map(cam => (
-                <option key={cam.deviceId} value={cam.deviceId}>{cam.label || `Audio (${cam.deviceId.slice(0,5)}...)`}</option>
-              ))}
-            </select>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%' }}>
+              <span className="rack-row-label">Input Device</span>
+              <select value={deviceId} 
+                onChange={e => { e.stopPropagation(); chg(ctx)('deviceId', e.target.value); }}
+                style={{ flex: 1 }}
+              >
+                <option value="">Default Input</option>
+                {(sCtx.cameras ?? []).filter(d => d.kind === 'audioinput' || (d as any).kind === 'audio').map(cam => (
+                  <option key={cam.deviceId} value={cam.deviceId}>{cam.label || `Audio (${cam.deviceId.slice(0,5)}...)`}</option>
+                ))}
+              </select>
+            </div>
+            {layerId && <VUMeter busId={layerId} />}
           </div>
         );
       }
@@ -889,10 +971,66 @@ export const SOURCE_ROWS: Record<string, ControlRowDef[]> = {
     { id: 'volume', label: 'Volume',
       render: ctx => <Slider label="Volume" min={0} max={1} step={0.01} value={src<AudioFileSource>(ctx).volume} onChange={v => chg(ctx)('volume', v)} />
     },
+    { id: 'timeline', label: 'Timeline',
+      render: ctx => {
+        const sCtx = ctx as SourceCtx;
+        const vp = sCtx.videoProgress;
+        const s = src<AudioFileSource>(ctx);
+        return (
+          <div className="rack-row-content" 
+            onPointerDown={e => { if (!(e.target instanceof HTMLInputElement)) e.stopPropagation(); }} 
+            onDragStart={e => e.stopPropagation()}
+          >
+            <span className="rack-row-label">Timeline</span>
+            <div className="rack-timeline-wrap">
+              <span className="rack-timeline-time">{(vp?.currentTime ?? 0).toFixed(1)}s</span>
+              <div className="timeline-container" style={{ flex: 1 }}>
+                <div className="timeline-track" />
+                <input type="range" className="timeline-input" min={0} max={vp?.duration || 0.001} step={0.1}
+                  value={vp?.currentTime ?? 0} 
+                  onChange={e => { e.stopPropagation(); sCtx.onSeek?.(e); }}
+                  onPointerDown={() => { sCtx.onSeekStart?.(); }}
+                  onPointerUp={() => { sCtx.onSeekEnd?.(); }}
+                />
+                <input type="range" className="timeline-input flag-input flag-start" min={0} max={vp?.duration || 0.001} step={0.1}
+                  value={s.loopStart ?? 0} 
+                  onChange={e => { e.stopPropagation(); chg(ctx)('loopStart', parseFloat(e.target.value) || 0); }} 
+                  onPointerDown={() => { sCtx.onSeekStart?.(); }}
+                  onPointerUp={() => { sCtx.onSeekEnd?.(); }}
+                />
+                <input type="range" className="timeline-input flag-input flag-end" min={0} max={vp?.duration || 0.001} step={0.1}
+                  value={s.loopEnd ?? (vp?.duration || 0.001)} 
+                  onChange={e => { e.stopPropagation(); chg(ctx)('loopEnd', parseFloat(e.target.value) || 0); }} 
+                  onPointerDown={() => { sCtx.onSeekStart?.(); }}
+                  onPointerUp={() => { sCtx.onSeekEnd?.(); }}
+                />
+              </div>
+              <span className="rack-timeline-time">{(vp?.duration ?? 0).toFixed(1)}s</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 8, color: '#555', marginTop: 2 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                In: <input type="number" step={0.1} min={0} max={vp?.duration || 1} value={s.loopStart ?? 0}
+                  onChange={e => chg(ctx)('loopStart', parseFloat(e.target.value) || 0)}
+                  style={{ width: 40, padding: 1, fontSize: 9, background: '#1a1a1a', color: '#aaa', border: '1px solid #333', borderRadius: 2 }} />s
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                Out: <input type="number" step={0.1} min={0} max={vp?.duration || 1} value={s.loopEnd ?? (vp?.duration || 1)}
+                  onChange={e => chg(ctx)('loopEnd', parseFloat(e.target.value) || 0)}
+                  style={{ width: 40, padding: 1, fontSize: 9, background: '#1a1a1a', color: '#aaa', border: '1px solid #333', borderRadius: 2 }} />s
+              </label>
+            </div>
+          </div>
+        );
+      }
+    },
+    { id: 'playbackSpeed', label: 'Speed',
+      render: ctx => <Slider label="Playback Speed" min={0.1} max={4} step={0.1}
+        value={src<AudioFileSource>(ctx).playbackSpeed ?? 1.0} onChange={v => chg(ctx)('playbackSpeed', v)} />
+    },
     { id: 'loop', label: 'Loop',
       render: ctx => (
         <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} onDragStart={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <span className="rack-row-label">Loop</span>
+          <span className="rack-row-label">Looping</span>
           <input type="checkbox" checked={src<AudioFileSource>(ctx).loop} 
             onChange={e => { e.stopPropagation(); chg(ctx)('loop', e.target.checked); }} />
         </div>
@@ -901,17 +1039,26 @@ export const SOURCE_ROWS: Record<string, ControlRowDef[]> = {
   ],
 
   SystemAudio: [
-    { id: 'info', label: 'Info',
-      render: () => (
-        <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} onDragStart={e => e.stopPropagation()}>
-          <span className="rack-row-label">System Audio</span>
-          <span style={{ fontSize: 8, color: '#666' }}>Uses Screen Capture API. Ensure "Share System Audio" is checked.</span>
+    { id: 'muted', label: 'Mute',
+      render: ctx => (
+        <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} onDragStart={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <span className="rack-row-label">Muted</span>
+          <input type="checkbox" checked={src<SystemAudioSource>(ctx).muted} 
+            onChange={e => { e.stopPropagation(); chg(ctx)('muted', e.target.checked); }} />
         </div>
       )
     },
-    { id: 'volume', label: 'Volume',
-      render: ctx => <Slider label="Volume" min={0} max={1} step={0.01} value={src<SystemAudioSource>(ctx).volume} onChange={v => chg(ctx)('volume', v)} />
-    },
+    { id: 'meter', label: 'Signal',
+      render: ctx => {
+        const effect = eff<SystemAudioSource>(ctx);
+        const registrationId = effect.id || (ctx as any).layer?.id;
+        return (
+          <div className="rack-row-content" style={{ padding: '0 4px' }}>
+            {registrationId && <VUMeter busId={registrationId} />}
+          </div>
+        );
+      }
+    }
   ],
 
   SignalProcessor: [
@@ -1743,5 +1890,102 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
         </div>
       )
     }
+  ],
+  AudioTransformer: [
+    { id: 'filter', label: 'Filter', render: ctx => {
+        const ef = eff<AudioTransformerEffect>(ctx);
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'column', gap: 4 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'space-between' }}>
+              <span className="rack-row-label">Filter</span>
+              <select value={ef.filterType} onChange={e => upd(ctx)({ filterType: e.target.value as any })} style={{ fontSize: 9, padding: '0 2px' }}>
+                <option value="lowpass">LP</option>
+                <option value="highpass">HP</option>
+                <option value="bandpass">BP</option>
+              </select>
+            </div>
+            <Slider label="Freq" min={20} max={10000} step={1} resetValue={1000} value={ef.filterFreq} onChange={v => upd(ctx)({ filterFreq: v })} />
+            <Slider label="Resonance" min={0} max={1} step={0.01} resetValue={0.5} value={ef.filterResonance} onChange={v => upd(ctx)({ filterResonance: v })} />
+          </div>
+        );
+      }
+    },
+    { id: 'comp', label: 'Comp / Level', render: ctx => {
+        const ef = eff<AudioTransformerEffect>(ctx);
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'column', gap: 4 }}>
+             <span className="rack-row-label">Sustain & Level</span>
+             <Slider label="Sustain" min={0} max={1} step={0.01} resetValue={0.2} value={ef.compSustain} onChange={v => upd(ctx)({ compSustain: v })} />
+             <Slider label="Output" min={0} max={2} step={0.01} resetValue={1.0} value={ef.outputGain} onChange={v => upd(ctx)({ outputGain: v })} />
+          </div>
+        );
+      }
+    },
+    { id: 'bypass', label: 'Bypass', render: ctx => {
+        const ef = eff<AudioTransformerEffect>(ctx);
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'column', gap: 4 }}>
+             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+               <input type="checkbox" checked={ef.bypass} onChange={e => upd(ctx)({ bypass: e.target.checked })} />
+               <span className="rack-row-label">Bypass</span>
+             </div>
+             <div style={{ display: 'flex', alignItems: 'center', gap: 6, opacity: 0.8 }}>
+               <input type="checkbox" checked={ef.bypassLatching} onChange={e => upd(ctx)({ bypassLatching: e.target.checked })} />
+               <span className="rack-row-label" style={{ fontSize: 9 }}>Latching Mode</span>
+             </div>
+          </div>
+        );
+      }
+    },
+    { id: 'envelope', label: 'Env Follow', render: ctx => {
+        const ef = eff<AudioTransformerEffect>(ctx);
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'column', gap: 4 }}>
+             <span className="rack-row-label">Envelope</span>
+             <Slider label="Attack" min={0.001} max={0.5} step={0.001} resetValue={0.01} value={ef.envelopeAttack} onChange={v => upd(ctx)({ envelopeAttack: v })} />
+             <Slider label="Release" min={0.001} max={2.0} step={0.001} resetValue={0.1} value={ef.envelopeRelease} onChange={v => upd(ctx)({ envelopeRelease: v })} />
+          </div>
+        );
+      }
+    }
+  ],
+  AudioModulator: [
+    { id: 'ringmod', label: 'Ring Mod', render: ctx => {
+        const ef = eff<AudioModulatorEffect>(ctx);
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'column', gap: 4 }}>
+             <span className="rack-row-label">Ring Modulator</span>
+             <Slider label="Freq" min={0.1} max={2000} step={0.1} resetValue={440} value={ef.ringFreq} onChange={v => upd(ctx)({ ringFreq: v })} />
+             <Slider label="Mix" min={0} max={1} step={0.01} resetValue={0} value={ef.ringMix} onChange={v => upd(ctx)({ ringMix: v })} />
+          </div>
+        );
+      }
+    },
+    { id: 'octave', label: 'Octave Bank', render: ctx => {
+        const ef = eff<AudioModulatorEffect>(ctx);
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'column', gap: 4 }}>
+             <span className="rack-row-label">Octaves</span>
+             <Slider label="-2 Oct" min={0} max={1} step={0.01} resetValue={0} value={ef.octaveSub2} onChange={v => upd(ctx)({ octaveSub2: v })} />
+             <Slider label="-1 Oct" min={0} max={1} step={0.01} resetValue={0} value={ef.octaveSub1} onChange={v => upd(ctx)({ octaveSub1: v })} />
+             <Slider label="Clean"  min={0} max={1} step={0.01} resetValue={1} value={ef.octaveClean} onChange={v => upd(ctx)({ octaveClean: v })} />
+             <Slider label="+1 Oct" min={0} max={1} step={0.01} resetValue={0} value={ef.octaveHigh1} onChange={v => upd(ctx)({ octaveHigh1: v })} />
+             <Slider label="+2 Oct" min={0} max={1} step={0.01} resetValue={0} value={ef.octaveHigh2} onChange={v => upd(ctx)({ octaveHigh2: v })} />
+          </div>
+        );
+      }
+    },
+    { id: 'bypass', label: 'Bypass', render: ctx => {
+        const ef = eff<AudioModulatorEffect>(ctx);
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'column', gap: 4 }}>
+             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+               <input type="checkbox" checked={ef.bypass} onChange={e => upd(ctx)({ bypass: e.target.checked })} />
+               <span className="rack-row-label">Bypass</span>
+             </div>
+          </div>
+        );
+      }
+    },
   ],
 };

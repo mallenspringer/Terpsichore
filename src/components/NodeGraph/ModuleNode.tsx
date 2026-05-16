@@ -630,8 +630,10 @@ export function ModuleNode({
       if (!edge) return (moduleType === 'SpectralSplitter' ? ((rowCtx as EffectCtx).effect as any).busId || 'master' : null);
       const sourceEffect = layer?.effects.find(e => e.id === edge.fromNodeId);
       if (sourceEffect?.type === 'AudioSource') return (sourceEffect as AudioSourceEffect).busId;
-      if (edge.fromNodeId === 'source') return layerId;
+      if (sourceEffect?.type === 'AudioFile' || sourceEffect?.type === 'AudioInput' || sourceEffect?.type === 'SystemAudio' || sourceEffect?.type === 'AudioTransformer') return edge.fromNodeId;
+      if (edge.fromNodeId === 'source' || sourceEffect?.type === 'VideoFile' || sourceEffect?.type === 'VideoURL') return layerId;
     }
+    if (moduleType === 'AudioFile' || moduleType === 'AudioInput' || moduleType === 'SystemAudio') return nodeId;
     return null;
   })();
 
@@ -1017,8 +1019,8 @@ export function ModuleNode({
                 timeScale={((rowCtx as EffectCtx).effect as OscilloscopeEffect).timeScale}
               />
             )}
-            {moduleType === 'AudioSource' && (
-              <AudioSourceVisualizer busId={connectedBusId} />
+            {(moduleType === 'AudioSource' || moduleType === 'AudioFile' || moduleType === 'AudioInput' || moduleType === 'SystemAudio') && (
+              <AudioSourceVisualizer busId={connectedBusId || (nodeId === 'source' ? layerId : nodeId)} />
             )}
             {moduleType === 'SpectralSplitter' && (
               <SpectralVisualizer 

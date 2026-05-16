@@ -1,5 +1,5 @@
 import { useEngineStore } from './store';
-import { LayerState, TriggerPadSource, LogicGateEffect, TriggeredGateEffect, InverterEffect, SignalMathEffect, SampleAndHoldEffect, StepSequencerEffect, OscilloscopeEffect, SpectralSplitterEffect, AlphaAdjustEffect } from './types';
+import { LayerState, TriggerPadSource, LogicGateEffect, TriggeredGateEffect, InverterEffect, SignalMathEffect, SampleAndHoldEffect, StepSequencerEffect, OscilloscopeEffect, SpectralSplitterEffect, AlphaAdjustEffect, AudioTransformerEffect, AudioModulatorEffect } from './types';
 import { AudioEngine } from './AudioEngine';
 
 type SignalFunction = (context: DispatchContext, dt: number) => void;
@@ -30,6 +30,7 @@ export class SignalDispatcher {
   private gateOpenStates = new Map<string, boolean>();
   private sequencerStates = new Map<string, { phase: number; currentStep: number; lastGlobalValue: number; lastStepValues: number[]; lastResetManualTime: number; isPaused: boolean; directionState: 'up' | 'down'; lastManualPlayState?: string }>();
   private spectralStates = new Map<string, { low: number; lowMid: number; mid: number; highMid: number; high: number }>();
+  private transformerEnvelopes = new Map<string, number>();
   private latestSignals: Record<string, Record<string, number>> = {};
 
   private constructor() {}
@@ -208,16 +209,21 @@ export class SignalDispatcher {
             this.triggerPadStates.set(stateKey, current);
             ctx.signalValues[`${nodeId}.trigger_out`] = current;
           });
-          } else {
-            pipeline.push((ctx) => {
-              ctx.signalValues[`${nodeId}.modulation_out`] = (mod as any).value ?? 0;
-            });
-          }
         }
+      }
 
         const effect = layer.effects.find(e => e.id === nodeId);
         if (effect) {
-          if (effect.type === 'AudioSource') {
+          if (effect.type === 'AudioInput' || effect.type === 'AudioFile' || effect.type === 'SystemAudio') {
+            pipeline.push((ctx: DispatchContext) => {
+              const busId = nodeId; // For these effects, the node ID is the bus ID
+              const bus = ctx.audioEngine.getBusData(busId);
+              if (bus) {
+                ctx.signalValues[`${nodeId}.peak_out`] = bus.peak;
+                ctx.signalValues[`${nodeId}.audio_out`] = 1.0;
+              }
+            });
+          } else if (effect.type === 'AudioSource') {
             pipeline.push((ctx: DispatchContext) => {
               const ef = ctx.layer.effects.find(e => e.id === nodeId) as any;
               if (!ef) return;
@@ -263,8 +269,9 @@ export class SignalDispatcher {
                 const fromEffect = ctx.layer.effects.find(e => e.id === fromNodeId);
                 if (fromEffect?.type === 'AudioSource') {
                   busId = (fromEffect as any).busId || 'master';
+                } else if (fromEffect?.type === 'AudioTransformer' || fromEffect?.type === 'AudioFile' || fromEffect?.type === 'AudioInput' || fromEffect?.type === 'SystemAudio') {
+                  busId = fromNodeId; // These node IDs are used as bus IDs
                 } else if (fromNodeId === 'source' || fromEffect?.type === 'VideoFile' || fromEffect?.type === 'VideoURL') {
-                  // Media sources use their node ID as the bus ID in the AudioEngine
                   busId = fromNodeId === 'source' ? ctx.layer.id : fromNodeId;
                 }
               }
@@ -297,6 +304,106 @@ export class SignalDispatcher {
               ctx.signalValues[`${nodeId}.high_mid_out`] = state.highMid;
               ctx.signalValues[`${nodeId}.high_out`] = state.high;
               ctx.signalValues[`${nodeId}.video_out`] = 1.0;
+            });
+          } else if (effect.type === 'AudioTransformer') {
+            pipeline.push((ctx: DispatchContext, dt: number) => {
+              const ef = ctx.layer.effects.find(e => e.id === nodeId) as AudioTransformerEffect;
+              if (!ef) return;
+
+              // 1. Connection Management
+              const edges = ctx.layer.graph?.edges || [];
+              const inputEdge = edges.find(e => e.toNodeId === nodeId && e.toPort === 'audio_in');
+              if (inputEdge) {
+                const fromNodeId = inputEdge.fromNodeId;
+                ctx.audioEngine.connectTransformer(nodeId, fromNodeId === 'source' ? ctx.layer.id : fromNodeId);
+              } else {
+                ctx.audioEngine.connectTransformer(nodeId, 'master'); // Default/idle
+              }
+
+              // 2. Bypass Trigger Logic
+              const trigger = ctx.signalValues[`${nodeId}.bypass_cv`] ?? 0;
+              const lastTrig = this.lastTriggerVals.get(`${ctx.layer.id}.${nodeId}.bypass_cv`) ?? 0;
+              
+              if (ef.bypassLatching) {
+                // Toggle on rising edge
+                if (trigger > 0.5 && lastTrig <= 0.5) {
+                  useEngineStore.getState().updateEffect(ctx.layer.id, nodeId, { bypass: !ef.bypass } as any);
+                }
+              } else {
+                // Momentary - bypass while trigger is high
+                if ((trigger > 0.5) !== ef.bypass) {
+                   useEngineStore.getState().updateEffect(ctx.layer.id, nodeId, { bypass: trigger > 0.5 } as any);
+                }
+              }
+              this.lastTriggerVals.set(`${ctx.layer.id}.${nodeId}.bypass_cv`, trigger);
+
+              // 3. Parameter Updates
+              const filterFreq = (ef.filterFreq || 1000) * Math.pow(2, (ctx.signalValues[`${nodeId}.filter_freq_cv`] || 0) * 2);
+              const filterRes = Math.max(0, Math.min(1, (ef.filterResonance || 0) + (ctx.signalValues[`${nodeId}.filter_res_cv`] || 0)));
+              const sustain = Math.max(0, Math.min(1, (ef.compSustain || 0) + (ctx.signalValues[`${nodeId}.comp_sustain_cv`] || 0)));
+              
+              // Mapping Sustain to Thresh/Ratio (Guitar pedal style)
+              const compThresh = -sustain * 60;
+              const compRatio = 1 + sustain * 19;
+
+              ctx.audioEngine.updateTransformerNode(nodeId, {
+                filterType: ef.filterType || 'lowpass',
+                filterFreq: Math.max(20, Math.min(20000, filterFreq)),
+                filterQ: 1.0 + filterRes * 12,
+                compThreshold: compThresh,
+                compRatio: compRatio,
+                outputGain: ef.outputGain ?? 1.0,
+                bypass: ef.bypass
+              });
+
+              // 3. Envelope Follower (CPU-side smoothing of the Peak)
+              const bus = ctx.audioEngine.getTransformerBus(nodeId);
+              if (bus) {
+                const attack = Math.max(0.001, (ef.envelopeAttack || 0.01) * Math.pow(10, (ctx.signalValues[`${nodeId}.env_attack_cv`] || 0) * 2));
+                const release = Math.max(0.001, (ef.envelopeRelease || 0.1) * Math.pow(10, (ctx.signalValues[`${nodeId}.env_release_cv`] || 0) * 2));
+                const target = bus.peak;
+                
+                let current = this.transformerEnvelopes.get(nodeId) || 0;
+                const factor = target > current ? dt / attack : dt / release;
+                current += (target - current) * Math.min(1.0, factor);
+                
+                this.transformerEnvelopes.set(nodeId, current);
+                ctx.signalValues[`${nodeId}.env_out`] = current;
+                ctx.signalValues[`${nodeId}.audio_out`] = 1.0; // Pass-thru signal
+              }
+            });
+          } else if (effect.type === 'AudioModulator') {
+            pipeline.push((ctx: DispatchContext, _dt: number) => {
+              const ef = ctx.layer.effects.find(e => e.id === nodeId) as AudioModulatorEffect;
+              if (!ef) return;
+
+              // 1. Connection Management
+              const edges = ctx.layer.graph?.edges || [];
+              const inputEdge = edges.find(e => e.toNodeId === nodeId && e.toPort === 'audio_in');
+              if (inputEdge) {
+                const fromNodeId = inputEdge.fromNodeId;
+                ctx.audioEngine.connectModulator(nodeId, fromNodeId === 'source' ? ctx.layer.id : fromNodeId);
+              } else {
+                ctx.audioEngine.connectModulator(nodeId, 'master');
+              }
+
+              // 2. Parameter Updates
+              const ringFreq = (ef.ringFreq || 440) * Math.pow(2, (ctx.signalValues[`${nodeId}.ring_freq_cv`] || 0) * 2);
+              const ringMix = Math.max(0, Math.min(1, (ef.ringMix || 0) + (ctx.signalValues[`${nodeId}.ring_mix_cv`] || 0)));
+              const octaveOffset = ctx.signalValues[`${nodeId}.octave_cv`] || 0;
+
+              ctx.audioEngine.updateModulatorNode(nodeId, {
+                ringFreq: Math.max(0.1, Math.min(20000, ringFreq)),
+                ringMix: ringMix,
+                octaveSub2: Math.max(0, Math.min(1, ef.octaveSub2 + octaveOffset)),
+                octaveSub1: Math.max(0, Math.min(1, ef.octaveSub1 + octaveOffset)),
+                octaveClean: ef.octaveClean,
+                octaveHigh1: Math.max(0, Math.min(1, ef.octaveHigh1 + octaveOffset)),
+                octaveHigh2: Math.max(0, Math.min(1, ef.octaveHigh2 + octaveOffset)),
+                bypass: ef.bypass
+              });
+              
+              ctx.signalValues[`${nodeId}.audio_out`] = 1.0;
             });
           } else if (effect.type === 'Inverter') {
             pipeline.push((ctx: DispatchContext) => {
@@ -345,6 +452,7 @@ export class SignalDispatcher {
               this.lastTriggerVals.set(lastValKey, trigger);
               this.setGateState(ctx.layer.id, nodeId, currentBypass);
               ctx.signalValues[`${nodeId}.bypass_active`] = currentBypass ? 1.0 : 0.0;
+              ctx.signalValues[`${nodeId}.video_out`] = 1.0;
             });
           } else if (effect.type === 'LogicGate') {
             pipeline.push((ctx: DispatchContext) => {
@@ -660,6 +768,18 @@ export class SignalDispatcher {
           }
         });
       });
+    });
+
+    // Final Stage: Layer Output Management (Explicit Audio Routing)
+    pipeline.push((ctx) => {
+      const edges = ctx.layer.graph?.edges || [];
+      const audioOutEdge = edges.find(e => e.toNodeId === '__output__' && e.toPort === 'audio_in');
+      if (audioOutEdge) {
+        const fromId = audioOutEdge.fromNodeId;
+        ctx.audioEngine.setLayerAudioTarget(ctx.layer.id, fromId === 'source' ? ctx.layer.id : fromId);
+      } else {
+        ctx.audioEngine.setLayerAudioTarget(ctx.layer.id, null);
+      }
     });
 
     this.pipelines[layer.id] = pipeline;
