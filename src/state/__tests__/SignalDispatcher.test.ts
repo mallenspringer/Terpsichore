@@ -10,11 +10,23 @@ vi.mock('../AudioEngine', () => ({
       context: { currentTime: 0 },
       resume: vi.fn(),
       registerMediaElement: vi.fn(),
+      registerStream: vi.fn(),
+      unregisterMediaElement: vi.fn(),
       setModuleMute: vi.fn(),
       setLayerMute: vi.fn(),
       setMasterMute: vi.fn(),
-      unregisterMediaElement: vi.fn(),
-      getPeakVolume: vi.fn(() => 0.5)
+      setLayerAudioTarget: vi.fn(),
+      connectTransformer: vi.fn(),
+      connectModulator: vi.fn(),
+      disconnectNode: vi.fn(),
+      updateTransformerNode: vi.fn(),
+      updateModulatorNode: vi.fn(),
+      getTransformerBus: vi.fn(),
+      getTransformerOutput: vi.fn(),
+      getBusData: vi.fn(),
+      getAllBuses: vi.fn(() => []),
+      getPeakVolume: vi.fn(() => 0.5),
+      update: vi.fn()
     })
   }
 }));
@@ -142,5 +154,72 @@ describe('SignalDispatcher', () => {
     expect(updatedLayer.signalValues?.['lfo_1.modulation_out']).toBe(0.75);
     // Effect hue port should receive 0.75
     expect(updatedLayer.signalValues?.['effect_1.hue']).toBe(0.75);
+  });
+
+  it('should handle unipolar and bipolar inversion in input settings', () => {
+    const state = useEngineStore.getState();
+
+    const lfo = {
+      type: 'LFO',
+      waveform: 'sine',
+      frequency: 0,
+      amplitude: 1.0,
+      offset: 0.25,
+      bipolar: false,
+      value: 0.75
+    };
+
+    // 1. Test unipolar mode with invert = true
+    state.updateLayer('layer_1', {
+      modulators: { 'lfo_1': lfo as any },
+      effects: [{ id: 'effect_1', type: 'ColorAdjust', hue: 0, saturation: 1, contrast: 1, brightness: 0, invert: false }],
+      inputSettings: {
+        'effect_1.hue': { amount: 1.0, bipolar: false, invert: true }
+      },
+      graph: {
+        edges: [
+          {
+            id: 'mod_edge',
+            fromNodeId: 'lfo_1',
+            fromPort: 'modulation_out',
+            toNodeId: 'effect_1',
+            toPort: 'hue',
+            signalType: 'modulation',
+            isAuto: false
+          }
+        ],
+        disconnectedPorts: []
+      }
+    });
+
+    SignalDispatcher.getInstance().execute(true);
+    let updatedLayer = useEngineStore.getState().layers['layer_1'];
+    // 0.75 is raw, unipolar = 0.75, amount = 1.0, invert = true -> -0.75
+    expect(updatedLayer.signalValues?.['effect_1.hue']).toBe(-0.75);
+
+    // 2. Test bipolar mode with invert = true
+    state.updateLayer('layer_1', {
+      inputSettings: {
+        'effect_1.hue': { amount: 1.0, bipolar: true, invert: true }
+      }
+    });
+    // Invalidate pipeline cache
+    (SignalDispatcher.getInstance() as any).pipelines = {};
+    SignalDispatcher.getInstance().execute(true);
+    updatedLayer = useEngineStore.getState().layers['layer_1'];
+    // 0.75 raw -> bipolar = 0.75 * 2 - 1 = 0.5, amount = 1.0, invert = true -> -0.5
+    expect(updatedLayer.signalValues?.['effect_1.hue']).toBe(-0.5);
+
+    // 3. Test bipolar mode with invert = false
+    state.updateLayer('layer_1', {
+      inputSettings: {
+        'effect_1.hue': { amount: 1.0, bipolar: true, invert: false }
+      }
+    });
+    (SignalDispatcher.getInstance() as any).pipelines = {};
+    SignalDispatcher.getInstance().execute(true);
+    updatedLayer = useEngineStore.getState().layers['layer_1'];
+    // 0.75 raw -> bipolar = 0.75 * 2 - 1 = 0.5, amount = 1.0, invert = false -> 0.5
+    expect(updatedLayer.signalValues?.['effect_1.hue']).toBe(0.5);
   });
 });

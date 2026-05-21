@@ -653,12 +653,25 @@ export function ModuleNode({
   // Drag node position
   const nodeRef = useRef<HTMLDivElement>(null);
   const dragStart = useRef<{ mx: number; my: number; nx: number; ny: number } | null>(null);
+  const capturedHeaderRef = useRef<HTMLElement | null>(null);
+  const capturedPointerIdRef = useRef<number | null>(null);
 
   const handleHeaderPointerDown = (e: React.PointerEvent) => {
     // Only drag if the direct target is NOT a button
     if ((e.target as HTMLElement).closest('button')) return;
 
     e.preventDefault();
+    
+    // Request pointer capture on the header element to anchor mouse drag tracking to it
+    const headerEl = e.currentTarget as HTMLElement;
+    capturedHeaderRef.current = headerEl;
+    capturedPointerIdRef.current = e.pointerId;
+    try {
+      headerEl.setPointerCapture(e.pointerId);
+    } catch (err) {
+      console.warn('setPointerCapture failed:', err);
+    }
+
     dragStart.current = { mx: e.clientX, my: e.clientY, nx: nodeState.x, ny: nodeState.y };
     window.addEventListener('pointermove', handleWindowPointerMove);
     window.addEventListener('pointerup', handleWindowPointerUp, { once: true });
@@ -710,6 +723,18 @@ export function ModuleNode({
   const handleWindowPointerUp = () => {
     dragStart.current = null;
     if (scrollAnim.current) cancelAnimationFrame(scrollAnim.current);
+    
+    // Release pointer capture on the element that has it
+    if (capturedHeaderRef.current && capturedPointerIdRef.current !== null) {
+      try {
+        capturedHeaderRef.current.releasePointerCapture(capturedPointerIdRef.current);
+      } catch (err) {
+        // ignore
+      }
+      capturedHeaderRef.current = null;
+      capturedPointerIdRef.current = null;
+    }
+    
     window.removeEventListener('pointermove', handleWindowPointerMove);
   };
 
@@ -788,7 +813,7 @@ export function ModuleNode({
     const isLinked = (moduleType === 'Transform2D' && port.id === 'scaleY') && (eCtx.linkedScales?.[nodeId] ?? true);
     const effectivePortId = isLinked ? 'scaleX' : port.id;
     const settingsKey = `${nodeId}.${effectivePortId}`;
-    const settings = inputSettings?.[settingsKey] || { amount: 1.0, bipolar: false };
+    const settings = inputSettings?.[settingsKey] || { amount: 1.0, bipolar: false, invert: false };
     
     const isGeneric = port.signalType === 'generic' || ghostSignalType === 'generic';
     const compatible = isGeneric ||
@@ -844,6 +869,17 @@ export function ModuleNode({
                   title="Toggle Bipolar (-1 to 1)"
                 >
                   ⩲
+                </button>
+              )}
+
+              {port.enableInvert && (
+                <button 
+                  className={`patchbay-invert-toggle ${settings.invert ? 'active' : ''}`}
+                  onPointerDown={e => { e.stopPropagation(); e.preventDefault(); }}
+                  onClick={(e) => { e.stopPropagation(); useEngineStore.getState().updateInputSettings(layerId, settingsKey, { invert: !settings.invert }); }}
+                  title="Toggle Inverted Response"
+                >
+                  ⇅
                 </button>
               )}
             </>

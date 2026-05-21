@@ -1397,11 +1397,12 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
         );
       }
     },
+    { id: 'v1Alpha', label: 'V1 Alpha', render: ctx => <Slider label="V1 α" min={0} max={1} step={0.01} resetValue={1} value={eff<VideoMixerEffect>(ctx).v1Alpha} onChange={v => upd(ctx)({ v1Alpha: v })} /> },
     { id: 'v2', label: 'V2', render: ctx => {
         const ef = eff<VideoMixerEffect>(ctx);
         return (
           <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <Slider label="V2" min={0} max={2} step={0.01} resetValue={0} value={ef.v2} onChange={v => upd(ctx)({ v2: v })} />
+            <Slider label="V2" min={0} max={2} step={0.01} resetValue={1} value={ef.v2} onChange={v => upd(ctx)({ v2: v })} />
             <select value={ef.v2Mode} onChange={e => upd(ctx)({ v2Mode: e.target.value as any })} className="mode-select">
               <option value="normal">NORM</option>
               <option value="add">ADD</option>
@@ -1412,11 +1413,12 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
         );
       }
     },
+    { id: 'v2Alpha', label: 'V2 Alpha', render: ctx => <Slider label="V2 α" min={0} max={1} step={0.01} resetValue={1} value={eff<VideoMixerEffect>(ctx).v2Alpha} onChange={v => upd(ctx)({ v2Alpha: v })} /> },
     { id: 'v3', label: 'V3', render: ctx => {
         const ef = eff<VideoMixerEffect>(ctx);
         return (
           <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <Slider label="V3" min={0} max={2} step={0.01} resetValue={0} value={ef.v3} onChange={v => upd(ctx)({ v3: v })} />
+            <Slider label="V3" min={0} max={2} step={0.01} resetValue={1} value={ef.v3} onChange={v => upd(ctx)({ v3: v })} />
             <select value={ef.v3Mode} onChange={e => upd(ctx)({ v3Mode: e.target.value as any })} className="mode-select">
               <option value="normal">NORM</option>
               <option value="add">ADD</option>
@@ -1427,11 +1429,12 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
         );
       }
     },
+    { id: 'v3Alpha', label: 'V3 Alpha', render: ctx => <Slider label="V3 α" min={0} max={1} step={0.01} resetValue={1} value={eff<VideoMixerEffect>(ctx).v3Alpha} onChange={v => upd(ctx)({ v3Alpha: v })} /> },
     { id: 'v4', label: 'V4', render: ctx => {
         const ef = eff<VideoMixerEffect>(ctx);
         return (
           <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <Slider label="V4" min={0} max={2} step={0.01} resetValue={0} value={ef.v4} onChange={v => upd(ctx)({ v4: v })} />
+            <Slider label="V4" min={0} max={2} step={0.01} resetValue={1} value={ef.v4} onChange={v => upd(ctx)({ v4: v })} />
             <select value={ef.v4Mode} onChange={e => upd(ctx)({ v4Mode: e.target.value as any })} className="mode-select">
               <option value="normal">NORM</option>
               <option value="add">ADD</option>
@@ -1442,8 +1445,10 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
         );
       }
     },
+    { id: 'v4Alpha', label: 'V4 Alpha', render: ctx => <Slider label="V4 α" min={0} max={1} step={0.01} resetValue={1} value={eff<VideoMixerEffect>(ctx).v4Alpha} onChange={v => upd(ctx)({ v4Alpha: v })} /> },
     { id: 'master', label: 'Master', render: ctx => <Slider label="Gain" min={0} max={2} step={0.01} resetValue={1} value={eff<VideoMixerEffect>(ctx).masterGain} onChange={v => upd(ctx)({ masterGain: v })} /> },
   ],
+
 
   Inverter: [
     { id: 'active', label: 'Active',

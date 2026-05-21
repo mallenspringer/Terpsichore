@@ -7,7 +7,25 @@ vi.mock('../AudioEngine', () => ({
   AudioEngine: {
     getInstance: () => ({
       context: { currentTime: 0 },
-      getPeakVolume: vi.fn(() => 0.0)
+      resume: vi.fn(),
+      registerMediaElement: vi.fn(),
+      registerStream: vi.fn(),
+      unregisterMediaElement: vi.fn(),
+      setModuleMute: vi.fn(),
+      setLayerMute: vi.fn(),
+      setMasterMute: vi.fn(),
+      setLayerAudioTarget: vi.fn(),
+      connectTransformer: vi.fn(),
+      connectModulator: vi.fn(),
+      disconnectNode: vi.fn(),
+      updateTransformerNode: vi.fn(),
+      updateModulatorNode: vi.fn(),
+      getTransformerBus: vi.fn(),
+      getTransformerOutput: vi.fn(),
+      getBusData: vi.fn(),
+      getAllBuses: vi.fn(() => []),
+      getPeakVolume: vi.fn(() => 0.0),
+      update: vi.fn()
     })
   }
 }));

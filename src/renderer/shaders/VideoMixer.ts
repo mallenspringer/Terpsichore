@@ -43,8 +43,10 @@ fn blend(dst: vec4<f32>, src: vec4<f32>, level: f32, alpha: f32, mode: u32) -> v
     let screened = 1.0 - (1.0 - dst.rgb) * (1.0 - src_c * src_a);
     return vec4<f32>(screened, max(dst.a, src_a));
   } else if (mode == 3u) { // Mult
-    let multed = dst.rgb * mix(vec3<f32>(1.0), src_c, src_a);
-    return vec4<f32>(multed, dst.a);
+    let cs = src_c * src_a;
+    let out_rgb = (1.0 - dst.a) * cs + (1.0 - src_a) * dst.rgb + cs * dst.rgb;
+    let out_a = src_a + dst.a * (1.0 - src_a);
+    return vec4<f32>(out_rgb, out_a);
   }
   return dst;
 }
@@ -65,8 +67,16 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
   res = blend(res, c3, uniforms.v3, uniforms.v3Alpha, uniforms.v3Mode);
   res = blend(res, c4, uniforms.v4, uniforms.v4Alpha, uniforms.v4Mode);
 
-  // Apply master gain and force alpha to 1.0 for final output
+  // Apply master gain and keep composited alpha
   let final_rgb = clamp(res.rgb * uniforms.masterGain, vec3<f32>(0.0), vec3<f32>(1.0));
-  return vec4<f32>(final_rgb, 1.0);
+  let final_alpha = clamp(res.a, 0.0, 1.0);
+
+  // Un-premultiply to convert back to straight alpha format for the blit pipeline
+  var straight_rgb = final_rgb;
+  if (final_alpha > 0.0) {
+    straight_rgb = clamp(final_rgb / final_alpha, vec3<f32>(0.0), vec3<f32>(1.0));
+  }
+
+  return vec4<f32>(straight_rgb, final_alpha);
 }
 `;

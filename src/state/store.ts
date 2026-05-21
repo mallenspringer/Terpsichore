@@ -153,7 +153,7 @@ export const useEngineStore = create<StoreState>((set) => ({
       const layer = state.layers[layerId];
       if (!layer) return {};
       const settings = { ...(layer.inputSettings || {}) };
-      settings[portKey] = { ...(settings[portKey] || { amount: 1.0, bipolar: false }), ...updates };
+      settings[portKey] = { ...(settings[portKey] || { amount: 1.0, bipolar: false, invert: false }), ...updates };
       return { layers: { ...state.layers, [layerId]: { ...layer, inputSettings: settings } } };
     }),
 

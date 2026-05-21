@@ -175,13 +175,13 @@ function App() {
       onUpdate: (upd: any) => setSource(activeLayerId, { ...activeLayer.source, ...upd }),
       videoProgress: videoProgress['source'] || { currentTime: 0, duration: 0 },
       onSeek: handleSeek,
-      onSeekStart: (nodeId) => { 
+      onSeekStart: (nodeId: string) => { 
         if (rendererRef.current && activeLayerId) {
           const key = nodeId === 'source' ? activeLayerId : nodeId;
           rendererRef.current.isSeeking[key] = true;
         }
       },
-      onSeekEnd: (nodeId) => { 
+      onSeekEnd: (nodeId: string) => { 
         if (rendererRef.current && activeLayerId) {
           const key = nodeId === 'source' ? activeLayerId : nodeId;
           rendererRef.current.isSeeking[key] = false;

@@ -758,8 +758,14 @@ export class SignalDispatcher {
           let processedValue = rawValue;
           const settings = ctx.layer.inputSettings?.[`${edge.toNodeId}.${edge.toPort}`];
           if (settings) {
-            if (settings.bipolar) processedValue = (processedValue * 2.0) - 1.0;
+            let val = rawValue;
+            if (settings.bipolar) processedValue = (val * 2.0) - 1.0;
+            else processedValue = val;
             processedValue *= settings.amount;
+
+            if (settings.invert) {
+              processedValue = -processedValue;
+            }
           }
 
           if (!Number.isNaN(processedValue)) {

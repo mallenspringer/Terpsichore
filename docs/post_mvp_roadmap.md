@@ -17,9 +17,15 @@ This document tracks planned features and architectural improvements to be addre
 - **Physics Engine**: Add mass, gravity, buoyancy, and friction to spawned objects.
 - **Attractors/Repellers**: Modules that influence the movement of all objects on a layer based on spatial coordinates.
 
-### 2. Enhanced Signal Processing
+### 2. Enhanced Signal Processing & Vocal Synesthesics
 - **MIDI Integration**: Support for MIDI clock, notes, and CC for modulation.
-- **High-Resolution Spectral Splitter**: A 16-32 band analyzer optimized for speech and nuanced vocal frequencies, designed for high-fidelity "voice-to-color" installations.
+- **Human-Voice Reactivity (Active Spoken Word Target)**:
+    - **Vocal Tracking Components**: Build discrete, simple tracking modules for:
+        - **Speech Envelope**: Capturing vocal cadence, phrases, and pauses.
+        - **Vowel/Formant Tracking**: Tracking vowel sounds and transitions.
+        - **F0 Pitch Detection**: Tracking fundamental voice frequency.
+        - **Spectral Features**: Centroid, roll-off, and potentially MFCC (Mel-Frequency Cepstral Coefficients) / HPSS (Harmonic-Percussive Source Separation).
+    - **Voice Visualizer (The "Crown Jewel")**: An elegant "black box" module designed to synesthetically capture the nuances, timbre, and cadence of a human voice to accompany spoken word and literary performances. Integrates the discrete trackers with a high-resolution, self-tuning spectral analyzer, hiding complexity under a streamlined UX.
 
 ### 3. Effects Modules
 - **Pattern Refinements**: 

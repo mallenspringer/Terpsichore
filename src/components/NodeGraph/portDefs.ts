@@ -10,6 +10,7 @@ export interface PortDef {
   alwaysShow?: boolean; // show even when collapsed/nested
   bipolar?: boolean; // native range of the output
   disableBipolar?: boolean; // hide bipolar switch for this input
+  enableInvert?: boolean; // selectively enable invert button on inputs
 }
 
 export const PORT_DEFS: Record<string, PortDef[]> = {
@@ -285,16 +286,16 @@ export const PORT_DEFS: Record<string, PortDef[]> = {
     { id: 'v2_cv', label: 'V2 Lvl', direction: 'in', signalType: 'modulation', group: 'V2' },
     { id: 'v3_cv', label: 'V3 Lvl', direction: 'in', signalType: 'modulation', group: 'V3' },
     { id: 'v4_cv', label: 'V4 Lvl', direction: 'in', signalType: 'modulation', group: 'V4' },
-    { id: 'v1_alpha_cv', label: 'V1 α', direction: 'in', signalType: 'modulation', group: 'V1', alwaysShow: true },
-    { id: 'v2_alpha_cv', label: 'V2 α', direction: 'in', signalType: 'modulation', group: 'V2' },
-    { id: 'v3_alpha_cv', label: 'V3 α', direction: 'in', signalType: 'modulation', group: 'V3' },
-    { id: 'v4_alpha_cv', label: 'V4 α', direction: 'in', signalType: 'modulation', group: 'V4' },
+    { id: 'v1_alpha_cv', label: 'V1 α', direction: 'in', signalType: 'modulation', group: 'V1', alwaysShow: true, enableInvert: true },
+    { id: 'v2_alpha_cv', label: 'V2 α', direction: 'in', signalType: 'modulation', group: 'V2', enableInvert: true },
+    { id: 'v3_alpha_cv', label: 'V3 α', direction: 'in', signalType: 'modulation', group: 'V3', enableInvert: true },
+    { id: 'v4_alpha_cv', label: 'V4 α', direction: 'in', signalType: 'modulation', group: 'V4', enableInvert: true },
     { id: 'master_cv', label: 'Master', direction: 'in', signalType: 'modulation', group: 'MST', alwaysShow: true },
     { id: 'video_out', label: 'Video Out', direction: 'out', signalType: 'video', priority: 0 },
   ],
   AlphaAdjust: [
     { id: 'video_in', label: 'Video In', direction: 'in', signalType: 'video' },
-    { id: 'amount_cv', label: 'α CV', direction: 'in', signalType: 'modulation' },
+    { id: 'amount_cv', label: 'α CV', direction: 'in', signalType: 'modulation', enableInvert: true },
     { id: 'bypass_trig', label: 'Bypass', direction: 'in', signalType: 'trigger' },
     { id: 'video_out', label: 'Video Out', direction: 'out', signalType: 'video', priority: 0 },
   ],

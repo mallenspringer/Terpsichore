@@ -101,6 +101,7 @@ export class Renderer {
   public latestLumaValues: Record<string, number> = {};
 
   private sampler!: GPUSampler;
+  private blankTexture!: GPUTexture;
 
   private isRunning = false;
   private _isDestroyed = false;
@@ -131,6 +132,13 @@ export class Renderer {
     });
 
     this.sampler = this.device.createSampler({ magFilter: 'linear', minFilter: 'linear' });
+
+    this.blankTexture = this.device.createTexture({
+      size: [1, 1],
+      format: this.format,
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST
+    });
+    this.nodeTextures.set('__dummy__', this.blankTexture);
 
     this.setupRenderTargets();
     this.setupPipelines();
@@ -854,6 +862,14 @@ export class Renderer {
     return this.nodeTextures.get(key) || null;
   }
 
+  private getConnectedInputTexture(layer: LayerState, nodeId: string, portId: string): GPUTexture | null {
+    const edge = (layer.graph?.edges || []).find(e => e.toNodeId === nodeId && e.toPort === portId);
+    if (edge) {
+      return this.getTextureForNode(edge.fromNodeId, edge.fromPort);
+    }
+    return null;
+  }
+
   private ensureTexture(nodeId: string, portId?: string): GPUTexture {
     const key = portId && portId !== 'video_out' && portId !== 'video_out_0' ? `${nodeId}.${portId}` : nodeId;
     if (!this.nodeTextures.has(key)) {
@@ -1235,9 +1251,9 @@ export class Renderer {
 
             this.device.queue.writeBuffer(uniformBuffer, 0, buf);
 
-            const rIn = this.getTextureForNode(nodeId, 'r_in')?.createView() ?? inputTex.createView();
-            const gIn = this.getTextureForNode(nodeId, 'g_in')?.createView() ?? inputTex.createView();
-            const bIn = this.getTextureForNode(nodeId, 'b_in')?.createView() ?? inputTex.createView();
+            const rIn = this.getConnectedInputTexture(layer, nodeId, 'r_in')?.createView() ?? inputTex.createView();
+            const gIn = this.getConnectedInputTexture(layer, nodeId, 'g_in')?.createView() ?? inputTex.createView();
+            const bIn = this.getConnectedInputTexture(layer, nodeId, 'b_in')?.createView() ?? inputTex.createView();
 
             entries = [
               { binding: 0, resource: { buffer: uniformBuffer } },
@@ -1617,29 +1633,35 @@ export class Renderer {
             } else if (effect.type === 'VideoMixer') {
               pipeline = this.videoMixerPipeline;
               const ef = effect as VideoMixerEffect;
-              const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 48);
+              const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 56);
               const modeMap: Record<string, number> = { normal: 0, add: 1, screen: 2, mult: 3 };
 
-              const f32 = new Float32Array(12);
+              const f32 = new Float32Array(14);
               f32[0] = this.getEffectiveParam(layer, ef.id, 'v1_cv', ef.v1, timeSec);
               f32[1] = this.getEffectiveParam(layer, ef.id, 'v2_cv', ef.v2, timeSec);
               f32[2] = this.getEffectiveParam(layer, ef.id, 'v3_cv', ef.v3, timeSec);
               f32[3] = this.getEffectiveParam(layer, ef.id, 'v4_cv', ef.v4, timeSec);
 
-              const u32 = new Uint32Array(f32.buffer);
-              u32[4] = modeMap[ef.v1Mode] || 0;
-              u32[5] = modeMap[ef.v2Mode] || 0;
-              u32[6] = modeMap[ef.v3Mode] || 0;
-              u32[7] = modeMap[ef.v4Mode] || 0;
+              f32[4] = this.getEffectiveParam(layer, ef.id, 'v1_alpha_cv', ef.v1Alpha ?? 1.0, timeSec);
+              f32[5] = this.getEffectiveParam(layer, ef.id, 'v2_alpha_cv', ef.v2Alpha ?? 1.0, timeSec);
+              f32[6] = this.getEffectiveParam(layer, ef.id, 'v3_alpha_cv', ef.v3Alpha ?? 1.0, timeSec);
+              f32[7] = this.getEffectiveParam(layer, ef.id, 'v4_alpha_cv', ef.v4Alpha ?? 1.0, timeSec);
 
-              f32[8] = this.getEffectiveParam(layer, ef.id, 'master_cv', ef.masterGain, timeSec);
+              const u32 = new Uint32Array(f32.buffer);
+              u32[8] = modeMap[ef.v1Mode] || 0;
+              u32[9] = modeMap[ef.v2Mode] || 0;
+              u32[10] = modeMap[ef.v3Mode] || 0;
+              u32[11] = modeMap[ef.v4Mode] || 0;
+
+              f32[12] = this.getEffectiveParam(layer, ef.id, 'master_cv', ef.masterGain, timeSec);
+              f32[13] = 0.0; // padding
 
               this.device.queue.writeBuffer(uniformBuffer, 0, f32);
 
-              const v1 = this.getTextureForNode(nodeId, 'v1_in')?.createView() ?? inputTex.createView();
-              const v2 = this.getTextureForNode(nodeId, 'v2_in')?.createView() ?? inputTex.createView();
-              const v3 = this.getTextureForNode(nodeId, 'v3_in')?.createView() ?? inputTex.createView();
-              const v4 = this.getTextureForNode(nodeId, 'v4_in')?.createView() ?? inputTex.createView();
+              const v1 = this.getConnectedInputTexture(layer, nodeId, 'v1_in')?.createView() ?? this.blankTexture.createView();
+              const v2 = this.getConnectedInputTexture(layer, nodeId, 'v2_in')?.createView() ?? this.blankTexture.createView();
+              const v3 = this.getConnectedInputTexture(layer, nodeId, 'v3_in')?.createView() ?? this.blankTexture.createView();
+              const v4 = this.getConnectedInputTexture(layer, nodeId, 'v4_in')?.createView() ?? this.blankTexture.createView();
 
               entries = [
                 { binding: 0, resource: { buffer: uniformBuffer } },
@@ -1775,6 +1797,7 @@ export class Renderer {
     if (this.masterFBO) this.masterFBO.destroy();
     if (this.layerFBO_A) this.layerFBO_A.destroy();
     if (this.layerFBO_B) this.layerFBO_B.destroy();
+    if (this.blankTexture) this.blankTexture.destroy();
     Object.values(this.prevFrameFBOs).forEach(fbo => fbo.destroy());
     Object.values(this.videoElements).forEach(v => {
       v.pause();
