@@ -123,6 +123,20 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
       };
     case 'NoiseSource':
       return { id, ...createDefaultSource('NoiseSource') } as any;
+    case 'ImageFile':
+      return { id, ...createDefaultSource('ImageFile') } as any;
+    case 'ColorNoise':
+      return { id, ...createDefaultSource('ColorNoise') } as any;
+    case 'ImageLoader':
+      return { id, ...createDefaultSource('ImageLoader') } as any;
+    case 'AudioInput':
+      return { id, ...createDefaultSource('AudioInput') } as any;
+    case 'AudioFile':
+      return { id, ...createDefaultSource('AudioFile') } as any;
+    case 'SystemAudio':
+      return { id, ...createDefaultSource('SystemAudio') } as any;
+    case 'SignalProcessor':
+      return { id, ...createDefaultSource('SignalProcessor') } as any;
     default:
       return { id, type: 'SimpleFeedback', feedbackAmount: 0.9, zoom: 0.95, angle: 0.05 } as any;
   }

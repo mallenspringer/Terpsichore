@@ -625,7 +625,7 @@ export class Renderer {
     if (src.playState === 'play' && el.paused && !layerIsSeeking && el.currentTime < (el.duration || Infinity) - 0.05 && !useEngineStore.getState().isGlobalPaused) {
       el.play().catch(() => { });
     }
-    
+
     if (src.playState === 'pause' && !el.paused) el.pause();
     if (src.playState === 'stop') {
       if (!el.paused) el.pause();
@@ -1201,13 +1201,13 @@ export class Renderer {
 
           const incomingEdges = layer.graph?.edges.filter(e => e.toNodeId === nodeId && (e.signalType === 'video' || e.toPort === 'sig_in')) || [];
           let inputTex = (incomingEdges.length > 0) ? this.getTextureForNode(incomingEdges[0].fromNodeId, incomingEdges[0].fromPort) : this.nodeTextures.get('__dummy__');
-          
+
           // Fallback to dummy if still null for any reason
           if (!inputTex) inputTex = this.nodeTextures.get('__dummy__')!;
-          
+
           // Only skip if we are NOT an audio visualizer AND we have no valid input (redundant now but safe)
           if (!inputTex && effect.type !== 'SpectralSplitter' && effect.type !== 'Oscilloscope') return;
-          
+
           const tex = inputTex!; // Local non-null reference for TS safety
 
           const targetPort = effect.type === 'TriggeredGate' ? 'sig_out' : 'video_out';
@@ -1328,7 +1328,7 @@ export class Renderer {
             const ef = effect as SpectralSplitterEffect;
             const edge = layer?.graph?.edges.find(e => e.toNodeId === nodeId && e.toPort === 'audio_in');
             let busId = ef.busId || 'master';
-            
+
             if (edge) {
               const sourceEffect = layer?.effects.find(e => e.id === edge.fromNodeId);
               if (sourceEffect?.type === 'AudioSource') busId = (sourceEffect as any).busId;
@@ -1342,7 +1342,7 @@ export class Renderer {
             if (!busData) {
               busData = AudioEngine.getInstance().getBusData(ef.busId || 'master');
             }
-            
+
             const fft = busData ? busData.fft : new Float32Array(512);
 
             const storageBuffer = this.getStorageBuffer(`${nodeId}.fft`, fft.byteLength);
@@ -1354,7 +1354,7 @@ export class Renderer {
               this.getEffectiveParam(layer, ef.id, 'smoothing', ef.smoothing, timeSec),
               this.canvas.width / this.canvas.height,
               timeSec,
-              
+
               // bands_1 (vec4) - Safe access with double optional chaining
               busData?.bands?.low ?? 0,
               busData?.bands?.lowMid ?? 0,

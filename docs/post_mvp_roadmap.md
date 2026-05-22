@@ -28,6 +28,7 @@ This document tracks planned features and architectural improvements to be addre
     - **Voice Visualizer (The "Crown Jewel")**: An elegant "black box" module designed to synesthetically capture the nuances, timbre, and cadence of a human voice to accompany spoken word and literary performances. Integrates the discrete trackers with a high-resolution, self-tuning spectral analyzer, hiding complexity under a streamlined UX.
 
 ### 3. Effects Modules
+- **Key Mixer**: A multi-input keying module designed to key multiple sources against each other within a single layer, featuring support for both **Luma Keying** (luminance/brightness thresholds) and **Chroma Keying** (color-chrominance range matching, tolerance adjustments, and edge spill suppression).
 - **Pattern Refinements**: 
     - **Radial Mode**: Tiling objects in concentric circles rather than grids.
     - **Per-Tile Rotation**: Staggered rotation where each tile rotates incrementally.

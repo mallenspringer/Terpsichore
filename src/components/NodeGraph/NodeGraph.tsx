@@ -482,21 +482,60 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
   // ── SVG edge path ───────────────────────────────────────────────────────────
 
   const getPortCenter = (nodeId: string, portId: string, direction: 'in' | 'out', nodeIdx: number): [number, number] => {
+    // 1. Try to find the exact port-dot or container in the DOM
+    const container = document.querySelector(`[data-node-id="${nodeId}"][data-port-id="${portId}"]`);
+    const jackEl = (container?.querySelector('.port-dot') || (container?.classList.contains('port-dot') ? container : null)) as HTMLElement;
+
+    const canvasInner = graphRef.current?.querySelector('.graph-canvas-inner');
+    if (jackEl && canvasInner) {
+      const jackRect = jackEl.getBoundingClientRect();
+      const innerRect = canvasInner.getBoundingClientRect();
+      
+      const x = (jackRect.left + jackRect.width / 2 - innerRect.left) / zoom;
+      const y = (jackRect.top + jackRect.height / 2 - innerRect.top) / zoom;
+      return [x, y];
+    }
+
+    // Resolve port definition
+    let ports: any[] = [];
+    if (nodeId === 'source' && layer?.source) {
+       ports = PORT_DEFS[layer.source.type] || [];
+    } else if (layer?.modulators && layer.modulators[nodeId]) {
+       ports = PORT_DEFS[layer.modulators[nodeId].type] || [];
+    } else {
+       const effect = layer?.effects.find(e => e.id === nodeId);
+       if (effect) {
+          const rawPorts = PORT_DEFS[effect.type] || [];
+          if (effect.type === 'InterLayerOutput' || effect.type === 'InterLayerInput') {
+             const count = (effect as any).portCount ?? 1;
+             ports = rawPorts.filter(p => p.direction !== (effect.type === 'InterLayerOutput' ? 'in' : 'out') || parseInt(p.id.split('_')[1]) < count);
+          } else {
+             ports = rawPorts;
+          }
+       }
+    }
+    const portDef = ports.find(p => p.id === portId);
+
+    // 2. Try to find the subgroup header in the DOM (for collapsed subgroup ports inside an expanded patchbay)
+    if (portDef?.group && canvasInner) {
+      const headerEl = document.querySelector(`[data-node-id="${nodeId}"][data-group-header="${portDef.group}"]`) as HTMLElement;
+      if (headerEl) {
+        const headerRect = headerEl.getBoundingClientRect();
+        const innerRect = canvasInner.getBoundingClientRect();
+        
+        // Anchor the wire to the left side of the folded subgroup header
+        const x = (headerRect.left + 12 - innerRect.left) / zoom;
+        const y = (headerRect.top + headerRect.height / 2 - innerRect.top) / zoom;
+        return [x, y];
+      }
+    }
+
+    // 3. Fallback to existing mathematical calculations if elements are not in DOM
     const ns = getNodeUIState(nodeId, nodeIdx);
     
     if (direction === 'out') {
-      let hasInputs = false;
-      if (nodeId === 'source' && layer?.source) {
-         hasInputs = (PORT_DEFS[layer.source.type] || []).some(p => p.direction === 'in');
-      } else if (layer?.modulators && layer.modulators[nodeId]) {
-         hasInputs = (PORT_DEFS[layer.modulators[nodeId].type] || []).some(p => p.direction === 'in');
-      } else {
-         const effect = layer?.effects.find(e => e.id === nodeId);
-         if (effect) {
-            hasInputs = (PORT_DEFS[effect.type] || []).some(p => p.direction === 'in');
-         }
-      }
       const isOutputNode = nodeId === OUTPUT_ID;
+      const hasInputs = ports.some(p => p.direction === 'in');
       
       // Calculate width of the patchbay side
       let actualPatchbayWidth = 0;
@@ -507,24 +546,6 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
       const width = isOutputNode ? 100 : 220; // output node is narrower
       const x = ns.x + actualPatchbayWidth + width;
 
-      // Calculate dynamic Y based on port index
-      let ports: any[] = [];
-      if (nodeId === 'source' && layer?.source) {
-         ports = PORT_DEFS[layer.source.type] || [];
-      } else if (layer?.modulators && layer.modulators[nodeId]) {
-         ports = PORT_DEFS[layer.modulators[nodeId].type] || [];
-      } else {
-         const effect = layer?.effects.find(e => e.id === nodeId);
-         if (effect) {
-            const rawPorts = PORT_DEFS[effect.type] || [];
-            if (effect.type === 'InterLayerInput') {
-               const count = (effect as any).portCount ?? 1;
-               ports = rawPorts.filter(p => p.direction !== 'out' || parseInt(p.id.split('_')[1]) < count);
-            } else {
-               ports = rawPorts;
-            }
-         }
-      }
       const outputs = ports.filter(p => p.direction === 'out');
       const portIndex = outputs.findIndex(p => p.id === portId);
       
@@ -535,8 +556,8 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
     } else {
       // IN port (Patchbay for regular nodes, port-row for __output__)
       if (nodeId === OUTPUT_ID) {
-        const ports = PORT_DEFS.__OUTPUT__;
-        const inputs = ports.filter(p => p.direction === 'in');
+        const portsDefOutput = PORT_DEFS.__OUTPUT__;
+        const inputs = portsDefOutput.filter(p => p.direction === 'in');
         const portIndex = inputs.findIndex(p => p.id === portId);
         
         // Match CSS: .output-node .node-port-row has padding: 20px 4px, gap: 12px
@@ -552,25 +573,6 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
       }
       
       const x = ns.x + 19; // 15px tab + 6px padding - 2px margin
-
-      let ports: any[] = [];
-      if (nodeId === 'source' && layer?.source) {
-         ports = PORT_DEFS[layer.source.type] || [];
-      } else if (layer?.modulators && layer.modulators[nodeId]) {
-         ports = PORT_DEFS[layer.modulators[nodeId].type] || [];
-      } else {
-         const effect = layer?.effects.find(e => e.id === nodeId);
-         if (effect) {
-            const rawPorts = PORT_DEFS[effect.type] || [];
-            if (effect.type === 'InterLayerOutput') {
-               const count = (effect as any).portCount ?? 1;
-               ports = rawPorts.filter(p => p.direction !== 'in' || parseInt(p.id.split('_')[1]) < count);
-            } else {
-               ports = rawPorts;
-            }
-         }
-      }
-      
       const inputs = ports.filter(p => p.direction === 'in');
       const portIndex = inputs.findIndex(p => p.id === portId);
       

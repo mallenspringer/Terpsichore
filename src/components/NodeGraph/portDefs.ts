@@ -334,6 +334,8 @@ export const SOURCE_WIRE_COLOR: Record<string, string> = {
   ShapeGenerator: '#d918f5',
   ImageFile:      '#f5c518',
   ImageLoader:    '#f5c518',
+  NoiseSource:    '#f5c518',
+  ColorNoise:     '#f5c518',
 };
 
 export function getPrimaryOutput(moduleType: string): PortDef | null {
@@ -420,4 +422,6 @@ export const MODULE_DISPLAY_NAMES: Record<string, string> = {
   StepSequencer: 'Sequencer',
   AlphaAdjust: 'Alpha Adjust',
   AudioTransformer: 'Audio Utility',
+  NoiseSource: 'Noise Gen',
+  ColorNoise: 'Color Noise',
 };

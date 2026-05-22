@@ -77,6 +77,7 @@ export interface NodeUIState {
   visibleRows: number;
   expanded: boolean;
   patchbayExpanded: boolean;
+  expandedGroups?: string[];
 }
 
 const LAYOUT_KEY = 'terp_node_layout';
@@ -599,7 +600,7 @@ export function ModuleNode({
   onPositionChange, onLayoutChange, onRemove, graphRef,
   inputSettings, onUpdateInputSettings, hoveredPortId, zoom
 }: ModuleNodeProps) {
-  const [expandedGroups, setExpandedGroups] = React.useState<Set<string>>(new Set());
+  const expandedGroups = React.useMemo(() => new Set<string>(nodeState.expandedGroups || []), [nodeState.expandedGroups]);
   const rawPorts = PORT_DEFS[moduleType] || [];
   
   // Filter ports for InterLayer modules based on portCount
@@ -994,11 +995,14 @@ export function ModuleNode({
                     <div 
                       key={`subgroup-header-${groupName}`} 
                       className={`patchbay-subgroup-header ${isExpanded ? 'expanded' : ''}`}
+                      data-node-id={nodeId}
+                      data-group-header={groupName}
                       onClick={() => {
-                        const next = new Set(expandedGroups);
-                        if (isExpanded) next.delete(groupName);
-                        else next.add(groupName);
-                        setExpandedGroups(next);
+                        const current = nodeState.expandedGroups || [];
+                        const next = current.includes(groupName)
+                          ? current.filter(g => g !== groupName)
+                          : [...current, groupName];
+                        onLayoutChange({ expandedGroups: next });
                       }}
                     >
                       <span className="subgroup-arrow">{isExpanded ? '▼' : '▶'}</span>

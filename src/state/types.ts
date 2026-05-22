@@ -60,12 +60,14 @@ export interface WebcamCaptureSource {
 }
 
 export interface ImageLoaderSource {
+  id?: string;
   type: 'ImageLoader';
   imageUrl: string;
   objectFit: 'cover' | 'contain' | 'fill';
 }
 
 export interface ImageFileSource {
+  id?: string;
   type: 'ImageFile';
   fileUrl: string;
   fileName: string;
@@ -102,6 +104,7 @@ export interface SystemAudioSource {
 }
 
 export interface SignalProcessorSource {
+  id?: string;
   type: 'SignalProcessor';
   operation: 'add' | 'subtract' | 'multiply' | 'divide' | 'modulo' | 'pow' | 'min' | 'max';
   operandA: number;
@@ -479,14 +482,14 @@ export type AnyEffect =
   | SignalMathEffect | SampleAndHoldEffect | StepSequencerEffect | PixelProcessorEffect
   | AudioSourceEffect | OscilloscopeEffect | SpectralSplitterEffect | AudioTransformerEffect | AudioModulatorEffect
   | ShapeGeneratorSource | VideoURLSource | VideoFileSource | WebcamCaptureSource | NoiseVideoSource | ColorNoiseSource
-  | AudioInputSource | AudioFileSource | SystemAudioSource;
+  | AudioInputSource | AudioFileSource | SystemAudioSource | ImageLoaderSource | ImageFileSource | SignalProcessorSource;
 
 export type EffectType = 
   | 'Transform2D' | 'ColorAdjust' | 'LumaKey' | 'SimpleFeedback' 
   | 'InterLayerOutput' | 'InterLayerInput' 
   | 'ColorRGB' | 'LumaSplitter' | 'Spawn' | 'Path' | 'Inverter' | 'VideoMixer' | 'AlphaAdjust'
   | 'LogicGate' | 'TriggeredGate' | 'Pattern' | 'Kaleidoscope' | 'SignalMath' | 'SampleAndHold' | 'StepSequencer' | 'AudioSource' | 'Oscilloscope' | 'SpectralSplitter' | 'PixelProcessor' | 'AudioTransformer' | 'AudioModulator'
-  | 'ShapeGenerator' | 'VideoURL' | 'VideoFile' | 'WebcamCapture' | 'NoiseSource' | 'ColorNoise' | 'AudioInput' | 'AudioFile' | 'SystemAudio';
+  | 'ShapeGenerator' | 'VideoURL' | 'VideoFile' | 'WebcamCapture' | 'NoiseSource' | 'ColorNoise' | 'AudioInput' | 'AudioFile' | 'SystemAudio' | 'ImageLoader' | 'ImageFile' | 'SignalProcessor';
 
 // --- GRAPH ---
 export interface GraphEdge {
