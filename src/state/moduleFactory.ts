@@ -67,6 +67,42 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
       octaveSub2: 0, octaveSub1: 0, octaveClean: 1, octaveHigh1: 0, octaveHigh2: 0,
       bypass: false
     };
+    case 'AudioGate': return {
+      id, type: 'AudioGate',
+      thresholdDb: -40,
+      bypass: false,
+      bypassLatching: true,
+      releaseMs: 150
+    };
+    case 'SpeechEnvelopeTracker': return {
+      id, type: 'SpeechEnvelopeTracker',
+      layerId: '',
+      attackMs: 10,
+      releaseMs: 150,
+      sensitivityDb: -40,
+      speechContinuous: false,
+      silenceContinuous: false
+    };
+    case 'VocalPitchTracker': return {
+      id, type: 'VocalPitchTracker',
+      layerId: '',
+      minPitchHz: 80,
+      maxPitchHz: 800,
+      tolerance: 0.15,
+      pitchRangeMode: 'voice'
+    };
+    case 'VowelFormantTracker': return {
+      id, type: 'VowelFormantTracker',
+      layerId: '',
+      smoothing: 0.8,
+      voiceProfile: 'universal'
+    };
+    case 'SpokenWordVisualizer': return {
+      id, type: 'SpokenWordVisualizer',
+      layerId: '',
+      renderMode: 'Constellation',
+      colorPalette: 'vibrant'
+    };
     case 'InterLayerOutput': return { id, type: 'InterLayerOutput', portCount: 1 };
     case 'InterLayerInput': return { id, type: 'InterLayerInput', portCount: 1 };
     case 'ColorRGB': return { id, type: 'ColorRGB', r: 0.5, g: 0.5, b: 0.5, rMode: 'add', gMode: 'add', bMode: 'add', rInputMode: 'channel', gInputMode: 'channel', bInputMode: 'channel' };

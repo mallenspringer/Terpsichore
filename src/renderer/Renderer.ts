@@ -770,7 +770,11 @@ export class Renderer {
       let stream = this.activeStreams[key];
       if (!stream) {
         const constraints = source.type === 'AudioInput'
-          ? { audio: src.deviceId ? { deviceId: src.deviceId } : true }
+          ? { 
+              audio: src.deviceId 
+                ? { deviceId: src.deviceId, echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+                : { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+            }
           : { audio: true, video: true }; // System audio often requires video track in getDisplayMedia
 
         const promise = source.type === 'AudioInput'

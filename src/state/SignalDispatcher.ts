@@ -1,5 +1,5 @@
 import { useEngineStore } from './store';
-import { LayerState, TriggerPadSource, LogicGateEffect, TriggeredGateEffect, InverterEffect, SignalMathEffect, SampleAndHoldEffect, StepSequencerEffect, OscilloscopeEffect, SpectralSplitterEffect, AlphaAdjustEffect, AudioTransformerEffect, AudioModulatorEffect } from './types';
+import { LayerState, TriggerPadSource, LogicGateEffect, TriggeredGateEffect, InverterEffect, SignalMathEffect, SampleAndHoldEffect, StepSequencerEffect, OscilloscopeEffect, SpectralSplitterEffect, AlphaAdjustEffect, AudioTransformerEffect, AudioModulatorEffect, AudioGateEffect } from './types';
 import { AudioEngine } from './AudioEngine';
 
 type SignalFunction = (context: DispatchContext, dt: number) => void;
@@ -32,6 +32,9 @@ export class SignalDispatcher {
   private spectralStates = new Map<string, { low: number; lowMid: number; mid: number; highMid: number; high: number }>();
   private transformerEnvelopes = new Map<string, number>();
   private latestSignals: Record<string, Record<string, number>> = {};
+  private speechStateMap = new Map<string, boolean>();
+  private pitchStateMap = new Map<string, number>();
+  private vowelStateMap = new Map<string, string>();
 
   private constructor() {}
 
@@ -237,6 +240,210 @@ export class SignalDispatcher {
                 ctx.signalValues[`${nodeId}.high_out`] = bus.bands.high;
               }
             });
+          } else if (effect.type === 'SpeechEnvelopeTracker') {
+            pipeline.push((ctx: DispatchContext) => {
+              const ef = ctx.layer.effects.find(e => e.id === nodeId) as any;
+              if (!ef) return;
+
+              const edges = ctx.layer.graph?.edges || [];
+              const incomingEdge = edges.find(e => e.toNodeId === nodeId && e.toPort === 'audio_in');
+              const busId = incomingEdge ? (incomingEdge.fromNodeId === 'source' ? ctx.layer.id : incomingEdge.fromNodeId) : 'master';
+
+              const features = ctx.audioEngine.getSpeechFeatures(busId, ef.attackMs || 10, ef.releaseMs || 150);
+              if (features) {
+                ctx.signalValues[`${nodeId}.envelope_out`] = features.envelope;
+                ctx.signalValues[`${nodeId}.cadence_out`] = Math.min(1.0, features.cadence);
+
+                const threshold = Math.pow(10, (ef.sensitivityDb ?? -40) / 20);
+                const isSpeech = features.envelope > threshold;
+
+                const stateKey = `${ctx.layer.id}.${nodeId}`;
+                const wasSpeech = this.speechStateMap.get(stateKey) ?? false;
+
+                const speechContinuous = !!ef.speechContinuous;
+                const silenceContinuous = !!ef.silenceContinuous;
+
+                if (speechContinuous) {
+                  ctx.signalValues[`${nodeId}.speech_trig`] = isSpeech ? 1.0 : 0.0;
+                } else {
+                  ctx.signalValues[`${nodeId}.speech_trig`] = (isSpeech && !wasSpeech) ? 1.0 : 0.0;
+                }
+
+                if (silenceContinuous) {
+                  ctx.signalValues[`${nodeId}.silence_trig`] = !isSpeech ? 1.0 : 0.0;
+                } else {
+                  ctx.signalValues[`${nodeId}.silence_trig`] = (!isSpeech && wasSpeech) ? 1.0 : 0.0;
+                }
+
+                this.speechStateMap.set(stateKey, isSpeech);
+              }
+            });
+          } else if (effect.type === 'VocalPitchTracker') {
+            pipeline.push((ctx: DispatchContext) => {
+              const ef = ctx.layer.effects.find(e => e.id === nodeId) as any;
+              if (!ef) return;
+
+              const edges = ctx.layer.graph?.edges || [];
+              const incomingEdge = edges.find(e => e.toNodeId === nodeId && e.toPort === 'audio_in');
+              const busId = incomingEdge ? (incomingEdge.fromNodeId === 'source' ? ctx.layer.id : incomingEdge.fromNodeId) : 'master';
+
+              const features = ctx.audioEngine.getPitchFeatures(
+                busId, 
+                ef.minPitchHz || 80, 
+                ef.maxPitchHz || 800,
+                ef.pitchRangeMode || 'voice'
+              );
+              if (features) {
+                ctx.signalValues[`${nodeId}.pitch_hz`] = features.hz;
+                ctx.signalValues[`${nodeId}.pitch_midi`] = features.midi;
+                ctx.signalValues[`${nodeId}.stability`] = features.confidence;
+
+                const stateKey = `${ctx.layer.id}.${nodeId}`;
+                const lastNote = this.pitchStateMap.get(stateKey) ?? 0;
+
+                let isNoteChange = false;
+                if (features.hz > 20 && features.confidence > 0.4) {
+                  const midiNote = 12 * Math.log2(features.hz / 440) + 69;
+                  if (lastNote > 0 && Math.abs(midiNote - lastNote) >= 0.5) {
+                    isNoteChange = true;
+                  }
+                  this.pitchStateMap.set(stateKey, midiNote);
+                } else if (features.hz <= 20) {
+                  this.pitchStateMap.delete(stateKey);
+                }
+
+                ctx.signalValues[`${nodeId}.note_change_trig`] = isNoteChange ? 1.0 : 0.0;
+              }
+            });
+          } else if (effect.type === 'VowelFormantTracker') {
+            pipeline.push((ctx: DispatchContext) => {
+              const ef = ctx.layer.effects.find(e => e.id === nodeId) as any;
+              if (!ef) return;
+
+              const edges = ctx.layer.graph?.edges || [];
+              const incomingEdge = edges.find(e => e.toNodeId === nodeId && e.toPort === 'audio_in');
+              const busId = incomingEdge ? (incomingEdge.fromNodeId === 'source' ? ctx.layer.id : incomingEdge.fromNodeId) : 'master';
+
+              const features = ctx.audioEngine.getFormantFeatures(busId, ef.voiceProfile);
+              if (features) {
+                const sm = ef.smoothing ?? 0.8;
+                const prevSignals = this.latestSignals[ctx.layer.id] || {};
+                const prevX = prevSignals[`${nodeId}.vowel_x`] ?? 0.5;
+                const prevY = prevSignals[`${nodeId}.vowel_y`] ?? 0.5;
+
+                const targetX = features.x;
+                const targetY = features.y;
+
+                const curX = prevX * sm + targetX * (1 - sm);
+                const curY = prevY * sm + targetY * (1 - sm);
+
+                ctx.signalValues[`${nodeId}.formant_f1`] = features.f1;
+                ctx.signalValues[`${nodeId}.formant_f2`] = features.f2;
+                ctx.signalValues[`${nodeId}.vowel_x`] = curX;
+                ctx.signalValues[`${nodeId}.vowel_y`] = curY;
+
+                const getVowelZone = (x: number, y: number): string => {
+                  if (x < 0.5) {
+                    return y >= 0.5 ? 'Oo' : 'Oh';
+                  } else {
+                    return y >= 0.5 ? 'Ee' : 'Ah';
+                  }
+                };
+
+                const bus = ctx.audioEngine.getBusData(busId);
+                const isSilent = bus ? bus.peak < 0.02 : false;
+
+                const stateKey = `${ctx.layer.id}.${nodeId}`;
+                const lastZone = this.vowelStateMap.get(stateKey) ?? 'none';
+                const currentZone = isSilent ? 'none' : getVowelZone(curX, curY);
+
+                let isVowelChange = false;
+                if (currentZone !== 'none' && lastZone !== 'none' && currentZone !== lastZone) {
+                  isVowelChange = true;
+                }
+
+                this.vowelStateMap.set(stateKey, currentZone);
+                ctx.signalValues[`${nodeId}.vowel_change_trig`] = isVowelChange ? 1.0 : 0.0;
+              }
+            });
+          } else if (effect.type === 'SpokenWordVisualizer') {
+            pipeline.push((ctx: DispatchContext) => {
+              const ef = ctx.layer.effects.find(e => e.id === nodeId) as any;
+              if (!ef) return;
+
+              const edges = ctx.layer.graph?.edges || [];
+              const incomingEdge = edges.find(e => e.toNodeId === nodeId && e.toPort === 'audio_in');
+              const busId = incomingEdge ? (incomingEdge.fromNodeId === 'source' ? ctx.layer.id : incomingEdge.fromNodeId) : 'master';
+
+              const speech = ctx.audioEngine.getSpeechFeatures(busId, 10, 150);
+              const pitch = ctx.audioEngine.getPitchFeatures(busId, 80, 800);
+              const formant = ctx.audioEngine.getFormantFeatures(busId);
+
+              if (speech && pitch && formant) {
+                ctx.signalValues[`${nodeId}.envelope_out`] = speech.envelope;
+                ctx.signalValues[`${nodeId}.cadence_out`] = Math.min(1.0, speech.cadence);
+                ctx.signalValues[`${nodeId}.cadence`] = Math.min(1.0, speech.cadence);
+                ctx.signalValues[`${nodeId}.timbre_brightness`] = speech.timbral.centroid;
+                ctx.signalValues[`${nodeId}.timbre_flatness`] = speech.timbral.flatness;
+                ctx.signalValues[`${nodeId}.sibilance`] = speech.timbral.sibilance;
+
+                ctx.signalValues[`${nodeId}.pitch_hz`] = pitch.hz;
+                ctx.signalValues[`${nodeId}.pitch_midi`] = pitch.midi;
+                ctx.signalValues[`${nodeId}.stability`] = pitch.confidence;
+
+                ctx.signalValues[`${nodeId}.formant_f1`] = formant.f1;
+                ctx.signalValues[`${nodeId}.formant_f2`] = formant.f2;
+                ctx.signalValues[`${nodeId}.vowel_x`] = formant.x;
+                ctx.signalValues[`${nodeId}.vowel_y`] = formant.y;
+
+                const stateKey = `${ctx.layer.id}.${nodeId}`;
+
+                const threshold = 0.15;
+                const isSpeech = speech.envelope > threshold;
+                const wasSpeech = this.speechStateMap.get(`${stateKey}.speech`) ?? false;
+                
+                const isOnset = speech.envelope > 0.25 && !wasSpeech;
+                ctx.signalValues[`${nodeId}.onset_pulse`] = isOnset ? 1.0 : 0.0;
+
+                ctx.signalValues[`${nodeId}.speech_trig`] = (isSpeech && !wasSpeech) ? 1.0 : 0.0;
+                ctx.signalValues[`${nodeId}.silence_trig`] = (!isSpeech && wasSpeech) ? 1.0 : 0.0;
+                this.speechStateMap.set(`${stateKey}.speech`, isSpeech);
+
+                const lastNote = this.pitchStateMap.get(stateKey) ?? 0;
+                let isNoteChange = false;
+                if (pitch.hz > 20 && pitch.confidence > 0.4) {
+                  const midiNote = 12 * Math.log2(pitch.hz / 440) + 69;
+                  if (lastNote > 0 && Math.abs(midiNote - lastNote) >= 0.5) {
+                    isNoteChange = true;
+                  }
+                  this.pitchStateMap.set(stateKey, midiNote);
+                } else if (pitch.hz <= 20) {
+                  this.pitchStateMap.delete(stateKey);
+                }
+                ctx.signalValues[`${nodeId}.note_change_trig`] = isNoteChange ? 1.0 : 0.0;
+
+                const getVowelZone = (x: number, y: number): string => {
+                  if (x < 0.5) {
+                    return y >= 0.5 ? 'Oo' : 'Oh';
+                  } else {
+                    return y >= 0.5 ? 'Ee' : 'Ah';
+                  }
+                };
+                const bus = ctx.audioEngine.getBusData(busId);
+                const isSilent = bus ? bus.peak < 0.02 : false;
+                const lastZone = this.vowelStateMap.get(stateKey) ?? 'none';
+                const currentZone = isSilent ? 'none' : getVowelZone(formant.x, formant.y);
+                
+                let isVowelChange = false;
+                if (currentZone !== 'none' && lastZone !== 'none' && currentZone !== lastZone) {
+                  isVowelChange = true;
+                }
+                this.vowelStateMap.set(stateKey, currentZone);
+                ctx.signalValues[`${nodeId}.vowel_change_trig`] = isVowelChange ? 1.0 : 0.0;
+                
+                ctx.signalValues[`${nodeId}.video_out`] = 1.0;
+              }
+            });
           } else if (effect.type === 'Oscilloscope') {
             pipeline.push((ctx: DispatchContext) => {
               const ef = ctx.layer.effects.find(e => e.id === nodeId) as OscilloscopeEffect;
@@ -404,6 +611,57 @@ export class SignalDispatcher {
               });
               
               ctx.signalValues[`${nodeId}.audio_out`] = 1.0;
+            });
+          } else if (effect.type === 'AudioGate') {
+            pipeline.push((ctx: DispatchContext) => {
+              const ef = ctx.layer.effects.find(e => e.id === nodeId) as AudioGateEffect;
+              if (!ef) return;
+
+              // 1. Connection Management
+              const edges = ctx.layer.graph?.edges || [];
+              const inputEdge = edges.find(e => e.toNodeId === nodeId && e.toPort === 'audio_in');
+              if (inputEdge) {
+                const fromNodeId = inputEdge.fromNodeId;
+                ctx.audioEngine.connectGate(nodeId, fromNodeId === 'source' ? ctx.layer.id : fromNodeId);
+              } else {
+                ctx.audioEngine.connectGate(nodeId, 'master');
+              }
+
+              // 2. Bypass Trigger Logic
+              const trigger = ctx.signalValues[`${nodeId}.bypass_cv`] ?? 0;
+              const lastTrig = this.lastTriggerVals.get(`${ctx.layer.id}.${nodeId}.bypass_cv`) ?? 0;
+
+              if (ef.bypassLatching) {
+                if (trigger > 0.5 && lastTrig <= 0.5) {
+                  useEngineStore.getState().updateEffect(ctx.layer.id, nodeId, { bypass: !ef.bypass } as any);
+                }
+              } else {
+                if ((trigger > 0.5) !== ef.bypass) {
+                  useEngineStore.getState().updateEffect(ctx.layer.id, nodeId, { bypass: trigger > 0.5 } as any);
+                }
+              }
+              this.lastTriggerVals.set(`${ctx.layer.id}.${nodeId}.bypass_cv`, trigger);
+
+              // 3. Update AudioEngine Node Params
+              ctx.audioEngine.updateGateNode(nodeId, {
+                thresholdDb: ef.thresholdDb,
+                bypass: ef.bypass,
+                releaseMs: ef.releaseMs ?? 150
+              });
+
+              // 4. Update output CV signals
+              const bus = ctx.audioEngine.getGateBus(nodeId);
+              const isOpen = ctx.audioEngine.isGateOpen(nodeId);
+              ctx.signalValues[`${nodeId}.audio_out`] = 1.0;
+              ctx.signalValues[`${nodeId}.gate_active`] = isOpen ? 1.0 : 0.0;
+              if (bus) {
+                const rmsDb = bus.rms > 0 ? 20 * Math.log10(bus.rms) : -100;
+                ctx.signalValues[`${nodeId}.input_db`] = Math.max(-100, Math.min(0, rmsDb));
+                ctx.signalValues[`${nodeId}.input_rms`] = bus.rms;
+              } else {
+                ctx.signalValues[`${nodeId}.input_db`] = -100;
+                ctx.signalValues[`${nodeId}.input_rms`] = 0.0;
+              }
             });
           } else if (effect.type === 'Inverter') {
             pipeline.push((ctx: DispatchContext) => {
@@ -810,6 +1068,9 @@ export class SignalDispatcher {
       this.lfoPhases = {};
       this.noiseStates.clear();
       this.triggerPadStates.clear();
+      this.speechStateMap.clear();
+      this.pitchStateMap.clear();
+      this.vowelStateMap.clear();
       dt = 0;
     }
 

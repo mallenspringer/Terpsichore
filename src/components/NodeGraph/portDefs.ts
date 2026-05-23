@@ -1,4 +1,4 @@
-export type SignalType = 'video' | 'modulation' | 'trigger' | 'audio' | 'red' | 'green' | 'blue' | 'midi' | 'generic' | 'trajectory';
+export type SignalType = 'video' | 'modulation' | 'trigger' | 'audio' | 'red' | 'green' | 'blue' | 'midi' | 'generic' | 'trajectory' | 'pitchHz';
 
 export interface PortDef {
   id: string;
@@ -177,6 +177,57 @@ export const PORT_DEFS: Record<string, PortDef[]> = {
     { id: 'ring_mix_cv',  label: 'Ring Mix',  direction: 'in',  signalType: 'modulation' },
     { id: 'octave_cv',    label: 'Octave CV', direction: 'in',  signalType: 'modulation' },
   ],
+  AudioGate: [
+    { id: 'audio_in',    label: 'Audio In',   direction: 'in',  signalType: 'audio', priority: 0 },
+    { id: 'audio_out',   label: 'Audio Out',  direction: 'out', signalType: 'audio', priority: 1 },
+    { id: 'bypass_cv',   label: 'Bypass CV',  direction: 'in',  signalType: 'trigger', priority: 2 },
+    { id: 'gate_active', label: 'Gate Active', direction: 'out', signalType: 'trigger', priority: 3 },
+    { id: 'input_rms',   label: 'Input RMS',  direction: 'out', signalType: 'modulation', priority: 4 },
+    { id: 'input_db',    label: 'Input dB',   direction: 'out', signalType: 'pitchHz', priority: 5 },
+  ],
+  SpeechEnvelopeTracker: [
+    { id: 'audio_in', label: 'Audio In', direction: 'in', signalType: 'audio', priority: 0 },
+    { id: 'envelope_out', label: 'Env Out', direction: 'out', signalType: 'modulation', priority: 1 },
+    { id: 'cadence_out', label: 'Cadence', direction: 'out', signalType: 'modulation', priority: 2 },
+    { id: 'speech_trig', label: 'Speech On', direction: 'out', signalType: 'trigger', priority: 3 },
+    { id: 'silence_trig', label: 'Silence On', direction: 'out', signalType: 'trigger', priority: 4 }
+  ],
+  VocalPitchTracker: [
+    { id: 'audio_in', label: 'Audio In', direction: 'in', signalType: 'audio', priority: 0 },
+    { id: 'pitch_midi', label: 'MIDI Pitch', direction: 'out', signalType: 'modulation', priority: 1 },
+    { id: 'stability', label: 'Stability', direction: 'out', signalType: 'modulation', priority: 2 },
+    { id: 'pitch_hz', label: 'Pitch Hz', direction: 'out', signalType: 'pitchHz', priority: 3 },
+    { id: 'note_change_trig', label: 'Note Chg', direction: 'out', signalType: 'trigger', priority: 4 }
+  ],
+  VowelFormantTracker: [
+    { id: 'audio_in', label: 'Audio In', direction: 'in', signalType: 'audio', priority: 0 },
+    { id: 'vowel_x', label: 'Vowel X', direction: 'out', signalType: 'modulation', priority: 1 },
+    { id: 'vowel_y', label: 'Vowel Y', direction: 'out', signalType: 'modulation', priority: 2 },
+    { id: 'vowel_change_trig', label: 'Vowel Trig', direction: 'out', signalType: 'trigger', priority: 3 },
+    { id: 'formant_f1', label: 'F1 Hz', direction: 'out', signalType: 'pitchHz', priority: 4 },
+    { id: 'formant_f2', label: 'F2 Hz', direction: 'out', signalType: 'pitchHz', priority: 5 }
+  ],
+  SpokenWordVisualizer: [
+    { id: 'audio_in', label: 'Audio In', direction: 'in', signalType: 'audio', priority: 0 },
+    { id: 'video_out', label: 'Video Out', direction: 'out', signalType: 'video', priority: 1 },
+    { id: 'envelope_out', label: 'Env Out', direction: 'out', signalType: 'modulation', priority: 2 },
+    { id: 'cadence_out', label: 'Cadence', direction: 'out', signalType: 'modulation', priority: 3 },
+    { id: 'timbre_brightness', label: 'Timbre Bright', direction: 'out', signalType: 'modulation', priority: 4 },
+    { id: 'timbre_flatness', label: 'Timbre Flat', direction: 'out', signalType: 'modulation', priority: 5 },
+    { id: 'sibilance', label: 'Sibilance', direction: 'out', signalType: 'modulation', priority: 6 },
+    { id: 'pitch_hz', label: 'Pitch Hz', direction: 'out', signalType: 'pitchHz', priority: 7 },
+    { id: 'pitch_midi', label: 'MIDI Pitch', direction: 'out', signalType: 'modulation', priority: 8 },
+    { id: 'stability', label: 'Stability', direction: 'out', signalType: 'modulation', priority: 9 },
+    { id: 'formant_f1', label: 'F1 Hz', direction: 'out', signalType: 'pitchHz', priority: 10 },
+    { id: 'formant_f2', label: 'F2 Hz', direction: 'out', signalType: 'pitchHz', priority: 11 },
+    { id: 'vowel_x', label: 'Vowel X', direction: 'out', signalType: 'modulation', priority: 12 },
+    { id: 'vowel_y', label: 'Vowel Y', direction: 'out', signalType: 'modulation', priority: 13 },
+    { id: 'onset_pulse', label: 'Onset Trig', direction: 'out', signalType: 'trigger', priority: 14 },
+    { id: 'speech_trig', label: 'Speech On', direction: 'out', signalType: 'trigger', priority: 15 },
+    { id: 'silence_trig', label: 'Silence On', direction: 'out', signalType: 'trigger', priority: 16 },
+    { id: 'note_change_trig', label: 'Note Chg', direction: 'out', signalType: 'trigger', priority: 17 },
+    { id: 'vowel_change_trig', label: 'Vowel Trig', direction: 'out', signalType: 'trigger', priority: 18 }
+  ],
   Inverter: [
     { id: 'video_in',   label: 'Video In',   direction: 'in',  signalType: 'video' },
     { id: 'video_out',  label: 'Video Out',  direction: 'out', signalType: 'video', priority: 0 },
@@ -325,6 +376,7 @@ export const SIGNAL_COLORS: Record<SignalType, string> = {
   midi:       '#39ff14', // Workstation Green
   trajectory: '#18f58c', // Mint Green
   generic:    '#888888', // Gray
+  pitchHz:    '#dc143c', // Crimson
 };
 
 export const SOURCE_WIRE_COLOR: Record<string, string> = {
@@ -422,6 +474,11 @@ export const MODULE_DISPLAY_NAMES: Record<string, string> = {
   StepSequencer: 'Sequencer',
   AlphaAdjust: 'Alpha Adjust',
   AudioTransformer: 'Audio Utility',
+  AudioGate: 'Audio Gate',
   NoiseSource: 'Noise Gen',
   ColorNoise: 'Color Noise',
+  SpeechEnvelopeTracker: 'Vocal Env',
+  VocalPitchTracker: 'Pitch Track',
+  VowelFormantTracker: 'Vowel Track',
+  SpokenWordVisualizer: 'Vocal Visualizer',
 };

@@ -887,7 +887,9 @@ export const SOURCE_ROWS: Record<string, ControlRowDef[]> = {
           const startMic = async () => {
             try {
               stream = await navigator.mediaDevices.getUserMedia({ 
-                audio: deviceId ? { deviceId: { exact: deviceId } } : true 
+                audio: deviceId 
+                  ? { deviceId: { exact: deviceId }, echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+                  : { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
               });
               await AudioEngine.getInstance().resume();
               AudioEngine.getInstance().registerStream(registrationId, stream);
@@ -1993,4 +1995,8 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
       }
     },
   ],
+  SpeechEnvelopeTracker: [],
+  VocalPitchTracker: [],
+  VowelFormantTracker: [],
+  SpokenWordVisualizer: [],
 };

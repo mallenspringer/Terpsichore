@@ -375,6 +375,52 @@ export interface AudioModulatorEffect {
   bypass: boolean;
 }
 
+export interface AudioGateEffect {
+  id: string;
+  type: 'AudioGate';
+  thresholdDb: number; // -80 to 0
+  bypass: boolean;
+  bypassLatching: boolean;
+  releaseMs: number; // 10 to 1000 ms
+}
+
+export interface SpeechEnvelopeTrackerEffect {
+  id: string;
+  type: 'SpeechEnvelopeTracker';
+  layerId: string;
+  attackMs: number;
+  releaseMs: number;
+  sensitivityDb: number;
+  speechContinuous?: boolean;
+  silenceContinuous?: boolean;
+}
+
+export interface VocalPitchTrackerEffect {
+  id: string;
+  type: 'VocalPitchTracker';
+  layerId: string;
+  minPitchHz: number;
+  maxPitchHz: number;
+  tolerance: number;
+  pitchRangeMode?: 'voice' | 'music';
+}
+
+export interface VowelFormantTrackerEffect {
+  id: string;
+  type: 'VowelFormantTracker';
+  layerId: string;
+  smoothing: number;
+  voiceProfile?: 'universal' | 'baritone_bass' | 'tenor_contralto_alto' | 'mezzo_soprano';
+}
+
+export interface SpokenWordVisualizerEffect {
+  id: string;
+  type: 'SpokenWordVisualizer';
+  layerId: string;
+  renderMode: 'Constellation' | 'FlowingRibbon' | 'RadialWaterfall';
+  colorPalette: string;
+}
+
 export type SignalType = 'video' | 'audio' | 'modulation' | 'trigger' | 'midi' | 'generic' | 'trajectory';
 
 export interface InterLayerEdge {
@@ -480,7 +526,8 @@ export type AnyEffect =
   | SpawnEffect | PathEffect | InverterEffect | VideoMixerEffect | AlphaAdjustEffect
   | LogicGateEffect | TriggeredGateEffect | PatternEffect | KaleidoscopeEffect 
   | SignalMathEffect | SampleAndHoldEffect | StepSequencerEffect | PixelProcessorEffect
-  | AudioSourceEffect | OscilloscopeEffect | SpectralSplitterEffect | AudioTransformerEffect | AudioModulatorEffect
+  | AudioSourceEffect | OscilloscopeEffect | SpectralSplitterEffect | AudioTransformerEffect | AudioModulatorEffect | AudioGateEffect
+  | SpeechEnvelopeTrackerEffect | VocalPitchTrackerEffect | VowelFormantTrackerEffect | SpokenWordVisualizerEffect
   | ShapeGeneratorSource | VideoURLSource | VideoFileSource | WebcamCaptureSource | NoiseVideoSource | ColorNoiseSource
   | AudioInputSource | AudioFileSource | SystemAudioSource | ImageLoaderSource | ImageFileSource | SignalProcessorSource;
 
@@ -488,7 +535,8 @@ export type EffectType =
   | 'Transform2D' | 'ColorAdjust' | 'LumaKey' | 'SimpleFeedback' 
   | 'InterLayerOutput' | 'InterLayerInput' 
   | 'ColorRGB' | 'LumaSplitter' | 'Spawn' | 'Path' | 'Inverter' | 'VideoMixer' | 'AlphaAdjust'
-  | 'LogicGate' | 'TriggeredGate' | 'Pattern' | 'Kaleidoscope' | 'SignalMath' | 'SampleAndHold' | 'StepSequencer' | 'AudioSource' | 'Oscilloscope' | 'SpectralSplitter' | 'PixelProcessor' | 'AudioTransformer' | 'AudioModulator'
+  | 'LogicGate' | 'TriggeredGate' | 'Pattern' | 'Kaleidoscope' | 'SignalMath' | 'SampleAndHold' | 'StepSequencer' | 'AudioSource' | 'Oscilloscope' | 'SpectralSplitter' | 'PixelProcessor' | 'AudioTransformer' | 'AudioModulator' | 'AudioGate'
+  | 'SpeechEnvelopeTracker' | 'VocalPitchTracker' | 'VowelFormantTracker' | 'SpokenWordVisualizer'
   | 'ShapeGenerator' | 'VideoURL' | 'VideoFile' | 'WebcamCapture' | 'NoiseSource' | 'ColorNoise' | 'AudioInput' | 'AudioFile' | 'SystemAudio' | 'ImageLoader' | 'ImageFile' | 'SignalProcessor';
 
 // --- GRAPH ---

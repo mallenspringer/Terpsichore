@@ -95,12 +95,30 @@ Channel manipulation and static color generation.
     *   **Add**: Offsets the channel value.
     *   **Mult**: Scales the channel intensity (ring modulation for color).
 *   **Parameters**: Individual R, G, B levels and modulation jacks.
-*   **Use Cases**: Color grading, channel swapping, or generating solid color backgrounds for masks.
+### Key Mixer (🔑🎛️)
+*Tentative Roadmap Feature* - A multi-input keying effect node designed to mask and blend layer textures based on pixel values.
+*   **Modes**:
+    *   **Luma Key**: Keys pixels out based on luminance/brightness ranges.
+    *   **Chroma Key**: Keys pixels out based on chrominance/color ranges (with tolerance and edge spill suppression).
+*   **Use Cases**: Seamlessly compositing video files against custom generated procedural shapes, or keying green-screen camera streams onto complex visual synthesis loops.
 
 ---
 
 ## 3. Utility
-Control signal generators and logic processors (CPU-bound).
+Control signal generators and logic processors.
+
+### Video Mixer (🎛️)
+A high-performance 4-channel composition and blending engine (GPU-bound).
+*   **Parameters**:
+    *   **V1–V4 Level**: Individual level knobs (0.0 to 1.0) defining the blend weight of each channel. Double-click resets to 1.0.
+    *   **V1–V4 Alpha**: Individual manual opacity controls. Double-click resets to 1.0.
+    *   **V1–V4 Mix Mode**: Dropdown selection per channel supporting `Normal`, `Add` (additive blending), `Screen`, and `Multiply` (pre-multiplied blend modes).
+    *   **Level CV & Alpha CV**: Modulation input jacks per channel.
+    *   **Invert Toggles**: Located on individual CV inputs (like Alpha inputs). In unipolar mode, activating invert reverses the response (e.g., as a unipolar LFO rises from 0.0 to 1.0, alpha decreases from 1.0 to 0.0).
+*   **Signal & Layout Behavior**:
+    *   **Safe Fallback**: Unplugged ports (V2–V4) fall back to a transparent black dummy texture, preventing inactive channels from distorting active layers.
+    *   **snapped Snuggable Accordions**: Collapsing individual channel panels snaps the incoming edge cables directly onto the folded subgroup header (`data-group-header`), preserving clean coordinate routing.
+*   **Use Cases**: Layering live webcam capture over organic noise generators, complex masking, or stacking shape sequences on top of background feedback.
 
 ### LFO (〜)
 Low-Frequency Oscillator for modulation.

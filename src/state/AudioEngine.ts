@@ -1,4 +1,8 @@
 import { AudioBusData } from './types';
+import { EnvelopeFollower } from '../dsp/EnvelopeFollower';
+import { YinPitchDetector } from '../dsp/YinPitchDetector';
+import { LpcFormantTracker } from '../dsp/LpcFormantTracker';
+import { SpectralTimbreExtractor } from '../dsp/SpectralTimbreExtractor';
 
 export class AudioEngine {
   private static instance: AudioEngine;
@@ -39,9 +43,31 @@ export class AudioEngine {
     bus: AudioBusData;
   }> = new Map();
 
+  private gateNodes: Map<string, {
+    input: GainNode;
+    dryGain: GainNode;
+    wetGain: GainNode;
+    gateGain: GainNode;
+    output: GainNode;
+    inputAnalyzer: AnalyserNode;
+    outputAnalyzer: AnalyserNode;
+    bus: AudioBusData;
+    thresholdDb: number;
+    bypass: boolean;
+    isOpen: boolean;
+    releaseMs: number;
+  }> = new Map();
+
   private activeConnections: Map<string, string> = new Map(); // nodeId -> fromBusId
   private activeModConnections: Map<string, string> = new Map(); // nodeId -> fromBusId
   private activeLayerAudioTargets: Map<string, string | null> = new Map(); // layerId -> busId or null (default source)
+
+  // Dynamic DSP Extractor Instances per Bus
+  private envelopeFollowers: Map<string, EnvelopeFollower> = new Map();
+  private pitchDetectors: Map<string, YinPitchDetector> = new Map();
+  private formantTrackers: Map<string, LpcFormantTracker> = new Map();
+  private timbreExtractors: Map<string, SpectralTimbreExtractor> = new Map();
+  private streams: Map<string, MediaStream> = new Map();
 
   // Global Audio Bus Registry
   private buses: Map<string, AudioBusData> = new Map();
@@ -145,6 +171,7 @@ export class AudioEngine {
       this.moduleGains.set(id, moduleGain);
       this.analyzers.set(id, analyzer);
       this.layerGains.set(id, layerGain);
+      this.streams.set(id, stream);
       
       this.initializeBus(id, `Stream ${id}`);
     } catch (e) {
@@ -157,11 +184,21 @@ export class AudioEngine {
     const analyzer = this.analyzers.get(id);
     const mGain = this.moduleGains.get(id);
     const lGain = this.layerGains.get(id);
+    const stream = this.streams.get(id);
 
     if (source) source.disconnect();
     if (mGain) mGain.disconnect();
     if (analyzer) analyzer.disconnect();
     if (lGain) lGain.disconnect();
+
+    if (stream) {
+      try {
+        stream.getTracks().forEach(track => track.stop());
+      } catch (e) {
+        console.error(`[AudioEngine] Error stopping stream tracks for ${id}`, e);
+      }
+      this.streams.delete(id);
+    }
 
     this.sources.delete(id);
     this.moduleGains.delete(id);
@@ -464,9 +501,86 @@ export class AudioEngine {
     }
   }
 
+  public updateGateNode(nodeId: string, params: {
+    thresholdDb: number;
+    bypass: boolean;
+    releaseMs: number;
+  }) {
+    let nodes = this.gateNodes.get(nodeId);
+    
+    if (!nodes) {
+      const input = this.context.createGain();
+      const dryGain = this.context.createGain();
+      const wetGain = this.context.createGain();
+      const gateGain = this.context.createGain();
+      const output = this.context.createGain();
+      const inputAnalyzer = this.context.createAnalyser();
+      inputAnalyzer.fftSize = this.fftSize;
+      const outputAnalyzer = this.context.createAnalyser();
+      outputAnalyzer.fftSize = this.fftSize;
+
+      input.connect(dryGain);
+      dryGain.connect(output);
+
+      input.connect(wetGain);
+      wetGain.connect(gateGain);
+      gateGain.connect(output);
+
+      input.connect(inputAnalyzer);
+      output.connect(outputAnalyzer);
+
+      const bus: AudioBusData = {
+        id: nodeId,
+        name: `Gate ${nodeId}`,
+        peak: 0, rms: 0,
+        fft: new Float32Array(this.fftSize / 2),
+        waveform: new Float32Array(this.fftSize),
+        onset: false, bpm: 120, confidence: 0,
+        bands: { bass: 0, mid: 0, high: 0, low: 0, lowMid: 0, midGranular: 0, highMid: 0, highGranular: 0 }
+      };
+
+      nodes = { input, dryGain, wetGain, gateGain, output, inputAnalyzer, outputAnalyzer, bus, thresholdDb: params.thresholdDb, bypass: params.bypass, isOpen: true, releaseMs: params.releaseMs };
+      this.gateNodes.set(nodeId, nodes);
+      this.buses.set(nodeId, bus);
+    }
+
+    nodes.thresholdDb = params.thresholdDb;
+    nodes.bypass = params.bypass;
+    nodes.releaseMs = params.releaseMs;
+  }
+
+  public connectGate(nodeId: string, fromBusId: string) {
+    const nodes = this.gateNodes.get(nodeId);
+    if (!nodes) return;
+
+    const current = this.activeConnections.get(nodeId);
+    if (current === fromBusId) return;
+
+    if (current) {
+      const oldOutput = this.getBusOutput(current);
+      if (oldOutput) {
+        try { oldOutput.disconnect(nodes.input); } catch(e) {}
+      }
+    }
+
+    const nextOutput = this.getBusOutput(fromBusId);
+    if (nextOutput) {
+      nextOutput.connect(nodes.input);
+      this.activeConnections.set(nodeId, fromBusId);
+    }
+  }
+
+  public getGateBus(nodeId: string): AudioBusData | undefined {
+    return this.gateNodes.get(nodeId)?.bus;
+  }
+
+  public isGateOpen(nodeId: string): boolean {
+    return this.gateNodes.get(nodeId)?.isOpen ?? true;
+  }
+
   private getBusOutput(id: string): AudioNode | undefined {
     if (id === 'master') return this.masterGain;
-    return this.moduleGains.get(id) || this.processingNodes.get(id)?.output || this.modulatorNodes.get(id)?.output || this.layerGains.get(id);
+    return this.moduleGains.get(id) || this.processingNodes.get(id)?.output || this.modulatorNodes.get(id)?.output || this.gateNodes.get(id)?.output || this.layerGains.get(id);
   }
 
   public disconnectNode(nodeId: string) {
@@ -498,6 +612,20 @@ export class AudioEngine {
       this.modulatorNodes.delete(nodeId);
       this.activeModConnections.delete(nodeId);
     }
+
+    const gNodes = this.gateNodes.get(nodeId);
+    if (gNodes) {
+      gNodes.input.disconnect();
+      gNodes.dryGain.disconnect();
+      gNodes.wetGain.disconnect();
+      gNodes.gateGain.disconnect();
+      gNodes.output.disconnect();
+      gNodes.inputAnalyzer.disconnect();
+      gNodes.outputAnalyzer.disconnect();
+      this.gateNodes.delete(nodeId);
+      this.activeConnections.delete(nodeId);
+      this.buses.delete(nodeId);
+    }
   }
 
   public getTransformerBus(nodeId: string): AudioBusData | undefined {
@@ -517,6 +645,31 @@ export class AudioEngine {
     this.processingNodes.forEach((nodes) => {
       this.runAnalysis(nodes.analyzer, nodes.bus);
     });
+
+    this.gateNodes.forEach((nodes) => {
+      this.runAnalysis(nodes.inputAnalyzer, nodes.bus);
+
+      const now = this.context.currentTime;
+      if (nodes.bypass) {
+        nodes.dryGain.gain.setTargetAtTime(1.0, now, 0.02);
+        nodes.wetGain.gain.setTargetAtTime(0.0, now, 0.02);
+        nodes.gateGain.gain.setTargetAtTime(1.0, now, 0.02);
+        nodes.isOpen = true;
+      } else {
+        nodes.dryGain.gain.setTargetAtTime(0.0, now, 0.02);
+        nodes.wetGain.gain.setTargetAtTime(1.0, now, 0.02);
+
+        const rmsDb = nodes.bus.rms > 0 ? 20 * Math.log10(nodes.bus.rms) : -100;
+        if (rmsDb >= nodes.thresholdDb) {
+          nodes.isOpen = true;
+          nodes.gateGain.gain.setTargetAtTime(1.0, now, 0.01); // 10ms attack constant
+        } else {
+          nodes.isOpen = false;
+          const releaseSec = Math.max(0.01, nodes.releaseMs / 1000.0);
+          nodes.gateGain.gain.setTargetAtTime(0.0, now, releaseSec);
+        }
+      }
+    });
   }
 
   private runAnalysis(analyzer: AnalyserNode, bus: AudioBusData) {
@@ -531,7 +684,10 @@ export class AudioEngine {
       sumSq += val * val;
     }
     bus.peak = peak;
-    bus.rms = Math.sqrt(sumSq / bus.waveform.length);
+    const instantaneousRms = Math.sqrt(sumSq / bus.waveform.length);
+    // Apply temporal Exponential Moving Average (EMA) filter to prevent low-frequency ripples and jitter
+    // If bus.rms is 0 (first frame or silence reset), initialize directly. Otherwise apply EMA with alpha = 0.15 (~110ms integration time).
+    bus.rms = bus.rms === 0 ? instantaneousRms : bus.rms + 0.15 * (instantaneousRms - bus.rms);
 
     bus.bands = {
       bass: this.getAverage(bus.fft, 0, 6),
@@ -550,5 +706,87 @@ export class AudioEngine {
 
   public getPeakVolume(id: string): number {
     return this.buses.get(id)?.peak ?? 0;
+  }
+
+  public getSpeechFeatures(busId: string, attackMs: number, releaseMs: number) {
+    const bus = this.buses.get(busId);
+    const analyzer = this.analyzers.get(busId) || this.processingNodes.get(busId)?.analyzer || this.modulatorNodes.get(busId)?.analyzer || this.gateNodes.get(busId)?.outputAnalyzer;
+    if (!bus || !analyzer) return null;
+
+    let follower = this.envelopeFollowers.get(busId);
+    if (!follower) {
+      follower = new EnvelopeFollower(this.context.sampleRate);
+      this.envelopeFollowers.set(busId, follower);
+    }
+    follower.setConstants(attackMs, releaseMs);
+
+    analyzer.getFloatTimeDomainData(bus.waveform as any);
+    const envelope = follower.process(bus.waveform);
+
+    let timbre = this.timbreExtractors.get(busId);
+    if (!timbre) {
+      timbre = new SpectralTimbreExtractor(this.context.sampleRate);
+      this.timbreExtractors.set(busId, timbre);
+    }
+    analyzer.getFloatFrequencyData(bus.fft as any);
+    const timbral = timbre.process(bus.fft);
+
+    return {
+      envelope,
+      cadence: bus.rms * 1.5,
+      timbral
+    };
+  }
+
+  public getPitchFeatures(busId: string, minPitchHz: number, maxPitchHz: number, pitchRangeMode: 'voice' | 'music' = 'voice') {
+    const bus = this.buses.get(busId);
+    const analyzer = this.analyzers.get(busId) || this.processingNodes.get(busId)?.analyzer || this.modulatorNodes.get(busId)?.analyzer || this.gateNodes.get(busId)?.outputAnalyzer;
+    if (!bus || !analyzer) return null;
+
+    let detector = this.pitchDetectors.get(busId);
+    if (!detector) {
+      detector = new YinPitchDetector(this.context.sampleRate, minPitchHz, maxPitchHz);
+      this.pitchDetectors.set(busId, detector);
+    }
+
+    analyzer.getFloatTimeDomainData(bus.waveform as any);
+    const result = detector.getPitch(bus.waveform);
+
+    // Convert Hz to MIDI Pitch normalized (0.0 to 1.0)
+    let midiPitch = 0.5;
+    if (result.hz > 20) {
+      const midiNote = 12 * Math.log2(result.hz / 440) + 69;
+      if (pitchRangeMode === 'music') {
+        // Music range bounds: note 24 (C1, ~32.7Hz) to note 123 (D#9, ~9877.7Hz)
+        midiPitch = Math.max(0, Math.min(1, (midiNote - 24) / 99));
+      } else {
+        // Human voice range bounds: note 36 (C2, ~65.4Hz) to note 84 (C6, ~1046.5Hz)
+        midiPitch = Math.max(0, Math.min(1, (midiNote - 36) / 48));
+      }
+    }
+
+    return {
+      hz: result.hz,
+      midi: midiPitch,
+      confidence: result.confidence
+    };
+  }
+
+  public getFormantFeatures(
+    busId: string,
+    profile: 'universal' | 'baritone_bass' | 'tenor_contralto_alto' | 'mezzo_soprano' = 'universal'
+  ) {
+    const bus = this.buses.get(busId);
+    const analyzer = this.analyzers.get(busId) || this.processingNodes.get(busId)?.analyzer || this.modulatorNodes.get(busId)?.analyzer || this.gateNodes.get(busId)?.outputAnalyzer;
+    if (!bus || !analyzer) return null;
+
+    let tracker = this.formantTrackers.get(busId);
+    if (!tracker) {
+      tracker = new LpcFormantTracker(this.context.sampleRate);
+      this.formantTrackers.set(busId, tracker);
+    }
+
+    analyzer.getFloatTimeDomainData(bus.waveform as any);
+    return tracker.getFormants(bus.waveform, profile);
   }
 }

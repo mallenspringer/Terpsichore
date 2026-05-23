@@ -387,6 +387,80 @@
 .port-dot:hover { background: currentColor; }
 .port-dot.compatible-target { background: currentColor; box-shadow: 0 0 4px currentColor; }
 
+.continuous-toggle-btn {
+  width: 7px;
+  height: 7px;
+  border-radius: 1.5px;
+  border: 1px solid currentColor;
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+  transition: all 0.15s ease-in-out;
+  flex-shrink: 0;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.continuous-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 0 3px currentColor;
+}
+
+.continuous-toggle-btn.active {
+  background: currentColor;
+  box-shadow: 0 0 6px currentColor;
+}
+
+.continuous-toggle-btn.active:hover {
+  background: currentColor;
+  box-shadow: 0 0 9px currentColor;
+  filter: brightness(1.2);
+}
+
+.vocal-range-mode-toggle {
+  display: flex;
+  background: #111;
+  border-radius: 4px;
+  border: 1px solid #222;
+  overflow: hidden;
+  margin: 6px 0;
+  width: 100%;
+}
+
+.range-mode-btn {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: #555;
+  font-size: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 4px 0;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s ease-in-out;
+}
+
+.range-mode-btn:hover {
+  color: #aaa;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.range-mode-btn.active-voice {
+  background: #18e4f5; /* Neon Cyan */
+  color: #111;
+  font-weight: bold;
+  box-shadow: 0 0 8px rgba(24, 228, 245, 0.4);
+}
+
+.range-mode-btn.active-music {
+  background: #d918f5; /* Neon Magenta */
+  color: #111;
+  font-weight: bold;
+  box-shadow: 0 0 8px rgba(217, 24, 245, 0.4);
+}
+
 .port-label {
   font-size: 8px;
   color: #555;
@@ -1568,3 +1642,513 @@
 }
 
 .seq-expand-btn:hover { background: #222; color: #aaa; }
+
+/* ===== VOCAL TRACKING & AUDIO REACTIVITY MODULES ===== */
+
+/* --- Speech Envelope Tracker --- */
+.vocal-env-rack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  background: #0d0d0d;
+  box-sizing: border-box;
+}
+
+.db-meter-container {
+  display: flex;
+  height: 120px;
+  background: #050505;
+  border: 1px solid #222;
+  border-radius: 4px;
+  position: relative;
+  overflow: hidden;
+  padding: 4px;
+  gap: 8px;
+}
+
+.db-meter-ticks {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  font-size: 7px;
+  color: #444;
+  height: 100%;
+  user-select: none;
+  font-family: monospace;
+}
+
+.db-meter-bar-wrap {
+  flex: 1;
+  position: relative;
+  background: #111;
+  border-radius: 2px;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.db-meter-bar-fill {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  background: linear-gradient(to top, #d918f5, #18e4f5);
+  box-shadow: 0 0 10px rgba(24, 228, 245, 0.4);
+  transition: height 0.05s ease-out;
+}
+
+.db-meter-threshold-line {
+  position: absolute;
+  left: 0; right: 0;
+  height: 2px;
+  background: #f58c18;
+  box-shadow: 0 0 6px #f58c18;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.onset-led-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #161616;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid #222;
+}
+
+.onset-led {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #222;
+  border: 1px solid #333;
+  transition: background 0.05s, box-shadow 0.05s;
+}
+
+.onset-led.active {
+  background: #18e4f5;
+  box-shadow: 0 0 8px #18e4f5, 0 0 15px #18e4f5;
+  border-color: #fff;
+}
+
+.vocal-knob-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.vocal-knob-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: #161616;
+  padding: 6px;
+  border-radius: 4px;
+  border: 1px solid #222;
+}
+
+.vocal-knob-label {
+  font-size: 8px;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 4px;
+}
+
+/* --- Pitch Tracker --- */
+.pitch-track-rack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  background: #0d0d0d;
+}
+
+.pitch-lcd-display {
+  background: #080c0a;
+  border: 1px solid #1a221f;
+  border-radius: 4px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  box-shadow: inset 0 0 10px rgba(0,0,0,0.8);
+}
+
+.pitch-lcd-note {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 26px;
+  font-weight: bold;
+  color: #18e4f5;
+  text-shadow: 0 0 10px rgba(24, 228, 245, 0.6);
+  letter-spacing: -1px;
+  line-height: 1;
+}
+
+.pitch-lcd-hz {
+  font-size: 8px;
+  color: #0f8b96;
+  font-family: monospace;
+  margin-top: 2px;
+}
+
+.pitch-tuner-bar-wrap {
+  width: 100%;
+  height: 6px;
+  background: #111;
+  border-radius: 3px;
+  margin-top: 6px;
+  position: relative;
+  overflow: hidden;
+}
+
+.pitch-tuner-needle {
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 2px;
+  background: #d918f5;
+  box-shadow: 0 0 4px #d918f5;
+  left: 50%;
+  transform: translateX(-50%);
+  transition: left 0.1s ease-out;
+}
+
+.pitch-sparkline-canvas {
+  width: 100%;
+  height: 40px;
+  background: #050505;
+  border: 1px solid #222;
+  border-radius: 4px;
+  display: block;
+}
+
+/* --- Vowel Tracker --- */
+.vowel-track-rack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  background: #0d0d0d;
+}
+
+.vowel-scatter-canvas {
+  width: 100%;
+  height: 120px;
+  background: #050505;
+  border: 1px solid #222;
+  border-radius: 4px;
+  display: block;
+}
+
+/* --- Spoken Word Visualizer (Dense Signal Bay) --- */
+.spoken-word-rack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  background: #0a0a0a;
+}
+
+.spoken-word-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 8px;
+}
+
+.spoken-word-column {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.spoken-word-sub-header {
+  font-size: 8px;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  border-bottom: 1px solid #222;
+  padding-bottom: 2px;
+  font-weight: bold;
+}
+
+.spoken-word-meter-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: #111;
+  padding: 4px 6px;
+  border-radius: 4px;
+  border: 1px solid #222;
+}
+
+.spoken-word-meter-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 8px;
+  color: #888;
+}
+
+.spoken-word-meter-val {
+  color: #18e4f5;
+  font-family: monospace;
+}
+
+.spoken-word-meter-bar {
+  width: 100%;
+  height: 5px;
+  background: #050505;
+  border-radius: 1px;
+  overflow: hidden;
+  position: relative;
+}
+
+.spoken-word-meter-fill {
+  height: 100%;
+  background: linear-gradient(to right, #d918f5, #18e4f5);
+  transition: width 0.05s ease-out;
+}
+
+.spoken-word-led-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #111;
+  padding: 4px 6px;
+  border-radius: 4px;
+  border: 1px solid #222;
+}
+
+.spoken-word-led-label {
+  font-size: 8px;
+  color: #888;
+}
+
+.spoken-word-led-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #222;
+  border: 1px solid #333;
+  transition: background 0.05s, box-shadow 0.05s;
+}
+
+.spoken-word-led-dot.active {
+  background: #d918f5;
+  box-shadow: 0 0 6px #d918f5, 0 0 12px #d918f5;
+  border-color: #fff;
+}
+
+/* --- Audio Gate Module --- */
+.audio-gate-rack {
+  display: flex;
+  flex-direction: row;
+  gap: 12px;
+  padding: 10px;
+  background: #0a0a0a;
+  border-radius: 6px;
+  border: 1px solid #1c1c1c;
+  box-shadow: inset 0 0 15px rgba(0, 0, 0, 0.9);
+  align-items: stretch;
+  min-height: 140px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.gate-meter-container {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+  width: 44px;
+}
+
+.gate-meter-ticks {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  font-size: 7px;
+  color: #555;
+  font-family: monospace;
+  text-align: right;
+  line-height: 1;
+  padding: 2px 0;
+  user-select: none;
+}
+
+.gate-meter-bar-wrap {
+  width: 14px;
+  position: relative;
+  background: #050505;
+  border: 1px solid #1f1f1f;
+  border-radius: 3px;
+  cursor: ns-resize;
+  overflow: hidden;
+}
+
+.gate-meter-bar-fill {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(to top, #6b0f1a, #b31010, #ff2e2e);
+  box-shadow: 0 0 6px rgba(255, 46, 46, 0.4);
+  transition: height 0.05s ease-out;
+}
+
+.gate-meter-threshold-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: #ff7700;
+  box-shadow: 0 0 8px #ff7700;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.gate-controls-column {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-grow: 1;
+  justify-content: space-between;
+}
+
+.gate-led-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #111;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid #1c1c1c;
+}
+
+.gate-led {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #222;
+  border: 1px solid #333;
+  transition: background 0.08s, box-shadow 0.08s;
+}
+
+.gate-led.open {
+  background: #00ff66;
+  box-shadow: 0 0 8px #00ff66, 0 0 15px #00ff66;
+  border-color: #fff;
+}
+
+.gate-led.closed {
+  background: #3a3a3a;
+  border-color: #444;
+}
+
+.gate-led-label {
+  font-size: 8px;
+  font-weight: bold;
+  color: #888;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  user-select: none;
+}
+
+.gate-value-display {
+  display: flex;
+  flex-direction: column;
+  background: #111;
+  border: 1px solid #1c1c1c;
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-family: monospace;
+}
+
+.gate-value-display .label {
+  font-size: 7px;
+  color: #666;
+  letter-spacing: 0.05em;
+  margin-bottom: 2px;
+  text-transform: uppercase;
+}
+
+.gate-value-display .value {
+  font-size: 11px;
+  color: #ff2e2e;
+  font-weight: bold;
+  text-shadow: 0 0 5px rgba(255, 46, 46, 0.3);
+}
+
+.gate-bypass-btn {
+  background: #1c1c1c;
+  border: 1px solid #333;
+  border-radius: 4px;
+  color: #aaa;
+  font-family: inherit;
+  font-size: 9px;
+  font-weight: bold;
+  padding: 5px;
+  cursor: pointer;
+  letter-spacing: 0.05em;
+  transition: all 0.1s;
+  text-align: center;
+  outline: none;
+}
+
+.gate-bypass-btn:hover {
+  background: #282828;
+  border-color: #444;
+  color: #fff;
+}
+
+.gate-bypass-btn.active {
+  background: #4a0d0d;
+  border-color: #ff2e2e;
+  color: #ff8b8b;
+  box-shadow: 0 0 8px rgba(255, 46, 46, 0.3), inset 0 0 4px rgba(255, 46, 46, 0.2);
+}
+
+.gate-toggle-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  background: #111;
+  border: 1px solid #1c1c1c;
+  border-radius: 4px;
+  padding: 3px 6px;
+}
+
+.gate-toggle-wrap .toggle-label {
+  font-size: 8px;
+  color: #666;
+  font-weight: bold;
+  text-transform: uppercase;
+}
+
+.gate-mode-toggle {
+  background: #222;
+  border: 1px solid #333;
+  border-radius: 3px;
+  color: #999;
+  font-family: inherit;
+  font-size: 8px;
+  font-weight: bold;
+  padding: 2px 6px;
+  cursor: pointer;
+  min-width: 54px;
+  text-align: center;
+  transition: all 0.1s;
+  outline: none;
+}
+
+.gate-mode-toggle.latching {
+  background: #1b263b;
+  border-color: #415a77;
+  color: #e0e1dd;
+}
+
+.gate-mode-toggle.momentary {
+  background: #2b1f3d;
+  border-color: #5c3d75;
+  color: #e2cfea;
+}
+

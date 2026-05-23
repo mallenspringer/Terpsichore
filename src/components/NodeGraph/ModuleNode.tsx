@@ -2,7 +2,9 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { PORT_DEFS, SIGNAL_COLORS, PortDef } from './portDefs';
 import { ControlRowDef, RowCtx, EffectCtx } from './moduleControls';
 import { 
-  SpawnEffect, StepSequencerEffect, AudioSourceEffect, OscilloscopeEffect, SpectralSplitterEffect 
+  SpawnEffect, StepSequencerEffect, AudioSourceEffect, OscilloscopeEffect, SpectralSplitterEffect,
+  SpeechEnvelopeTrackerEffect, VocalPitchTrackerEffect, VowelFormantTrackerEffect, SpokenWordVisualizerEffect,
+  AudioGateEffect
 } from '../../state/types';
 import { useEngineStore } from '../../state/store';
 import { OscilloscopeVisualizer, AudioSourceVisualizer, SpectralVisualizer } from './AudioVisualizers';
@@ -64,6 +66,690 @@ function Knob({ value, onChange, min = 0, max = 1, resetValue = 1, size = 16, co
           <line x1="10" y1="10" x2="10" y2="4" stroke={color} strokeWidth="2" strokeLinecap="round" />
         </g>
       </svg>
+    </div>
+  );
+}
+
+// ── Custom Vocal Tracking & Audio Reactivity Panels ──────────────────────────
+
+function SpeechEnvelopeTrackerUI({
+  nodeId,
+  layerId,
+  effect,
+  onUpdate
+}: {
+  nodeId: string;
+  layerId: string;
+  effect: SpeechEnvelopeTrackerEffect;
+  onUpdate: (u: Partial<SpeechEnvelopeTrackerEffect>) => void;
+}) {
+  const envVal = useEngineStore(s => s.layers[layerId]?.signalValues?.[`${nodeId}.envelope_out`] ?? 0);
+  const speechTrig = useEngineStore(s => s.layers[layerId]?.signalValues?.[`${nodeId}.speech_trig`] ?? 0);
+  const cadenceVal = useEngineStore(s => s.layers[layerId]?.signalValues?.[`${nodeId}.cadence_out`] ?? 0);
+
+  const db = envVal > 0.0001 ? Math.max(-60, Math.min(0, 20 * Math.log10(envVal))) : -60;
+  const dbPercent = ((db + 60) / 60) * 100;
+  const thresholdPercent = ((effect.sensitivityDb + 60) / 60) * 100;
+
+  const meterRef = useRef<HTMLDivElement>(null);
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (!meterRef.current) return;
+    const rect = meterRef.current.getBoundingClientRect();
+    const update = (clientY: number) => {
+      const relativeY = 1 - (clientY - rect.top) / rect.height;
+      const pct = Math.max(0, Math.min(1, relativeY));
+      const sensitivityDb = Math.round(-60 + pct * 60);
+      onUpdate({ sensitivityDb });
+    };
+    update(e.clientY);
+
+    const onPointerMove = (moveEv: PointerEvent) => {
+      update(moveEv.clientY);
+    };
+    const onPointerUp = () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+    };
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+  };
+
+  return (
+    <div className="vocal-env-rack" onPointerDown={e => e.stopPropagation()}>
+      <div className="db-meter-container">
+        <div className="db-meter-ticks">
+          <span>0dB</span>
+          <span>-10</span>
+          <span>-20</span>
+          <span>-30</span>
+          <span>-40</span>
+          <span>-50</span>
+          <span>-60</span>
+        </div>
+        <div 
+          ref={meterRef}
+          className="db-meter-bar-wrap" 
+          onPointerDown={handlePointerDown}
+        >
+          <div className="db-meter-bar-fill" style={{ height: `${dbPercent}%` }} />
+          <div className="db-meter-threshold-line" style={{ bottom: `${thresholdPercent}%` }} />
+        </div>
+      </div>
+      
+      <div className="onset-led-wrap">
+        <div className={`onset-led ${speechTrig > 0.5 ? 'active' : ''}`} />
+        <span className="rack-row-label" style={{ fontSize: 9 }}>SPEECH TRANSIENT</span>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <span className="rack-row-label" style={{ fontSize: 8, color: '#666' }}>CADENCE: {cadenceVal.toFixed(2)}</span>
+        <div style={{ width: '100%', height: 4, background: '#111', borderRadius: 2, overflow: 'hidden' }}>
+          <div style={{ width: `${cadenceVal * 100}%`, height: '100%', background: '#d918f5' }} />
+        </div>
+      </div>
+
+      <div className="vocal-knob-grid">
+        <div className="vocal-knob-item">
+          <Knob 
+            value={effect.attackMs} 
+            min={1} max={100} 
+            resetValue={10} 
+            color="#18e4f5" 
+            onChange={v => onUpdate({ attackMs: Math.round(v) })} 
+          />
+          <span className="vocal-knob-label">ATK: {Math.round(effect.attackMs)}ms</span>
+        </div>
+        <div className="vocal-knob-item">
+          <Knob 
+            value={effect.releaseMs} 
+            min={10} max={1000} 
+            resetValue={150} 
+            color="#d918f5" 
+            onChange={v => onUpdate({ releaseMs: Math.round(v) })} 
+          />
+          <span className="vocal-knob-label">REL: {Math.round(effect.releaseMs)}ms</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AudioGateUI({
+  nodeId,
+  layerId,
+  effect,
+  onUpdate
+}: {
+  nodeId: string;
+  layerId: string;
+  effect: AudioGateEffect;
+  onUpdate: (u: Partial<AudioGateEffect>) => void;
+}) {
+  const inputDb = useEngineStore(s => s.layers[layerId]?.signalValues?.[`${nodeId}.input_db`] ?? -100);
+  const gateActive = useEngineStore(s => s.layers[layerId]?.signalValues?.[`${nodeId}.gate_active`] ?? 0);
+
+  // Meter percentage (from -80 to 0 dB)
+  const dbPercent = Math.max(0, Math.min(100, ((inputDb + 80) / 80) * 100));
+  const thresholdPercent = Math.max(0, Math.min(100, ((effect.thresholdDb + 80) / 80) * 100));
+
+  const meterRef = useRef<HTMLDivElement>(null);
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (!meterRef.current) return;
+    const rect = meterRef.current.getBoundingClientRect();
+    const update = (clientY: number) => {
+      const relativeY = 1 - (clientY - rect.top) / rect.height;
+      const pct = Math.max(0, Math.min(1, relativeY));
+      const thresholdDb = Math.round(-80 + pct * 80);
+      onUpdate({ thresholdDb });
+    };
+    update(e.clientY);
+
+    const onPointerMove = (moveEv: PointerEvent) => {
+      update(moveEv.clientY);
+    };
+    const onPointerUp = () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+    };
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+  };
+
+  return (
+    <div className="audio-gate-rack" onPointerDown={e => e.stopPropagation()}>
+      <div className="gate-meter-container">
+        <div className="gate-meter-ticks">
+          <span>0dB</span>
+          <span>-15</span>
+          <span>-30</span>
+          <span>-45</span>
+          <span>-60</span>
+          <span>-80</span>
+        </div>
+        <div 
+          ref={meterRef}
+          className="gate-meter-bar-wrap" 
+          onPointerDown={handlePointerDown}
+        >
+          <div className="gate-meter-bar-fill" style={{ height: `${dbPercent}%` }} />
+          <div className="gate-meter-threshold-line" style={{ bottom: `${thresholdPercent}%` }} />
+        </div>
+      </div>
+
+      <div className="gate-controls-column">
+        {/* State LED */}
+        <div className="gate-led-wrap">
+          <div className={`gate-led ${gateActive > 0.5 ? 'open' : 'closed'}`} />
+          <span className="gate-led-label">{gateActive > 0.5 ? 'OPEN' : 'CLOSED'}</span>
+        </div>
+
+        {/* Threshold Display/Control */}
+        <div className="gate-value-display">
+          <span className="label">THRESHOLD</span>
+          <span className="value">{effect.thresholdDb} dB</span>
+        </div>
+
+        {/* Release Rate Knob Control */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#111', padding: '4px 8px', borderRadius: 4, border: '1px solid #1c1c1c' }}>
+          <Knob 
+            value={effect.releaseMs ?? 150} 
+            min={10} max={1000} 
+            resetValue={150} 
+            color="#dc143c" 
+            onChange={v => onUpdate({ releaseMs: Math.round(v) })} 
+          />
+          <span className="gate-led-label" style={{ fontSize: 9 }}>RELEASE: {Math.round(effect.releaseMs ?? 150)}ms</span>
+        </div>
+
+        {/* Manual Bypass Button */}
+        <button
+          className={`gate-bypass-btn ${effect.bypass ? 'active' : ''}`}
+          onClick={() => onUpdate({ bypass: !effect.bypass })}
+        >
+          {effect.bypass ? 'BYPASS ON' : 'BYPASS OFF'}
+        </button>
+
+        {/* Bypass Mode Toggle */}
+        <div className="gate-toggle-wrap">
+          <span className="toggle-label">MODE:</span>
+          <button
+            className={`gate-mode-toggle ${effect.bypassLatching ? 'latching' : 'momentary'}`}
+            onClick={() => onUpdate({ bypassLatching: !effect.bypassLatching })}
+          >
+            {effect.bypassLatching ? 'LATCH' : 'MOMENT'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function VocalPitchTrackerUI({
+  nodeId,
+  layerId,
+  effect,
+  onUpdate
+}: {
+  nodeId: string;
+  layerId: string;
+  effect: VocalPitchTrackerEffect;
+  onUpdate: (u: Partial<VocalPitchTrackerEffect>) => void;
+}) {
+  const hzVal = useEngineStore(s => s.layers[layerId]?.signalValues?.[`${nodeId}.pitch_hz`] ?? 0);
+  const stabilityVal = useEngineStore(s => s.layers[layerId]?.signalValues?.[`${nodeId}.stability`] ?? 0);
+  const noteTrigVal = useEngineStore(s => s.layers[layerId]?.signalValues?.[`${nodeId}.note_change_trig`] ?? 0);
+
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const historyRef = useRef<number[]>([]);
+
+  useEffect(() => {
+    const history = historyRef.current;
+    history.push(hzVal > 20 && stabilityVal > effect.tolerance ? hzVal : 0);
+    if (history.length > 100) history.shift();
+  }, [hzVal, stabilityVal, effect.tolerance]);
+
+  const getNoteName = (hz: number) => {
+    if (hz <= 20) return { note: '---', cents: 0 };
+    const noteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+    const midi = 12 * Math.log2(hz / 440) + 69;
+    const roundedMidi = Math.round(midi);
+    const cents = Math.round((midi - roundedMidi) * 100);
+    const note = noteNames[roundedMidi % 12] + Math.floor(roundedMidi / 12 - 1);
+    return { note, cents };
+  };
+
+  const { note, cents } = getNoteName(hzVal);
+
+  useEffect(() => {
+    let animId: number;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const render = () => {
+      const w = canvas.width;
+      const h = canvas.height;
+      ctx.clearRect(0, 0, w, h);
+
+      ctx.strokeStyle = '#141414';
+      ctx.lineWidth = 1;
+      for (let i = 1; i < 4; i++) {
+        const y = (h / 4) * i;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(w, y);
+        ctx.stroke();
+      }
+
+      const history = historyRef.current;
+      if (history.length > 1) {
+        ctx.beginPath();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = 'rgba(24, 228, 245, 0.8)';
+        ctx.shadowBlur = 4;
+        ctx.shadowColor = '#18e4f5';
+
+        const minF = effect.minPitchHz;
+        const maxF = effect.maxPitchHz;
+        const logMin = Math.log2(minF);
+        const logMax = Math.log2(maxF);
+
+        history.forEach((hz, idx) => {
+          const x = (idx / 100) * w;
+          if (hz <= 20) {
+            if (idx === 0) ctx.moveTo(x, h);
+            else ctx.lineTo(x, h);
+          } else {
+            const logHz = Math.log2(hz);
+            const y = h - ((logHz - logMin) / (logMax - logMin || 1)) * h;
+            if (idx === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          }
+        });
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+      }
+
+      animId = requestAnimationFrame(render);
+    };
+
+    render();
+    return () => cancelAnimationFrame(animId);
+  }, [effect.minPitchHz, effect.maxPitchHz]);
+
+  return (
+    <div className="pitch-track-rack" onPointerDown={e => e.stopPropagation()}>
+      <div className="pitch-lcd-display">
+        <div 
+          className={`onset-led ${noteTrigVal > 0.5 ? 'active' : ''}`}
+          style={{ position: 'absolute', top: 6, right: 6, width: 6, height: 6 }} 
+        />
+        <div className="pitch-lcd-note">{note}</div>
+        <div className="pitch-lcd-hz">{hzVal > 20 ? `${hzVal.toFixed(1)} Hz` : '---'}</div>
+        
+        <div className="pitch-tuner-bar-wrap">
+          <div 
+            className="pitch-tuner-needle" 
+            style={{ 
+              left: hzVal > 20 ? `${50 + (cents / 50) * 50}%` : '50%' 
+            }} 
+          />
+        </div>
+        <div style={{ display: 'flex', width: '100%', justifyContent: 'space-between', fontSize: 6, color: '#333', marginTop: 2, fontFamily: 'monospace' }}>
+          <span>-50c</span>
+          <span>0</span>
+          <span>+50c</span>
+        </div>
+      </div>
+
+      <canvas 
+        ref={canvasRef} 
+        className="pitch-sparkline-canvas" 
+        width={180} 
+        height={40} 
+      />
+
+      <div className="vocal-range-mode-toggle">
+        <button
+          className={`range-mode-btn ${effect.pitchRangeMode !== 'music' ? 'active-voice' : ''}`}
+          onClick={() => onUpdate({ pitchRangeMode: 'voice' })}
+        >
+          Voice Mode
+        </button>
+        <button
+          className={`range-mode-btn ${effect.pitchRangeMode === 'music' ? 'active-music' : ''}`}
+          onClick={() => onUpdate({ pitchRangeMode: 'music' })}
+        >
+          Music Mode
+        </button>
+      </div>
+
+      <div className="vocal-knob-grid">
+        <div className="vocal-knob-item">
+          <Knob 
+            value={effect.minPitchHz} 
+            min={40} max={300} 
+            resetValue={80} 
+            color="#18e4f5" 
+            onChange={v => onUpdate({ minPitchHz: Math.round(v) })} 
+          />
+          <span className="vocal-knob-label">MIN: {Math.round(effect.minPitchHz)}Hz</span>
+        </div>
+        <div className="vocal-knob-item">
+          <Knob 
+            value={effect.maxPitchHz} 
+            min={300} max={1500} 
+            resetValue={800} 
+            color="#d918f5" 
+            onChange={v => onUpdate({ maxPitchHz: Math.round(v) })} 
+          />
+          <span className="vocal-knob-label">MAX: {Math.round(effect.maxPitchHz)}Hz</span>
+        </div>
+      </div>
+
+      <div className="vocal-knob-item">
+        <div style={{ display: 'flex', alignItems: 'center', width: '100%', justifyContent: 'space-between', gap: 10 }}>
+          <span className="vocal-knob-label" style={{ margin: 0 }}>CONFIDENCE TOL: {effect.tolerance.toFixed(2)}</span>
+          <Knob 
+            value={effect.tolerance} 
+            min={0.1} max={0.9} 
+            resetValue={0.4} 
+            color="#f58c18" 
+            onChange={v => onUpdate({ tolerance: v })} 
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function VowelFormantTrackerUI({
+  nodeId,
+  layerId,
+  effect,
+  onUpdate
+}: {
+  nodeId: string;
+  layerId: string;
+  effect: VowelFormantTrackerEffect;
+  onUpdate: (u: Partial<VowelFormantTrackerEffect>) => void;
+}) {
+  const f1Val = useEngineStore(s => s.layers[layerId]?.signalValues?.[`${nodeId}.formant_f1`] ?? 0);
+  const f2Val = useEngineStore(s => s.layers[layerId]?.signalValues?.[`${nodeId}.formant_f2`] ?? 0);
+  const vowelX = useEngineStore(s => s.layers[layerId]?.signalValues?.[`${nodeId}.vowel_x`] ?? 0.5);
+  const vowelY = useEngineStore(s => s.layers[layerId]?.signalValues?.[`${nodeId}.vowel_y`] ?? 0.5);
+  const vowelTrig = useEngineStore(s => s.layers[layerId]?.signalValues?.[`${nodeId}.vowel_change_trig`] ?? 0);
+
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const trailRef = useRef<{ x: number; y: number }[]>([]);
+
+  useEffect(() => {
+    const trail = trailRef.current;
+    trail.push({ x: vowelX, y: vowelY });
+    if (trail.length > 15) trail.shift();
+  }, [vowelX, vowelY]);
+
+  useEffect(() => {
+    let animId: number;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const render = () => {
+      const w = canvas.width;
+      const h = canvas.height;
+      ctx.clearRect(0, 0, w, h);
+
+      ctx.strokeStyle = '#141414';
+      ctx.lineWidth = 1;
+      
+      ctx.beginPath();
+      ctx.moveTo(w / 2, 0);
+      ctx.lineTo(w / 2, h);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(0, h / 2);
+      ctx.lineTo(w, h / 2);
+      ctx.stroke();
+
+      ctx.fillStyle = '#444';
+      ctx.font = 'bold 9px monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      
+      ctx.fillText('Oo (Back/High)', w * 0.25, h * 0.25);
+      ctx.fillText('Oh (Back/Low)', w * 0.25, h * 0.75);
+      ctx.fillText('Ee (Front/High)', w * 0.75, h * 0.25);
+      ctx.fillText('Ah (Front/Low)', w * 0.75, h * 0.75);
+
+      const trail = trailRef.current;
+      if (trail.length > 0) {
+        ctx.beginPath();
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = 'rgba(217, 24, 245, 0.3)';
+        trail.forEach((pt, idx) => {
+          const cx = pt.x * w;
+          const cy = (1 - pt.y) * h;
+          if (idx === 0) ctx.moveTo(cx, cy);
+          else ctx.lineTo(cx, cy);
+        });
+        ctx.stroke();
+
+        trail.forEach((pt, idx) => {
+          const cx = pt.x * w;
+          const cy = (1 - pt.y) * h;
+          const alpha = idx / trail.length;
+          
+          ctx.beginPath();
+          ctx.arc(cx, cy, 3 * alpha + 1.5, 0, 2 * Math.PI);
+          ctx.fillStyle = `rgba(217, 24, 245, ${alpha * 0.6})`;
+          ctx.fill();
+        });
+
+        const active = trail[trail.length - 1];
+        if (active) {
+          const cx = active.x * w;
+          const cy = (1 - active.y) * h;
+
+          ctx.shadowBlur = 8;
+          ctx.shadowColor = '#d918f5';
+          ctx.beginPath();
+          ctx.arc(cx, cy, 6, 0, 2 * Math.PI);
+          ctx.fillStyle = '#ffffff';
+          ctx.fill();
+          ctx.strokeStyle = '#d918f5';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+        }
+      }
+
+      animId = requestAnimationFrame(render);
+    };
+
+    render();
+    return () => cancelAnimationFrame(animId);
+  }, []);
+
+  return (
+    <div className="vowel-track-rack" onPointerDown={e => e.stopPropagation()}>
+      <canvas 
+        ref={canvasRef} 
+        className="vowel-scatter-canvas" 
+        width={180} 
+        height={120} 
+      />
+
+      <div className="onset-led-wrap">
+        <div className={`onset-led ${vowelTrig > 0.5 ? 'active' : ''}`} style={{ backgroundColor: '#d918f5' }} />
+        <span className="rack-row-label" style={{ fontSize: 9 }}>ZONE TRANSIENT</span>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, background: '#111', padding: 6, borderRadius: 4, border: '1px solid #222' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 8, color: '#888', fontFamily: 'monospace' }}>
+          <span>F1 HZ:</span>
+          <span style={{ color: '#18e4f5' }}>{f1Val.toFixed(0)} Hz</span>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 8, color: '#888', fontFamily: 'monospace' }}>
+          <span>F2 HZ:</span>
+          <span style={{ color: '#d918f5' }}>{f2Val.toFixed(0)} Hz</span>
+        </div>
+      </div>
+
+      <div className="vocal-knob-item">
+        <div style={{ display: 'flex', alignItems: 'center', width: '100%', justifyContent: 'space-between' }}>
+          <span className="vocal-knob-label" style={{ margin: 0 }}>DAMPING SMOOTH: {effect.smoothing.toFixed(2)}</span>
+          <Knob 
+            value={effect.smoothing} 
+            min={0.0} max={0.99} 
+            resetValue={0.8} 
+            color="#d918f5" 
+            onChange={v => onUpdate({ smoothing: v })} 
+          />
+        </div>
+      </div>
+
+      <div className="vocal-knob-item" style={{ marginTop: 2 }}>
+        <div style={{ display: 'flex', alignItems: 'center', width: '100%', justifyContent: 'space-between', gap: 6 }}>
+          <span className="vocal-knob-label" style={{ margin: 0, whiteSpace: 'nowrap' }}>VOICE PROFILE:</span>
+          <select 
+            value={effect.voiceProfile ?? 'universal'} 
+            onChange={e => onUpdate({ voiceProfile: e.target.value as any })} 
+            className="seq-select" 
+            style={{ 
+              flex: 1, 
+              background: '#1a1a1a', 
+              color: '#d918f5', 
+              border: '1px solid #333', 
+              borderRadius: 3, 
+              fontSize: 8, 
+              fontFamily: 'monospace', 
+              padding: '1px 3px',
+              outline: 'none',
+              cursor: 'pointer'
+            }}
+          >
+            <option value="universal">Universal</option>
+            <option value="baritone_bass">Low Baritone/Bass</option>
+            <option value="tenor_contralto_alto">Tenor/Contralto/Alto</option>
+            <option value="mezzo_soprano">Mezzo Soprano</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SpokenWordVisualizerUI({
+  nodeId,
+  layerId,
+  effect: _effect,
+  onUpdate: _onUpdate,
+  inputSettings: _inputSettings
+}: {
+  nodeId: string;
+  layerId: string;
+  effect: SpokenWordVisualizerEffect;
+  onUpdate: (u: Partial<SpokenWordVisualizerEffect>) => void;
+  inputSettings?: Record<string, any>;
+}) {
+  const envVal = useEngineStore(s => s.layers[layerId]?.signalValues?.[`${nodeId}.envelope_out`] ?? 0);
+  const cadenceVal = useEngineStore(s => s.layers[layerId]?.signalValues?.[`${nodeId}.cadence_out`] ?? 0);
+  const brightnessVal = useEngineStore(s => s.layers[layerId]?.signalValues?.[`${nodeId}.timbre_brightness`] ?? 0);
+  const flatnessVal = useEngineStore(s => s.layers[layerId]?.signalValues?.[`${nodeId}.timbre_flatness`] ?? 0);
+  const sibilanceVal = useEngineStore(s => s.layers[layerId]?.signalValues?.[`${nodeId}.sibilance`] ?? 0);
+  const hzVal = useEngineStore(s => s.layers[layerId]?.signalValues?.[`${nodeId}.pitch_hz`] ?? 0);
+  const stabilityVal = useEngineStore(s => s.layers[layerId]?.signalValues?.[`${nodeId}.stability`] ?? 0);
+  const vowelX = useEngineStore(s => s.layers[layerId]?.signalValues?.[`${nodeId}.vowel_x`] ?? 0.5);
+  const vowelY = useEngineStore(s => s.layers[layerId]?.signalValues?.[`${nodeId}.vowel_y`] ?? 0.5);
+
+  const onsetPulse = useEngineStore(s => s.layers[layerId]?.signalValues?.[`${nodeId}.onset_pulse`] ?? 0);
+  const speechTrig = useEngineStore(s => s.layers[layerId]?.signalValues?.[`${nodeId}.speech_trig`] ?? 0);
+  const silenceTrig = useEngineStore(s => s.layers[layerId]?.signalValues?.[`${nodeId}.silence_trig`] ?? 0);
+  const noteTrig = useEngineStore(s => s.layers[layerId]?.signalValues?.[`${nodeId}.note_change_trig`] ?? 0);
+  const vowelTrig = useEngineStore(s => s.layers[layerId]?.signalValues?.[`${nodeId}.vowel_change_trig`] ?? 0);
+
+  const getNoteName = (hz: number) => {
+    if (hz <= 20) return { note: '---', cents: 0 };
+    const noteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+    const midi = 12 * Math.log2(hz / 440) + 69;
+    const roundedMidi = Math.round(midi);
+    const cents = Math.round((midi - roundedMidi) * 100);
+    const note = noteNames[roundedMidi % 12] + Math.floor(roundedMidi / 12 - 1);
+    return { note, cents };
+  };
+
+  const { note, cents } = getNoteName(hzVal);
+
+  const renderMeter = (label: string, value: number, formattedValue: string, maxVal: number = 1) => {
+    const pct = Math.max(0, Math.min(100, (value / (maxVal || 1)) * 100));
+    return (
+      <div className="spoken-word-meter-row">
+        <div className="spoken-word-meter-label">
+          <span>{label}</span>
+          <span className="spoken-word-meter-val">{formattedValue}</span>
+        </div>
+        <div className="spoken-word-meter-bar">
+          <div className="spoken-word-meter-fill" style={{ width: `${pct}%` }} />
+        </div>
+      </div>
+    );
+  };
+
+  const renderLed = (label: string, active: boolean) => (
+    <div className="spoken-word-led-row">
+      <span className="spoken-word-led-label">{label}</span>
+      <div className={`spoken-word-led-dot ${active ? 'active' : ''}`} />
+    </div>
+  );
+
+  return (
+    <div className="spoken-word-rack" onPointerDown={e => e.stopPropagation()}>
+      <div className="spoken-word-grid">
+        <div className="spoken-word-column">
+          <div className="spoken-word-sub-header">Continuous Signals</div>
+          {renderMeter('ENV FOLLOW', envVal, envVal.toFixed(3))}
+          {renderMeter('CADENCE', cadenceVal, cadenceVal.toFixed(2))}
+          {renderMeter('TIMB BRIGHT', brightnessVal, `${Math.round(brightnessVal)} Hz`, 8000)}
+          {renderMeter('TIMB FLAT', flatnessVal, flatnessVal.toFixed(3))}
+          {renderMeter('SIBILANCE', sibilanceVal, sibilanceVal.toFixed(3))}
+          {renderMeter('STABILITY', stabilityVal, stabilityVal.toFixed(2))}
+        </div>
+
+        <div className="spoken-word-column">
+          <div className="spoken-word-sub-header">Pitch & Formants</div>
+          
+          <div style={{ display: 'flex', gap: 6 }}>
+            <div style={{ flex: 1, background: '#080c0a', border: '1px solid #1a221f', borderRadius: 4, padding: '4px 6px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+              <span style={{ fontSize: 16, fontWeight: 'bold', color: '#18e4f5', fontFamily: 'monospace' }}>{note}</span>
+              <span style={{ fontSize: 7, color: '#0f8b96', fontFamily: 'monospace' }}>{cents >= 0 ? '+' : ''}{cents}c</span>
+            </div>
+            
+            <div style={{ flex: 1, background: '#0c080b', border: '1px solid #221a21', borderRadius: 4, padding: '4px 6px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+              <span style={{ fontSize: 14, fontWeight: 'bold', color: '#d918f5', fontFamily: 'monospace' }}>
+                {vowelX < 0.5 ? (vowelY >= 0.5 ? 'Oo' : 'Oh') : (vowelY >= 0.5 ? 'Ee' : 'Ah')}
+              </span>
+              <span style={{ fontSize: 6, color: '#960f8b', fontFamily: 'monospace' }}>X:{vowelX.toFixed(2)} Y:{vowelY.toFixed(2)}</span>
+            </div>
+          </div>
+
+          <div className="spoken-word-sub-header" style={{ marginTop: 2 }}>Triggers</div>
+          {renderLed('ONSET PULSE', onsetPulse > 0.5)}
+          {renderLed('SPEECH ACTIVE', speechTrig > 0.5 || envVal > 0.15)}
+          {renderLed('SILENCE TRANSIENT', silenceTrig > 0.5)}
+          {renderLed('NOTE SHIFT', noteTrig > 0.5)}
+          {renderLed('VOWEL SHIFT', vowelTrig > 0.5)}
+        </div>
+      </div>
     </div>
   );
 }
@@ -1122,19 +1808,47 @@ export function ModuleNode({
           })()}
 
           <div className="port-group" style={{ alignItems: 'flex-end' }}>
-            {outputs.map(port => (
-              <div key={port.id} className="port-dot-wrap port-out">
-                <div
-                  className="port-dot"
-                  style={{ color: portColor(port.id, port.signalType, port.direction), cursor: 'crosshair' }}
-                  data-port-id={port.id}
-                  data-node-id={nodeId}
-                  title={port.label}
-                  onPointerDown={e => handlePortDown(e, port.id, port.signalType, 'out')}
-                />
-                <span className="port-label">{port.label}</span>
-              </div>
-            ))}
+            {outputs.map(port => {
+              const isVocalEnv = moduleType === 'SpeechEnvelopeTracker';
+              const effectObj = isVocalEnv ? ((rowCtx as EffectCtx).effect as SpeechEnvelopeTrackerEffect) : null;
+              const isSpeechTrig = port.id === 'speech_trig';
+              const isSilenceTrig = port.id === 'silence_trig';
+              const isContinuousTogglePort = isVocalEnv && (isSpeechTrig || isSilenceTrig);
+              const continuousKey = isSpeechTrig ? 'speechContinuous' : 'silenceContinuous';
+              const isContinuousActive = effectObj ? !!effectObj[continuousKey] : false;
+              const portColorVal = portColor(port.id, port.signalType, port.direction);
+
+              return (
+                <div key={port.id} className="port-dot-wrap port-out">
+                  <div
+                    className="port-dot"
+                    style={{ color: portColorVal, cursor: 'crosshair' }}
+                    data-port-id={port.id}
+                    data-node-id={nodeId}
+                    title={port.label}
+                    onPointerDown={e => handlePortDown(e, port.id, port.signalType, 'out')}
+                  />
+                  {isContinuousTogglePort && (
+                    <button
+                      className={`continuous-toggle-btn ${isContinuousActive ? 'active' : ''}`}
+                      style={{ color: portColorVal }}
+                      title={isContinuousActive ? 'Continuous gate mode active' : 'Click to activate continuous gate mode'}
+                      onPointerDown={e => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                      }}
+                      onClick={e => {
+                        e.stopPropagation();
+                        if (effectObj && (rowCtx as EffectCtx).onUpdate) {
+                          (rowCtx as EffectCtx).onUpdate({ [continuousKey]: !isContinuousActive });
+                        }
+                      }}
+                    />
+                  )}
+                  <span className="port-label">{port.label}</span>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -1142,7 +1856,54 @@ export function ModuleNode({
       {/* Rack rows */}
       {!isOutput && (
         <div className="node-rack">
-          {orderedRows.slice(0, visibleRows).map((row, index) => (
+          {moduleType === 'SpeechEnvelopeTracker' && (
+            <SpeechEnvelopeTrackerUI
+              nodeId={nodeId}
+              layerId={layerId}
+              effect={((rowCtx as EffectCtx).effect as SpeechEnvelopeTrackerEffect)}
+              onUpdate={((rowCtx as EffectCtx).onUpdate as any)}
+            />
+          )}
+          {moduleType === 'AudioGate' && (
+            <AudioGateUI
+              nodeId={nodeId}
+              layerId={layerId}
+              effect={((rowCtx as EffectCtx).effect as AudioGateEffect)}
+              onUpdate={((rowCtx as EffectCtx).onUpdate as any)}
+            />
+          )}
+          {moduleType === 'VocalPitchTracker' && (
+            <VocalPitchTrackerUI
+              nodeId={nodeId}
+              layerId={layerId}
+              effect={((rowCtx as EffectCtx).effect as VocalPitchTrackerEffect)}
+              onUpdate={((rowCtx as EffectCtx).onUpdate as any)}
+            />
+          )}
+          {moduleType === 'VowelFormantTracker' && (
+            <VowelFormantTrackerUI
+              nodeId={nodeId}
+              layerId={layerId}
+              effect={((rowCtx as EffectCtx).effect as VowelFormantTrackerEffect)}
+              onUpdate={((rowCtx as EffectCtx).onUpdate as any)}
+            />
+          )}
+          {moduleType === 'SpokenWordVisualizer' && (
+            <SpokenWordVisualizerUI
+              nodeId={nodeId}
+              layerId={layerId}
+              effect={((rowCtx as EffectCtx).effect as SpokenWordVisualizerEffect)}
+              onUpdate={((rowCtx as EffectCtx).onUpdate as any)}
+              inputSettings={inputSettings}
+            />
+          )}
+
+          {moduleType !== 'SpeechEnvelopeTracker' &&
+           moduleType !== 'AudioGate' &&
+           moduleType !== 'VocalPitchTracker' &&
+           moduleType !== 'VowelFormantTracker' &&
+           moduleType !== 'SpokenWordVisualizer' &&
+           orderedRows.slice(0, visibleRows).map((row, index) => (
               <div
                 key={row.id}
                 className={`rack-row ${rowDragOver === index ? 'drag-over-row' : ''}`}
@@ -1158,7 +1919,13 @@ export function ModuleNode({
             ))
           }
           {/* Expand / collapse footer */}
-          {moduleType !== 'StepSequencer' && (hiddenCount > 0 || nodeState.expanded) ? (
+          {moduleType !== 'StepSequencer' &&
+           moduleType !== 'SpeechEnvelopeTracker' &&
+           moduleType !== 'AudioGate' &&
+           moduleType !== 'VocalPitchTracker' &&
+           moduleType !== 'VowelFormantTracker' &&
+           moduleType !== 'SpokenWordVisualizer' &&
+           (hiddenCount > 0 || nodeState.expanded) ? (
             <div className="node-collapse-footer"
               onClick={() => onLayoutChange({ expanded: !nodeState.expanded })}>
               {nodeState.expanded ? '▲ collapse' : `▼ ${hiddenCount} more...`}
