@@ -60,6 +60,7 @@ const ALL_MODULES: ModuleEntry[] = [
   { id: 'SpokenWordVisualizer', glyph: '🗣️💎', label: 'Vocal Console', tooltip: 'Spoken Word Visualizer Routing Bay (17 Analytical Signals)', category: 'Audio', moduleType: 'effect:SpokenWordVisualizer' },
   { id: 'Path',           glyph: '🛤️', label: 'Path',      tooltip: 'Trajectory Generator',    category: 'Utility', moduleType: 'effect:Path'           },
   { id: 'Noise',          glyph: '🎲', label: 'Noise',     tooltip: 'Stochastic Signal Gen',   category: 'Utility', moduleType: 'modulator:Noise'        },
+  { id: 'MidiInput',      glyph: '🎹', label: 'MIDI Input',tooltip: 'MIDI Keyboard & CC Control inputs', category: 'Utility', moduleType: 'modulator:MidiInput'    },
   { id: 'Inverter',       glyph: '⇅', label: 'Inverter',  tooltip: 'Polarity/Color Inversion', category: 'Utility', moduleType: 'effect:Inverter'         },
   { id: 'LogicGate',      glyph: '⊦', label: 'Logic',     tooltip: 'Signal Comparison (AND/OR/XOR)', category: 'Utility', moduleType: 'effect:LogicGate'       },
   { id: 'TriggeredGate',  glyph: 'Gate', label: 'Trig Gate', tooltip: 'Signal Gating / Routing',      category: 'Utility', moduleType: 'effect:TriggeredGate'   },
@@ -149,9 +150,10 @@ interface SidebarProps {
   // Foundational props
   activeLayer: any;
   sourceCtx: any;
+  onOpenMidiModal?: () => void;
 }
 
-export function Sidebar({ activeLayerId, onSelectLayer, activeLayer, sourceCtx }: SidebarProps) {
+export function Sidebar({ activeLayerId, onSelectLayer, activeLayer, sourceCtx, onOpenMidiModal }: SidebarProps) {
   const layers = useEngineStore(s => s.layers);
   const layerOrder = useEngineStore(s => s.layerOrder);
   const resolution = useEngineStore(s => s.resolution);
@@ -170,6 +172,8 @@ export function Sidebar({ activeLayerId, onSelectLayer, activeLayer, sourceCtx }
   const isGlobalPaused = useEngineStore(s => s.isGlobalPaused);
   const setIsGlobalPaused = useEngineStore(s => s.setIsGlobalPaused);
   const triggerGlobalReset = useEngineStore(s => s.triggerGlobalReset);
+  const midiOverlayActive = useEngineStore(s => s.midiOverlayActive);
+  const setMidiOverlayActive = useEngineStore(s => s.setMidiOverlayActive);
 
   const [ghostSidebarJack, setGhostSidebarJack] = useState<{    layerId: string;
     effectId: string;
@@ -224,7 +228,21 @@ export function Sidebar({ activeLayerId, onSelectLayer, activeLayer, sourceCtx }
   const [bankIds, setBankIds] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem(BANK_STORAGE_KEY);
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved) as string[];
+        const merged = [...parsed];
+        let hasNew = false;
+        DEFAULT_BANK_IDS.forEach(id => {
+          if (!merged.includes(id)) {
+            merged.push(id);
+            hasNew = true;
+          }
+        });
+        if (hasNew) {
+          localStorage.setItem(BANK_STORAGE_KEY, JSON.stringify(merged));
+        }
+        return merged;
+      }
     } catch {}
     return DEFAULT_BANK_IDS;
   });
@@ -398,6 +416,34 @@ export function Sidebar({ activeLayerId, onSelectLayer, activeLayer, sourceCtx }
             accept=".terp,application/json"
             onChange={handleImport}
           />
+        </div>
+        <div className="sb-resolution-row" style={{ marginTop: 4, display: 'flex', gap: 4 }}>
+          <button 
+            onClick={onOpenMidiModal}
+            style={{ flex: 1, background: '#1f1a3a', color: '#9e4aff', border: '1px solid currentColor', borderRadius: 3, cursor: 'pointer', fontSize: 10, padding: '4px 0', fontFamily: 'inherit', fontWeight: 'bold' }}
+          >
+            🎹 MIDI CONFIG
+          </button>
+          <button 
+            onClick={() => setMidiOverlayActive(!midiOverlayActive)}
+            title="Toggle MIDI Learn icons overlay on faders"
+            style={{ 
+              flex: 1, 
+              background: midiOverlayActive ? '#9e4aff' : '#222', 
+              color: midiOverlayActive ? '#fff' : '#888', 
+              border: midiOverlayActive ? '1px solid #c8a2ff' : '1px solid #444', 
+              borderRadius: 3, 
+              cursor: 'pointer', 
+              fontSize: 10, 
+              padding: '4px 0', 
+              fontFamily: 'inherit', 
+              fontWeight: 'bold',
+              boxShadow: midiOverlayActive ? '0 0 8px rgba(158, 74, 255, 0.4)' : 'none',
+              transition: 'all 0.2s ease'
+            }}
+          >
+            🔌 OVERLAYS: {midiOverlayActive ? 'ON' : 'OFF'}
+          </button>
         </div>
       </SbSection>
 

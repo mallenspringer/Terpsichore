@@ -29,6 +29,13 @@ export const PORT_DEFS: Record<string, PortDef[]> = {
     { id: 'trigger_out', label: 'Trig Out', direction: 'out', signalType: 'trigger', priority: 0 },
     { id: 'trigger_in',  label: 'Trig In',  direction: 'in',  signalType: 'trigger', priority: 1 }
   ],
+  MidiInput: [
+    { id: 'note_out',     label: 'Note Out',   direction: 'out', signalType: 'modulation', priority: 0 },
+    { id: 'gate_out',     label: 'Gate Out',   direction: 'out', signalType: 'trigger',    priority: 1 },
+    { id: 'velocity_out', label: 'Vel Out',    direction: 'out', signalType: 'modulation', priority: 2 },
+    { id: 'cc_out',       label: 'CC Out',     direction: 'out', signalType: 'modulation', priority: 3 },
+    { id: 'clock_out',    label: 'Clock Out',  direction: 'out', signalType: 'trigger',    priority: 4 }
+  ],
   Noise: [
     { id: 'modulation_out', label: 'Noise Out', direction: 'out', signalType: 'modulation', priority: 0, bipolar: true },
     { id: 'frequency_cv',   label: 'Freq CV',  direction: 'in',  signalType: 'modulation', priority: 1 },
@@ -481,4 +488,5 @@ export const MODULE_DISPLAY_NAMES: Record<string, string> = {
   VocalPitchTracker: 'Pitch Track',
   VowelFormantTracker: 'Vowel Track',
   SpokenWordVisualizer: 'Vocal Visualizer',
+  MidiInput: 'MIDI Input',
 };

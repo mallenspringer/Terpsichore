@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.0] - 2026-06-02
+
+### Added
+- **Hybrid MIDI Overlays System**: Implemented dynamic inline fader overlay learn jacks (`🔌`). They slide/fade into view when mapping mode is active and automatically hide when not in use to keep VJ rack screens clutter-free.
+- **Universal Browse & Learn Modal**: Custom split grid inside the MIDI Modal. The left side allows browsing Layer -> Module -> Parameter dynamically; the right side supports direct **Hardware Learn** and a custom **Manual Mapping Sheet** (OMNI/discrete channels, CC index, Note Key codes) for mapping without physical hardware.
+- **MIDI Input Modulator Module**: A full modulator module supporting note outputs, velocity outputs, CC outputs, gates, and rhythmic clock sync triggers based on clock divisions (1/4, 1/8, 1/16, 1/32).
+- **Global Sidebar Overlays Toggle**: Placed an explicit `"🔌 OVERLAYS: ON/OFF"` button in the sidebar project controls for quick manual previewing of the inline fader jacks.
+- **Persistence Support**: Mapped `midiBindings` directly into the save state logic in `projectPersistence.ts` for exportable patches.
+
 ## [0.2.1] - 2026-05-14
 
 ### Added

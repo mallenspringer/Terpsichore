@@ -1,6 +1,7 @@
 import { useEngineStore } from './store';
 import { LayerState, TriggerPadSource, LogicGateEffect, TriggeredGateEffect, InverterEffect, SignalMathEffect, SampleAndHoldEffect, StepSequencerEffect, OscilloscopeEffect, SpectralSplitterEffect, AlphaAdjustEffect, AudioTransformerEffect, AudioModulatorEffect, AudioGateEffect } from './types';
 import { AudioEngine } from './AudioEngine';
+import { MidiManager } from './MidiManager';
 
 type SignalFunction = (context: DispatchContext, dt: number) => void;
 
@@ -35,8 +36,11 @@ export class SignalDispatcher {
   private speechStateMap = new Map<string, boolean>();
   private pitchStateMap = new Map<string, number>();
   private vowelStateMap = new Map<string, string>();
+  private midiOverrides = new Map<string, number>();
 
-  private constructor() {}
+  private constructor() {
+    MidiManager.getInstance().initialize();
+  }
 
   public static getInstance(): SignalDispatcher {
     if (!SignalDispatcher.instance) {
@@ -55,6 +59,21 @@ export class SignalDispatcher {
 
   public getLatestSignals(layerId: string): Record<string, number> {
     return this.latestSignals[layerId] || {};
+  }
+
+  public resolveTargetModuleId(target: any, layer: LayerState): string | null {
+    if (!target) return null;
+    if (target.type === 'absolute') {
+      const exists = layer.effects.some(e => e.id === target.moduleId) || (layer.source as any).id === target.moduleId;
+      return exists ? target.moduleId : null;
+    } else {
+      const match = [layer.source, ...layer.effects].filter(m => m.type === target.moduleType);
+      return (match[target.index] as any)?.id || null;
+    }
+  }
+
+  public getMidiOverride(layerId: string, moduleId: string, paramId: string): number | null {
+    return this.midiOverrides.get(`${layerId}.${moduleId}.${paramId}`) ?? null;
   }
 
 
@@ -211,6 +230,22 @@ export class SignalDispatcher {
 
             this.triggerPadStates.set(stateKey, current);
             ctx.signalValues[`${nodeId}.trigger_out`] = current;
+          });
+        } else if (mod.type === 'MidiInput') {
+          pipeline.push((ctx: DispatchContext) => {
+            const midi = ctx.layer.modulators?.[nodeId] as any;
+            if (!midi) return;
+            const mgr = MidiManager.getInstance();
+            const channel = midi.channel ?? 'all';
+            const ccNum = midi.ccNumber ?? 7;
+            const div = midi.clockDivision ?? '1/4';
+
+            const noteData = mgr.getNoteData(channel);
+            ctx.signalValues[`${nodeId}.note_out`] = noteData.pitch;
+            ctx.signalValues[`${nodeId}.gate_out`] = noteData.gate ? 1.0 : 0.0;
+            ctx.signalValues[`${nodeId}.velocity_out`] = noteData.velocity;
+            ctx.signalValues[`${nodeId}.cc_out`] = mgr.getCCValue(channel, ccNum);
+            ctx.signalValues[`${nodeId}.clock_out`] = mgr.getClockPulse(div) ? 1.0 : 0.0;
           });
         }
       }
@@ -1063,6 +1098,59 @@ export class SignalDispatcher {
     // 1. Update Global Audio Analysis
     audioEngine.update();
 
+    // 2. Resolve MIDI Mappings & Overrides
+    this.midiOverrides.clear();
+    const shouldCommitToUi = force || (now - this.lastUiCommitTime > this.UI_COMMIT_INTERVAL);
+    
+    if (state.midiBindings && state.midiBindings.length > 0) {
+      Object.values(state.layers).forEach(layer => {
+        state.midiBindings.forEach(binding => {
+          if (binding.target && binding.target.layerId === layer.id) {
+            const resolvedModuleId = this.resolveTargetModuleId(binding.target, layer);
+            if (resolvedModuleId) {
+              const paramId = binding.target.paramId;
+              const mgr = MidiManager.getInstance();
+              let rawVal = 0;
+              
+              if (binding.midiSource.ccNumber !== undefined) {
+                rawVal = mgr.getCCValue(binding.midiSource.channel, binding.midiSource.ccNumber);
+              } else if (binding.midiSource.noteNumber !== undefined) {
+                const noteData = mgr.getNoteData(binding.midiSource.channel);
+                rawVal = noteData.rawPitch === binding.midiSource.noteNumber && noteData.gate ? noteData.velocity : 0;
+              }
+
+              let val = binding.range[0] + rawVal * (binding.range[1] - binding.range[0]);
+              if (binding.invert) {
+                val = binding.range[1] - rawVal * (binding.range[1] - binding.range[0]);
+              }
+
+              const overrideKey = `${layer.id}.${resolvedModuleId}.${paramId}`;
+              this.midiOverrides.set(overrideKey, val);
+
+              // Throttled UI state synchronization
+              if (shouldCommitToUi) {
+                let currentVal = 0;
+                if (resolvedModuleId === 'source') {
+                  currentVal = (layer.source as any)[paramId] ?? 0;
+                } else {
+                  const eff = layer.effects.find(e => e.id === resolvedModuleId);
+                  if (eff) currentVal = (eff as any)[paramId] ?? 0;
+                }
+
+                if (Math.abs(currentVal - val) > 0.005) {
+                  if (resolvedModuleId === 'source') {
+                    state.setSource(layer.id, { ...layer.source, [paramId]: val });
+                  } else {
+                    state.updateEffect(layer.id, resolvedModuleId, { [paramId]: val } as any);
+                  }
+                }
+              }
+            }
+          }
+        });
+      });
+    }
+
     if (state.globalResetSignal !== this.lastResetSignal) {
       this.lastResetSignal = state.globalResetSignal;
       this.lfoPhases = {};
@@ -1077,8 +1165,6 @@ export class SignalDispatcher {
     if (state.isGlobalPaused) {
       dt = 0;
     }
-    
-    const shouldCommitToUi = force || (now - this.lastUiCommitTime > this.UI_COMMIT_INTERVAL);
     const modUpdates: Record<string, Record<string, any>> = {};
 
     const layerIds = state.layerOrder.length > 0 ? state.layerOrder : Object.keys(state.layers);

@@ -12,8 +12,10 @@ import {
   InterLayerOutputEffect, InterLayerInputEffect, ColorRGBEffect, LumaSplitterEffect,
   SpawnEffect, PathEffect, LogicGateEffect, TriggeredGateEffect, InverterEffect, VideoMixerEffect,
   PatternEffect, KaleidoscopeEffect, SignalMathEffect, SampleAndHoldEffect,
-  AudioSourceEffect, OscilloscopeEffect, SpectralSplitterEffect, PixelProcessorEffect, ColorNoiseSource, AudioTransformerEffect, AudioModulatorEffect
+  AudioSourceEffect, OscilloscopeEffect, SpectralSplitterEffect, PixelProcessorEffect, ColorNoiseSource, AudioTransformerEffect, AudioModulatorEffect,
+  MidiInputSource
 } from '../../state/types';
+import { MidiManager } from '../../state/MidiManager';
 
 // ── Context types ──────────────────────────────────────────────────────────────
 
@@ -155,11 +157,54 @@ const VUMeter = ({ busId }: { busId: string }) => {
   );
 };
 
-const Slider = ({ label, min, max, step, value, onChange, resetValue = 0 }: {
+const Slider = ({ label, min, max, step, value, onChange, resetValue = 0, paramId, ctx }: {
   label?: string; min: number; max: number; step: number; value: number;
   onChange: (v: number) => void; resetValue?: number;
+  paramId?: string; ctx?: RowCtx;
 }) => {
   const safeValue = typeof value === 'number' ? value : resetValue;
+
+  // MIDI store hooks
+  const midiBindings = useEngineStore(s => s.midiBindings) || [];
+  const midiLearnTarget = useEngineStore(s => s.midiLearnTarget);
+  const setMidiLearnTarget = useEngineStore(s => s.setMidiLearnTarget);
+  const midiOverlayActive = useEngineStore(s => s.midiOverlayActive);
+
+  const layerId = ctx?.layer?.id;
+  const moduleObj = (ctx as any)?.source || (ctx as any)?.effect;
+  const moduleId = moduleObj?.id;
+
+  const isMidiMappable = !!(layerId && moduleId && paramId) && midiOverlayActive;
+
+  const isLearningThis = isMidiMappable && midiLearnTarget && 
+    midiLearnTarget.type === 'absolute' && 
+    midiLearnTarget.layerId === layerId && 
+    midiLearnTarget.moduleId === moduleId && 
+    midiLearnTarget.paramId === paramId;
+
+  const existingBinding = isMidiMappable ? midiBindings.find(b => 
+    b.target.type === 'absolute' && 
+    b.target.layerId === layerId && 
+    b.target.moduleId === moduleId && 
+    b.target.paramId === paramId
+  ) : null;
+
+  const handleMidiJackClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!isMidiMappable) return;
+    
+    if (isLearningThis) {
+      setMidiLearnTarget(null);
+    } else {
+      setMidiLearnTarget({
+        type: 'absolute',
+        layerId,
+        moduleId,
+        paramId
+      });
+    }
+  };
+
   return (
     <div 
       className="rack-row-content" 
@@ -167,13 +212,67 @@ const Slider = ({ label, min, max, step, value, onChange, resetValue = 0 }: {
       onDragStart={e => e.stopPropagation()}
       onDoubleClick={() => onChange(resetValue)}
       title="Double-click to reset"
+      style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', boxSizing: 'border-box' }}
     >
-      {label && <span className="rack-row-label">{label}: {safeValue.toFixed(2)}</span>}
-      <input type="range" min={min} max={max} step={step} value={safeValue}
-        onChange={e => {
-          e.stopPropagation();
-          onChange(parseFloat(e.target.value));
-        }} />
+      {label && <span className="rack-row-label" style={{ flexShrink: 0 }}>{label}: {safeValue.toFixed(2)}</span>}
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+        <input 
+          type="range" 
+          min={min} 
+          max={max} 
+          step={step} 
+          value={safeValue}
+          style={{ flex: 1, minWidth: 50 }}
+          onChange={e => {
+            e.stopPropagation();
+            onChange(parseFloat(e.target.value));
+          }} 
+        />
+        {isMidiMappable && (
+          <button
+            onClick={handleMidiJackClick}
+            className={`midi-shortcut-jack ${existingBinding ? 'bound' : ''} ${isLearningThis ? 'learning' : ''}`}
+            title={
+              isLearningThis 
+                ? 'MIDI Learn Active: wiggle a knob/slider on your controller to bind...' 
+                : existingBinding 
+                  ? `Bound to MIDI (Ch ${existingBinding.midiSource.channel}, ${existingBinding.midiSource.ccNumber !== undefined ? 'CC ' + existingBinding.midiSource.ccNumber : 'Note ' + existingBinding.midiSource.noteNumber}). Click to relearn.`
+                  : 'Click to map this parameter to MIDI hardware'
+            }
+            style={{
+              background: isLearningThis 
+                ? '#ff4444' 
+                : existingBinding 
+                  ? '#9e4aff' 
+                  : '#222',
+              color: isLearningThis || existingBinding ? '#fff' : '#666',
+              border: isLearningThis 
+                ? '1px solid #ffaa99' 
+                : existingBinding 
+                  ? '1px solid #c8a2ff' 
+                  : '1px solid #444',
+              borderRadius: '4px',
+              fontSize: '10px',
+              padding: '2px 4px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              minWidth: '22px',
+              height: '18px',
+              transition: 'all 0.2s ease',
+              boxShadow: isLearningThis 
+                ? '0 0 8px rgba(255, 68, 68, 0.6)' 
+                : existingBinding 
+                  ? '0 0 8px rgba(158, 74, 255, 0.5)' 
+                  : 'none',
+              fontFamily: 'inherit'
+            }}
+          >
+            🔌
+          </button>
+        )}
+      </div>
     </div>
   );
 };
@@ -367,7 +466,7 @@ export const SOURCE_ROWS: Record<string, ControlRowDef[]> = {
     },
     { id: 'playbackSpeed', label: 'Speed',
       render: ctx => <Slider label="Playback Speed" min={0.1} max={4} step={0.1}
-        value={src<VideoURLSource>(ctx).playbackSpeed} onChange={v => chg(ctx)('playbackSpeed', v)} />
+        value={src<VideoURLSource>(ctx).playbackSpeed} onChange={v => chg(ctx)('playbackSpeed', v)} paramId="playbackSpeed" ctx={ctx} />
     },
     { id: 'objectFit', label: 'Fit',
       render: ctx => (
@@ -391,7 +490,7 @@ export const SOURCE_ROWS: Record<string, ControlRowDef[]> = {
     { id: 'volume', label: 'Volume',
       render: ctx => <Slider label="Volume" min={0} max={1} step={0.01}
         resetValue={1}
-        value={src<VideoURLSource>(ctx).volume ?? 1} onChange={v => chg(ctx)('volume', v)} />
+        value={src<VideoURLSource>(ctx).volume ?? 1} onChange={v => chg(ctx)('volume', v)} paramId="volume" ctx={ctx} />
     },
   ],
 
@@ -485,7 +584,7 @@ export const SOURCE_ROWS: Record<string, ControlRowDef[]> = {
     },
     { id: 'playbackSpeed', label: 'Speed',
       render: ctx => <Slider label="Playback Speed" min={0.1} max={4} step={0.1}
-        value={src<VideoFileSource>(ctx).playbackSpeed} onChange={v => chg(ctx)('playbackSpeed', v)} />
+        value={src<VideoFileSource>(ctx).playbackSpeed} onChange={v => chg(ctx)('playbackSpeed', v)} paramId="playbackSpeed" ctx={ctx} />
     },
     { id: 'objectFit', label: 'Fit',
       render: ctx => (
@@ -508,7 +607,7 @@ export const SOURCE_ROWS: Record<string, ControlRowDef[]> = {
     { id: 'volume', label: 'Volume',
       render: ctx => <Slider label="Volume" min={0} max={1} step={0.01}
         resetValue={1}
-        value={src<VideoFileSource>(ctx).volume ?? 1} onChange={v => chg(ctx)('volume', v)} />
+        value={src<VideoFileSource>(ctx).volume ?? 1} onChange={v => chg(ctx)('volume', v)} paramId="volume" ctx={ctx} />
     },
   ],
 
@@ -661,6 +760,100 @@ export const SOURCE_ROWS: Record<string, ControlRowDef[]> = {
       render: ctx => src<TriggerPadSource>(ctx).useEnvelope ? <Slider label="Release (s)" min={0} max={5} step={0.01} value={src<TriggerPadSource>(ctx).release ?? 0.1} onChange={v => chg(ctx)('release', v)} /> : null
     }
   ],
+
+  MidiInput: [
+    { id: 'channel', label: 'Chan',
+      render: ctx => (
+        <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} onDragStart={e => e.stopPropagation()}>
+          <span className="rack-row-label">MIDI Channel</span>
+          <select value={src<MidiInputSource>(ctx).channel} onChange={e => {
+            const val = e.target.value;
+            chg(ctx)('channel', val === 'all' ? 'all' : parseInt(val));
+          }}>
+            <option value="all">All Channels</option>
+            {Array.from({ length: 16 }, (_, i) => i + 1).map(ch => (
+              <option key={ch} value={ch}>Channel {ch}</option>
+            ))}
+          </select>
+        </div>
+      )
+    },
+    { id: 'ccNumber', label: 'CC #',
+      render: ctx => (
+        <Slider label={`CC Number (${src<MidiInputSource>(ctx).ccNumber ?? 7})`} 
+          min={0} max={127} step={1} 
+          value={src<MidiInputSource>(ctx).ccNumber ?? 7} 
+          onChange={v => chg(ctx)('ccNumber', v)} />
+      )
+    },
+    { id: 'clockDivision', label: 'Div',
+      render: ctx => (
+        <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} onDragStart={e => e.stopPropagation()}>
+          <span className="rack-row-label">Clock Div</span>
+          <select value={src<MidiInputSource>(ctx).clockDivision} onChange={e => chg(ctx)('clockDivision', e.target.value)}>
+            <option value="1/4">1/4 Note (Quarter)</option>
+            <option value="1/8">1/8 Note (Eighth)</option>
+            <option value="1/16">1/16 Note (Sixteenth)</option>
+            <option value="1/32">1/32 Note (Thirty-second)</option>
+          </select>
+        </div>
+      )
+    },
+    { id: 'diagnostics', label: 'Monitor',
+      render: ctx => {
+        const midiSrc = src<MidiInputSource>(ctx);
+        const [diagnostics, setDiagnostics] = useState({ note: 'None', vel: 0, cc: 0, clock: 0 });
+
+        useEffect(() => {
+          const interval = setInterval(() => {
+            const mgr = MidiManager.getInstance();
+            const noteData = mgr.getNoteData(midiSrc.channel);
+            const ccVal = mgr.getCCValue(midiSrc.channel, midiSrc.ccNumber ?? 7);
+            
+            let noteName = 'None';
+            if (noteData.gate && noteData.rawPitch > 0) {
+              const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+              const octave = Math.floor(noteData.rawPitch / 12) - 1;
+              const name = noteNames[noteData.rawPitch % 12];
+              noteName = `${name}${octave}`;
+            }
+
+            setDiagnostics({
+              note: noteName,
+              vel: Math.round(noteData.velocity * 100),
+              cc: Math.round(ccVal * 100),
+              clock: (mgr as any).clockTicks
+            });
+          }, 100);
+
+          return () => clearInterval(interval);
+        }, [midiSrc.channel, midiSrc.ccNumber]);
+
+        return (
+          <div className="rack-row-content" style={{ display: 'flex', flexDirection: 'column', gap: 2, background: '#0a0a0a', padding: 6, borderRadius: 3, border: '1px solid #222', fontSize: 10, fontFamily: 'monospace' }}>
+            <div style={{ color: '#39ff14', fontWeight: 'bold', marginBottom: 2 }}>⚡ MIDI LIVE MONITOR</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: '#888' }}>Last Note:</span>
+              <span style={{ color: '#eee', fontWeight: 'bold' }}>{diagnostics.note}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: '#888' }}>Velocity:</span>
+              <span style={{ color: '#eee' }}>{diagnostics.vel}%</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: '#888' }}>CC ({midiSrc.ccNumber ?? 7}):</span>
+              <span style={{ color: '#eee' }}>{diagnostics.cc}%</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: '#888' }}>Clock Ticks:</span>
+              <span style={{ color: '#666' }}>{diagnostics.clock}</span>
+            </div>
+          </div>
+        );
+      }
+    }
+  ],
+
   Noise: [
     { id: 'noiseType', label: 'Type',
       render: ctx => (
@@ -932,7 +1125,7 @@ export const SOURCE_ROWS: Record<string, ControlRowDef[]> = {
       }
     },
     { id: 'volume', label: 'Volume',
-      render: ctx => <Slider label="Volume" min={0} max={2} step={0.01} value={src<AudioInputSource>(ctx).volume} onChange={v => chg(ctx)('volume', v)} />
+      render: ctx => <Slider label="Volume" min={0} max={2} step={0.01} value={src<AudioInputSource>(ctx).volume} onChange={v => chg(ctx)('volume', v)} paramId="volume" ctx={ctx} />
     },
   ],
 
@@ -971,7 +1164,7 @@ export const SOURCE_ROWS: Record<string, ControlRowDef[]> = {
       }
     },
     { id: 'volume', label: 'Volume',
-      render: ctx => <Slider label="Volume" min={0} max={1} step={0.01} value={src<AudioFileSource>(ctx).volume} onChange={v => chg(ctx)('volume', v)} />
+      render: ctx => <Slider label="Volume" min={0} max={1} step={0.01} value={src<AudioFileSource>(ctx).volume} onChange={v => chg(ctx)('volume', v)} paramId="volume" ctx={ctx} />
     },
     { id: 'timeline', label: 'Timeline',
       render: ctx => {
@@ -1388,7 +1581,7 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
         const ef = eff<VideoMixerEffect>(ctx);
         return (
           <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <Slider label="V1" min={0} max={2} step={0.01} resetValue={1} value={ef.v1} onChange={v => upd(ctx)({ v1: v })} />
+            <Slider label="V1" min={0} max={2} step={0.01} resetValue={1} value={ef.v1} onChange={v => upd(ctx)({ v1: v })} paramId="v1" ctx={ctx} />
             <select value={ef.v1Mode} onChange={e => upd(ctx)({ v1Mode: e.target.value as any })} className="mode-select">
               <option value="normal">NORM</option>
               <option value="add">ADD</option>
@@ -1399,12 +1592,12 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
         );
       }
     },
-    { id: 'v1Alpha', label: 'V1 Alpha', render: ctx => <Slider label="V1 α" min={0} max={1} step={0.01} resetValue={1} value={eff<VideoMixerEffect>(ctx).v1Alpha} onChange={v => upd(ctx)({ v1Alpha: v })} /> },
+    { id: 'v1Alpha', label: 'V1 Alpha', render: ctx => <Slider label="V1 α" min={0} max={1} step={0.01} resetValue={1} value={eff<VideoMixerEffect>(ctx).v1Alpha} onChange={v => upd(ctx)({ v1Alpha: v })} paramId="v1Alpha" ctx={ctx} /> },
     { id: 'v2', label: 'V2', render: ctx => {
         const ef = eff<VideoMixerEffect>(ctx);
         return (
           <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <Slider label="V2" min={0} max={2} step={0.01} resetValue={1} value={ef.v2} onChange={v => upd(ctx)({ v2: v })} />
+            <Slider label="V2" min={0} max={2} step={0.01} resetValue={1} value={ef.v2} onChange={v => upd(ctx)({ v2: v })} paramId="v2" ctx={ctx} />
             <select value={ef.v2Mode} onChange={e => upd(ctx)({ v2Mode: e.target.value as any })} className="mode-select">
               <option value="normal">NORM</option>
               <option value="add">ADD</option>
@@ -1415,12 +1608,12 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
         );
       }
     },
-    { id: 'v2Alpha', label: 'V2 Alpha', render: ctx => <Slider label="V2 α" min={0} max={1} step={0.01} resetValue={1} value={eff<VideoMixerEffect>(ctx).v2Alpha} onChange={v => upd(ctx)({ v2Alpha: v })} /> },
+    { id: 'v2Alpha', label: 'V2 Alpha', render: ctx => <Slider label="V2 α" min={0} max={1} step={0.01} resetValue={1} value={eff<VideoMixerEffect>(ctx).v2Alpha} onChange={v => upd(ctx)({ v2Alpha: v })} paramId="v2Alpha" ctx={ctx} /> },
     { id: 'v3', label: 'V3', render: ctx => {
         const ef = eff<VideoMixerEffect>(ctx);
         return (
           <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <Slider label="V3" min={0} max={2} step={0.01} resetValue={1} value={ef.v3} onChange={v => upd(ctx)({ v3: v })} />
+            <Slider label="V3" min={0} max={2} step={0.01} resetValue={1} value={ef.v3} onChange={v => upd(ctx)({ v3: v })} paramId="v3" ctx={ctx} />
             <select value={ef.v3Mode} onChange={e => upd(ctx)({ v3Mode: e.target.value as any })} className="mode-select">
               <option value="normal">NORM</option>
               <option value="add">ADD</option>
@@ -1431,12 +1624,12 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
         );
       }
     },
-    { id: 'v3Alpha', label: 'V3 Alpha', render: ctx => <Slider label="V3 α" min={0} max={1} step={0.01} resetValue={1} value={eff<VideoMixerEffect>(ctx).v3Alpha} onChange={v => upd(ctx)({ v3Alpha: v })} /> },
+    { id: 'v3Alpha', label: 'V3 Alpha', render: ctx => <Slider label="V3 α" min={0} max={1} step={0.01} resetValue={1} value={eff<VideoMixerEffect>(ctx).v3Alpha} onChange={v => upd(ctx)({ v3Alpha: v })} paramId="v3Alpha" ctx={ctx} /> },
     { id: 'v4', label: 'V4', render: ctx => {
         const ef = eff<VideoMixerEffect>(ctx);
         return (
           <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <Slider label="V4" min={0} max={2} step={0.01} resetValue={1} value={ef.v4} onChange={v => upd(ctx)({ v4: v })} />
+            <Slider label="V4" min={0} max={2} step={0.01} resetValue={1} value={ef.v4} onChange={v => upd(ctx)({ v4: v })} paramId="v4" ctx={ctx} />
             <select value={ef.v4Mode} onChange={e => upd(ctx)({ v4Mode: e.target.value as any })} className="mode-select">
               <option value="normal">NORM</option>
               <option value="add">ADD</option>
@@ -1447,8 +1640,8 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
         );
       }
     },
-    { id: 'v4Alpha', label: 'V4 Alpha', render: ctx => <Slider label="V4 α" min={0} max={1} step={0.01} resetValue={1} value={eff<VideoMixerEffect>(ctx).v4Alpha} onChange={v => upd(ctx)({ v4Alpha: v })} /> },
-    { id: 'master', label: 'Master', render: ctx => <Slider label="Gain" min={0} max={2} step={0.01} resetValue={1} value={eff<VideoMixerEffect>(ctx).masterGain} onChange={v => upd(ctx)({ masterGain: v })} /> },
+    { id: 'v4Alpha', label: 'V4 Alpha', render: ctx => <Slider label="V4 α" min={0} max={1} step={0.01} resetValue={1} value={eff<VideoMixerEffect>(ctx).v4Alpha} onChange={v => upd(ctx)({ v4Alpha: v })} paramId="v4Alpha" ctx={ctx} /> },
+    { id: 'master', label: 'Master', render: ctx => <Slider label="Gain" min={0} max={2} step={0.01} resetValue={1} value={eff<VideoMixerEffect>(ctx).masterGain} onChange={v => upd(ctx)({ masterGain: v })} paramId="masterGain" ctx={ctx} /> },
   ],
 
 

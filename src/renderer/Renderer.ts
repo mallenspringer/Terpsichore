@@ -807,7 +807,21 @@ export class Renderer {
   }
 
   private getEffectiveParam(layer: LayerState, nodeId: string, paramId: string, baseValue: number, _timeSec: number): number {
-    let finalValue = baseValue;
+    let base = baseValue;
+
+    const midiOverride = SignalDispatcher.getInstance().getMidiOverride(layer.id, nodeId, paramId);
+    if (midiOverride !== null) {
+      base = midiOverride;
+    } else if (paramId === 'scaleY') {
+      const isLinked = layer.linkedScales?.[nodeId] ?? true;
+      const effect = layer.effects.find(e => e.id === nodeId);
+      if (effect?.type === 'Transform2D' && isLinked) {
+        const xOverride = SignalDispatcher.getInstance().getMidiOverride(layer.id, nodeId, 'scaleX');
+        if (xOverride !== null) base = xOverride;
+      }
+    }
+
+    let finalValue = base;
 
     // Resolve modulation via the signalValues calculated by the SignalDispatcher
     const edges = layer.graph?.edges || [];

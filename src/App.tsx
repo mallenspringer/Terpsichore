@@ -4,6 +4,7 @@ import { useEngineStore } from "./state/store";
 import { Renderer } from "./renderer/Renderer";
 import { Sidebar } from "./components/Sidebar";
 import { NodeGraph } from "./components/NodeGraph/NodeGraph";
+import { MidiMappingModal } from "./components/NodeGraph/MidiMappingModal";
 
 function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -22,6 +23,7 @@ function App() {
   // Local State
   const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
   const [videoProgress, setVideoProgress] = useState<Record<string, {currentTime: number, duration: number}>>({});
+  const [isMidiModalOpen, setMidiModalOpen] = useState(false);
 
   const activeLayer = useMemo(() => activeLayerId ? layers[activeLayerId] : null, [layers, activeLayerId]);
 
@@ -226,6 +228,7 @@ function App() {
           onSelectLayer={setActiveLayerId} 
           activeLayer={activeLayer}
           sourceCtx={sourceCtx as any}
+          onOpenMidiModal={() => setMidiModalOpen(true)}
         />
 
         <div className="main-area">
@@ -274,6 +277,8 @@ function App() {
           </div>
         </div>
       </div>
+      
+      <MidiMappingModal isOpen={isMidiModalOpen} onClose={() => setMidiModalOpen(false)} />
     </div>
   );
 }

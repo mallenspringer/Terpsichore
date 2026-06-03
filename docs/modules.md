@@ -127,6 +127,20 @@ Low-Frequency Oscillator for modulation.
 *   **Bipolar Toggle**: Switches output between `0 to 1` and `-1 to 1`.
 *   **Global Sync**: Resets phase when the Global Reset signal is triggered.
 
+### MIDI Input (🎹)
+Standard modulator module that routes MIDI keyboard, pad, and clock sync inputs to CV/modulation outputs.
+*   **Parameters**:
+    *   **MIDI Channel**: Selects discrete channel (1-16) or OMNI (All Channels) to filter incoming messages.
+    *   **CC Number**: Configures the control change number index (0-127) for continuous output mapping.
+    *   **Clock Division**: Sets the sync division (`1/4`, `1/8`, `1/16`, `1/32`) to derive tempo-synced triggers from external MIDI clock sync signals.
+*   **Signal Ports**:
+    *   **Note Out**: Pitch output normalized from raw MIDI note (0-127) to a standard [0.0, 1.0] range (normalized C1-C9 range).
+    *   **Gate Out**: Trigger/Gate output (1.0 while any note is active, 0.0 when all notes are released).
+    *   **Velocity Out**: Dynamic strike velocity output normalized [0.0, 1.0] corresponding to key force.
+    *   **CC Out**: Continuous modulation output [0.0, 1.0] mapped to the configured CC index.
+    *   **Clock Out**: Rhythmic triggers generated on the selected subdivision matching external clock sync beats.
+*   **Use Cases**: Playing visual instruments using hardware keyboards, triggering envelope gates from drum pads, or driving LFO rates and step sequencer clocks in phase with external DAWs or synth systems.
+
 ### Signal Math (∑)
 Algebra processor for two control signals.
 *   **Operators**:

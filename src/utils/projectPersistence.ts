@@ -25,6 +25,7 @@ export function exportProject() {
     interLayerEdges: state.interLayerEdges,
     projectName: state.projectName,
     authorName: state.authorName,
+    midiBindings: state.midiBindings,
   };
 
   // 2. Gather UI Layouts

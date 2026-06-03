@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { LayerState, LayerGraph, InterLayerEdge, EngineState, PortSettings, AnySource, AnyEffect } from './types';
+import { LayerState, LayerGraph, InterLayerEdge, EngineState, PortSettings, AnySource, AnyEffect, MidiBinding, AbsoluteTargetSpec, QueryTargetSpec } from './types';
 import { buildAutoEdges } from './graphUtils';
 
 interface EngineActions {
@@ -33,6 +33,13 @@ interface EngineActions {
 
   // Selection
   setActiveLayerId: (id: string | null) => void;
+
+  // MIDI Mappings
+  addMidiBinding: (binding: MidiBinding) => void;
+  removeMidiBinding: (id: string) => void;
+  updateMidiBinding: (id: string, updates: Partial<MidiBinding>) => void;
+  setMidiLearnTarget: (target: AbsoluteTargetSpec | QueryTargetSpec | null) => void;
+  setMidiOverlayActive: (active: boolean) => void;
 }
 
 export type StoreState = EngineState & EngineActions & {
@@ -72,6 +79,9 @@ export const useEngineStore = create<StoreState>((set) => ({
   globalResetSignal: 0,
   projectName: 'Untitled Project',
   authorName: 'User',
+  midiBindings: [],
+  midiLearnTarget: null,
+  midiOverlayActive: false,
 
   setProjectName: (name) => set({ projectName: name }),
   setAuthorName: (name) => set({ authorName: name }),
@@ -126,6 +136,8 @@ export const useEngineStore = create<StoreState>((set) => ({
       projectName: project.projectName || 'Untitled Project',
       authorName: project.authorName || 'User',
       activeLayerId: project.layerOrder[0] || null,
+      midiBindings: project.midiBindings || [],
+      midiLearnTarget: null
     })),
 
   reorderEffect: (layerId, fromIndex, toIndex) =>
@@ -266,4 +278,12 @@ export const useEngineStore = create<StoreState>((set) => ({
     })),
 
   setActiveLayerId: (id) => set({ activeLayerId: id }),
+
+  addMidiBinding: (binding) => set((state) => ({ midiBindings: [...state.midiBindings, binding] })),
+  removeMidiBinding: (id) => set((state) => ({ midiBindings: state.midiBindings.filter(b => b.id !== id) })),
+  updateMidiBinding: (id, updates) => set((state) => ({
+    midiBindings: state.midiBindings.map(b => b.id === id ? { ...b, ...updates } : b)
+  })),
+  setMidiLearnTarget: (target) => set({ midiLearnTarget: target }),
+  setMidiOverlayActive: (active) => set({ midiOverlayActive: active }),
 }));

@@ -10,6 +10,8 @@ This document tracks planned features and architectural improvements to be addre
 - **v0.2.0 UX**: Implemented Autoscroll and Transform-aware interaction (focus prevention) for stable graph navigation.
 - **New Modules**: Kaleidoscope, Pattern, Logic Gates, and the enhanced dual-mode Sample & Hold.
 - **Spectral Splitter**: 5-band frequency analysis with real-time WebGPU visualization and modulation outputs.
+- **High-Fidelity Vocal Tracking (v0.3.0)**: Formed F0 pitch tracker (YIN), vowel formant tracker, speech envelope tracker, vocal voice profiles, Butterworth anti-aliased decimation, and LPC formant estimation.
+- **Hybrid MIDI Overlays & Mapping (v0.4.0)**: Integrated native WebMIDI API manager, inline fader overlays, manual preset builders, note/velocity/CC handlers, and OMNI/discrete channel mappings.
 
 ## 🚀 New Features
 
@@ -18,14 +20,7 @@ This document tracks planned features and architectural improvements to be addre
 - **Attractors/Repellers**: Modules that influence the movement of all objects on a layer based on spatial coordinates.
 
 ### 2. Enhanced Signal Processing & Vocal Synesthesics
-- **MIDI Integration**: Support for MIDI clock, notes, and CC for modulation.
-- **Human-Voice Reactivity (Active Spoken Word Target)**:
-    - **Vocal Tracking Components**: Build discrete, simple tracking modules for:
-        - **Speech Envelope**: Capturing vocal cadence, phrases, and pauses.
-        - **Vowel/Formant Tracking**: Tracking vowel sounds and transitions.
-        - **F0 Pitch Detection**: Tracking fundamental voice frequency.
-        - **Spectral Features**: Centroid, roll-off, and potentially MFCC (Mel-Frequency Cepstral Coefficients) / HPSS (Harmonic-Percussive Source Separation).
-    - **Voice Visualizer (The "Crown Jewel")**: An elegant "black box" module designed to synesthetically capture the nuances, timbre, and cadence of a human voice to accompany spoken word and literary performances. Integrates the discrete trackers with a high-resolution, self-tuning spectral analyzer, hiding complexity under a streamlined UX.
+- **Key-Mixer compositing**: Mask and blend layer textures based on keying ranges.
 
 ### 3. Effects Modules
 - **Key Mixer**: A multi-input keying module designed to key multiple sources against each other within a single layer, featuring support for both **Luma Keying** (luminance/brightness thresholds) and **Chroma Keying** (color-chrominance range matching, tolerance adjustments, and edge spill suppression).

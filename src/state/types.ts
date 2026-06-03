@@ -175,7 +175,45 @@ export interface ColorNoiseSource {
   autoAnimate: boolean;
 }
 
-export type AnySource = NoneSource | ShapeGeneratorSource | VideoURLSource | VideoFileSource | WebcamCaptureSource | ImageLoaderSource | ImageFileSource | AudioInputSource | AudioFileSource | SystemAudioSource | SignalProcessorSource | LFOModulatorSource | TriggerPadSource | NoiseModulatorSource | NoiseVideoSource | ColorNoiseSource;
+export interface MidiInputSource {
+  type: 'MidiInput';
+  channel: 'all' | number;
+  ccNumber: number;
+  clockDivision: '1/4' | '1/8' | '1/16' | '1/32';
+}
+
+export type TargetType = 'absolute' | 'query';
+
+export interface AbsoluteTargetSpec {
+  type: 'absolute';
+  layerId: string;
+  moduleId: string; // The UUID of the module (e.g. 'transform2d_123')
+  paramId: string;  // The parameter (e.g. 'scaleX')
+}
+
+export interface QueryTargetSpec {
+  type: 'query';
+  layerId: string;
+  moduleType: string; // Matches source/effect type (e.g., 'ShapeGenerator')
+  index: number;      // e.g. 0 (first instance)
+  paramId: string;    // The parameter
+}
+
+export interface MidiBinding {
+  id: string;
+  type: 'parameter' | 'global' | 'bank_cycle';
+  target: AbsoluteTargetSpec | QueryTargetSpec;
+  targetAction?: 'mute_global' | 'pause_global' | 'cycle_active_layer' | 'mute_layer_1' | 'mute_layer_2' | 'mute_layer_3' | 'mute_layer_4';
+  midiSource: {
+    channel: 'all' | number;
+    ccNumber?: number;
+    noteNumber?: number;
+  };
+  range: [number, number]; // [min, max]
+  invert: boolean;
+}
+
+export type AnySource = NoneSource | ShapeGeneratorSource | VideoURLSource | VideoFileSource | WebcamCaptureSource | ImageLoaderSource | ImageFileSource | AudioInputSource | AudioFileSource | SystemAudioSource | SignalProcessorSource | LFOModulatorSource | TriggerPadSource | NoiseModulatorSource | NoiseVideoSource | ColorNoiseSource | MidiInputSource;
 
 // --- EFFECTS ---
 
@@ -586,6 +624,9 @@ export interface EngineState {
   activeLayerId: string | null;
   canvasWidth: number;
   canvasHeight: number;
+  midiBindings: MidiBinding[];
+  midiLearnTarget: AbsoluteTargetSpec | QueryTargetSpec | null;
+  midiOverlayActive: boolean;
 }
 
 // --- AUDIO TYPES ---
