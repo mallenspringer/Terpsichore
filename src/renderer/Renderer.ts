@@ -1,5 +1,6 @@
 import { useEngineStore } from '../state/store';
 import { MediaManager } from './MediaManager';
+import { SimulationPipeline } from './SimulationPipeline';
 import { ShapeGeneratorWGSL } from './shaders/ShapeGenerator';
 import { FullscreenQuadWGSL } from './shaders/FullscreenQuad';
 import { Transform2DWGSL } from './shaders/Transform2D';
@@ -26,24 +27,10 @@ import { SignalDispatcher } from '../state/SignalDispatcher';
 import {
   ShapeGeneratorSource, Transform2DEffect, ColorAdjustEffect, LumaKeyEffect,
   SimpleFeedbackEffect, ColorRGBEffect, LumaSplitterEffect, VideoMixerEffect,
-  SpawnEffect, PathEffect, NoiseVideoSource, ColorNoiseSource, InverterEffect, PixelProcessorEffect,
+  NoiseVideoSource, ColorNoiseSource, InverterEffect, PixelProcessorEffect,
   PatternEffect, KaleidoscopeEffect, SampleAndHoldEffect, OscilloscopeEffect, SpectralSplitterEffect,
   LayerState, AnySource
 } from '../state/types';
-
-interface SpawnedObject {
-  id: string;
-  birthX: number;      // Modulated X at birth
-  birthY: number;      // Modulated Y at birth
-  birthScale: number;  // Modulated Scale at birth
-  birthRotation: number; // Modulated Rotation at birth
-  randomX: number;
-  randomY: number;
-  randomScale: number;
-  birthTime: number;
-  lifetime: number;
-  alpha: number;
-}
 
 export class Renderer {
   private canvas: HTMLCanvasElement;
@@ -57,6 +44,7 @@ export class Renderer {
 
   private prevFrameFBOs: Record<string, GPUTexture> = {};
   public mediaManager: MediaManager = new MediaManager();
+  public simulationPipeline: SimulationPipeline = new SimulationPipeline();
   public get isSeeking() { return this.mediaManager.isSeeking; }
   public set isSeeking(val: Record<string, boolean>) { this.mediaManager.isSeeking = val; }
 
@@ -185,48 +173,18 @@ export class Renderer {
 
   private renderSpawn(layer: LayerState, nodeId: string, inputTex: GPUTexture, target: GPUTexture, timeSec: number, commandEncoder: GPUCommandEncoder) {
     const stateKey = `${layer.id}.${nodeId}`;
-    const spawns = this.spawnStates.get(stateKey) || [];
     const width = target.width;
     const height = target.height;
     const aspect = width / height;
 
-    const effect = layer.effects.find(e => e.id === nodeId);
-    if (!effect || effect.type !== 'Spawn') return;
-    const sp = effect as SpawnEffect;
-
-    // Get current modulated values (for Dynamic mode)
-    let currentX = this.getEffectiveParam(layer, nodeId, 'x', sp.x, timeSec);
-    let currentY = this.getEffectiveParam(layer, nodeId, 'y', sp.y, timeSec);
-    const currentScale = this.getEffectiveParam(layer, nodeId, 'scale', sp.scale, timeSec);
-    const currentRotation = this.getEffectiveParam(layer, nodeId, 'rotation', sp.rotation, timeSec);
-
-    if (sp.coordinateMode === 'pixel') {
-      currentX = (currentX / width) * 2 - 1;
-      currentY = (currentY / height) * -2 + 1;
-    }
-
-    const latched = sp.latchedPorts || [];
-    const isGlobal = sp.globalLatch || false;
-
-    // Helper to resolve dynamic vs latched
-    const resolve = (portId: string, current: number, birth: number) => {
-      if (isGlobal) return birth;
-      return latched.includes(portId) ? birth : current;
-    };
-
-    // --- Path Logic ---
-    // Look for a path connected to this Spawn node
-    const pathEdge = layer.graph?.edges.find(e => e.toNodeId === nodeId && e.toPort === 'path_in');
-    const pathEffect = pathEdge ? layer.effects.find(e => e.id === pathEdge.fromNodeId) as PathEffect : null;
-
-    // Resolve path params (modulated)
-    let pathSpeed = 1.0, pathStrength = 1.0, pathFreq = 1.0, pathDrift = 0.0;
-    if (pathEffect) {
-      pathSpeed = this.getEffectiveParam(layer, pathEffect.id, 'speed', pathEffect.speed, timeSec);
-      pathStrength = this.getEffectiveParam(layer, pathEffect.id, 'strength', pathEffect.strength, timeSec);
-      pathFreq = this.getEffectiveParam(layer, pathEffect.id, 'frequency', pathEffect.frequency, timeSec);
-      pathDrift = this.getEffectiveParam(layer, pathEffect.id, 'drift', pathEffect.drift, timeSec);
-    }
+    const { instanceData, count } = this.simulationPipeline.computeInstanceData(
+      layer,
+      nodeId,
+      timeSec,
+      width,
+      height,
+      this.getEffectiveParam.bind(this)
+    );
 
     // 1. Clear Target
     const pass = commandEncoder.beginRenderPass({
@@ -238,43 +196,8 @@ export class Renderer {
       }]
     });
 
-    if (spawns.length > 0) {
+    if (count > 0) {
       pass.setPipeline(this.spawnPipeline);
-
-      const instanceData = new Float32Array(spawns.length * 8); // 8 floats per instance
-      spawns.forEach((obj, idx) => {
-        const age = timeSec - obj.birthTime;
-        let pathOffsetX = 0;
-        let pathOffsetY = 0;
-
-        if (pathEffect) {
-          if (pathEffect.mode === 'physics') {
-            pathOffsetY = -age * pathSpeed * 0.1; // Slow rise
-            pathOffsetX = age * pathDrift * 0.1;
-          } else if (pathEffect.mode === 'wiggle') {
-            pathOffsetX = Math.sin(age * pathFreq + obj.randomX * 100) * pathStrength * 0.05;
-            pathOffsetY = Math.cos(age * pathFreq * 0.7 + obj.randomY * 100) * pathStrength * 0.05;
-          } else if (pathEffect.mode === 'orbit') {
-            const angle = age * pathSpeed + (obj.randomX * Math.PI * 2);
-            const dist = pathStrength * 0.1;
-            pathOffsetX = Math.cos(angle) * dist;
-            pathOffsetY = Math.sin(angle) * dist;
-          }
-        }
-
-        const finalX = resolve('x', currentX, obj.birthX) + obj.randomX + pathOffsetX;
-        const finalY = resolve('y', currentY, obj.birthY) + obj.randomY + pathOffsetY;
-        const finalScale = resolve('scale', currentScale, obj.birthScale) * (1.0 + obj.randomScale);
-        const finalRotation = resolve('rotation', currentRotation, obj.birthRotation);
-
-        const base = idx * 8;
-        instanceData[base + 0] = finalX;
-        instanceData[base + 1] = finalY;
-        instanceData[base + 2] = finalScale;
-        instanceData[base + 3] = finalRotation;
-        instanceData[base + 4] = obj.alpha;
-        // padding: indices 5, 6, 7
-      });
 
       const storageBuffer = this.getStorageBuffer(`${stateKey}.instances`, instanceData.byteLength);
       this.device.queue.writeBuffer(storageBuffer, 0, instanceData);
@@ -293,7 +216,7 @@ export class Renderer {
       });
 
       pass.setBindGroup(0, bindGroup);
-      pass.draw(3, spawns.length);
+      pass.draw(3, count);
     }
 
     pass.end();
@@ -710,10 +633,9 @@ export class Renderer {
   }
 
   private frameCount = 0;
-  private spawnStates = new Map<string, SpawnedObject[]>();
   private shLiveStates = new Map<string, boolean>();
-  private lastTriggerVals = new Map<string, number>();
   private patternMirrorStates = new Map<string, { x: boolean, y: boolean }>();
+  private lastTriggerVals = new Map<string, number>();
 
   private accumulatedTimeSec = 0;
   private lastRenderRealTime = performance.now();
@@ -752,50 +674,13 @@ export class Renderer {
 
     // --- RENDER & LOGIC PASS ---
     orderedLayers.forEach(layer => {
-      const latestSignals = SignalDispatcher.getInstance().getLatestSignals(layer.id);
-
-      // 1. Spawn Logic (Updated to use SignalDispatcher values)
-      layer.effects.filter(e => e.type === 'Spawn').forEach(effect => {
-        const sp = effect as SpawnEffect;
-        const stateKey = `${layer.id}.${effect.id}`;
-        let activeSpawns = this.spawnStates.get(stateKey) || [];
-
-        // Resolve triggers and resets from latestSignals
-        const triggerInVal = latestSignals[`${effect.id}.trigger_in`] ?? 0;
-        const lastVal = this.lastTriggerVals.get(stateKey) ?? 0;
-        const isTriggered = triggerInVal > 0.5 && lastVal <= 0.5;
-        this.lastTriggerVals.set(stateKey, triggerInVal);
-
-        const resetVal = latestSignals[`${effect.id}.reset_in`] ?? 0;
-        if (resetVal > 0.5) activeSpawns = [];
-
-        if (isTriggered) {
-          let modX = this.getEffectiveParam(layer, effect.id, 'x', sp.x, timeSec);
-          let modY = this.getEffectiveParam(layer, effect.id, 'y', sp.y, timeSec);
-          const modScale = this.getEffectiveParam(layer, effect.id, 'scale', sp.scale, timeSec);
-          const modRot = this.getEffectiveParam(layer, effect.id, 'rotation', sp.rotation, timeSec);
-
-          const rx = ((Math.random() * 2 - 1) * sp.randomPos) / (sp.coordinateMode === 'pixel' ? this.canvas.width : 1);
-          const ry = ((Math.random() * 2 - 1) * sp.randomPos) / (sp.coordinateMode === 'pixel' ? this.canvas.height : 1);
-          const rs = (Math.random() * 2 - 1) * (sp.randomScale || 0);
-
-          activeSpawns.unshift({
-            id: `spawn_${Date.now()}_${Math.random()}`,
-            birthX: modX, birthY: modY, birthScale: modScale, birthRotation: modRot,
-            randomX: rx, randomY: ry, randomScale: rs,
-            birthTime: timeSec, lifetime: sp.lifetime, alpha: 1.0
-          });
-          if (activeSpawns.length > sp.maxCount) activeSpawns.pop();
-        }
-
-        activeSpawns = activeSpawns.filter(obj => {
-          const age = timeSec - obj.birthTime;
-          if (age >= obj.lifetime) return false;
-          obj.alpha = sp.fadeOut ? 1.0 - (age / obj.lifetime) : 1.0;
-          return true;
-        });
-        this.spawnStates.set(stateKey, activeSpawns);
-      });
+      this.simulationPipeline.update(
+        layer,
+        timeSec,
+        this.canvas.width,
+        this.canvas.height,
+        this.getEffectiveParam.bind(this)
+      );
     });
 
     // Check for canvas resize
@@ -1535,6 +1420,7 @@ export class Renderer {
     if (this.blankTexture) this.blankTexture.destroy();
     Object.values(this.prevFrameFBOs).forEach(fbo => fbo.destroy());
     this.mediaManager.dispose();
+    this.simulationPipeline.reset();
     this.analysisReadbackBuffers.forEach(buf => buf.destroy());
     this.analysisReadbackBuffers.clear();
     this.analysisWeightBuffers.clear();
