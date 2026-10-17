@@ -1,5 +1,5 @@
 // --- SOURCES ---
-export type SourceType = 'None' | 'ShapeGenerator' | 'VideoURL' | 'VideoFile' | 'WebcamCapture' | 'ImageLoader' | 'ImageFile' | 'AudioInput' | 'AudioFile' | 'SystemAudio' | 'SignalProcessor';
+export type SourceType = 'None' | 'ShapeGenerator' | 'VideoURL' | 'VideoFile' | 'WebcamCapture' | 'ImageLoader' | 'ImageFile' | 'AudioInput' | 'AudioFile' | 'SystemAudio';
 
 export interface NoneSource {
   type: 'None';
@@ -103,13 +103,7 @@ export interface SystemAudioSource {
   muted: boolean;
 }
 
-export interface SignalProcessorSource {
-  id?: string;
-  type: 'SignalProcessor';
-  operation: 'add' | 'subtract' | 'multiply' | 'divide' | 'modulo' | 'pow' | 'min' | 'max';
-  operandA: number;
-  operandB: number;
-}
+
 
 export interface LFOModulatorSource {
   type: 'LFO';
@@ -213,7 +207,7 @@ export interface MidiBinding {
   invert: boolean;
 }
 
-export type AnySource = NoneSource | ShapeGeneratorSource | VideoURLSource | VideoFileSource | WebcamCaptureSource | ImageLoaderSource | ImageFileSource | AudioInputSource | AudioFileSource | SystemAudioSource | SignalProcessorSource | LFOModulatorSource | TriggerPadSource | NoiseModulatorSource | NoiseVideoSource | ColorNoiseSource | MidiInputSource;
+export type AnySource = NoneSource | ShapeGeneratorSource | VideoURLSource | VideoFileSource | WebcamCaptureSource | ImageLoaderSource | ImageFileSource | AudioInputSource | AudioFileSource | SystemAudioSource | LFOModulatorSource | TriggerPadSource | NoiseModulatorSource | NoiseVideoSource | ColorNoiseSource | MidiInputSource;
 
 // --- EFFECTS ---
 
@@ -567,7 +561,7 @@ export type AnyEffect =
   | AudioSourceEffect | OscilloscopeEffect | SpectralSplitterEffect | AudioTransformerEffect | AudioModulatorEffect | AudioGateEffect
   | SpeechEnvelopeTrackerEffect | VocalPitchTrackerEffect | VowelFormantTrackerEffect | SpokenWordVisualizerEffect
   | ShapeGeneratorSource | VideoURLSource | VideoFileSource | WebcamCaptureSource | NoiseVideoSource | ColorNoiseSource
-  | AudioInputSource | AudioFileSource | SystemAudioSource | ImageLoaderSource | ImageFileSource | SignalProcessorSource;
+  | AudioInputSource | AudioFileSource | SystemAudioSource | ImageLoaderSource | ImageFileSource;
 
 export type EffectType = 
   | 'Transform2D' | 'ColorAdjust' | 'LumaKey' | 'SimpleFeedback' 
@@ -575,7 +569,7 @@ export type EffectType =
   | 'ColorRGB' | 'LumaSplitter' | 'Spawn' | 'Path' | 'Inverter' | 'VideoMixer' | 'AlphaAdjust'
   | 'LogicGate' | 'TriggeredGate' | 'Pattern' | 'Kaleidoscope' | 'SignalMath' | 'SampleAndHold' | 'StepSequencer' | 'AudioSource' | 'Oscilloscope' | 'SpectralSplitter' | 'PixelProcessor' | 'AudioTransformer' | 'AudioModulator' | 'AudioGate'
   | 'SpeechEnvelopeTracker' | 'VocalPitchTracker' | 'VowelFormantTracker' | 'SpokenWordVisualizer'
-  | 'ShapeGenerator' | 'VideoURL' | 'VideoFile' | 'WebcamCapture' | 'NoiseSource' | 'ColorNoise' | 'AudioInput' | 'AudioFile' | 'SystemAudio' | 'ImageLoader' | 'ImageFile' | 'SignalProcessor';
+  | 'ShapeGenerator' | 'VideoURL' | 'VideoFile' | 'WebcamCapture' | 'NoiseSource' | 'ColorNoise' | 'AudioInput' | 'AudioFile' | 'SystemAudio' | 'ImageLoader' | 'ImageFile';
 
 // --- GRAPH ---
 export interface GraphEdge {

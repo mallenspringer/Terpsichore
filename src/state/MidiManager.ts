@@ -275,10 +275,13 @@ export class MidiManager {
   }
 
   public getClockPulse(division: '1/4' | '1/8' | '1/16' | '1/32'): boolean {
-    const active = this.clockPulseActive[division];
-    if (active) {
-      this.clockPulseActive[division] = false; // Reset on read
-    }
-    return active;
+    return this.clockPulseActive[division];
+  }
+
+  public clearClockPulses() {
+    this.clockPulseActive['1/4'] = false;
+    this.clockPulseActive['1/8'] = false;
+    this.clockPulseActive['1/16'] = false;
+    this.clockPulseActive['1/32'] = false;
   }
 }

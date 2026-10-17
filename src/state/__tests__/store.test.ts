@@ -1,9 +1,24 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useEngineStore } from '../store';
 import { AnySource, AnyEffect } from '../types';
+import { AudioEngine } from '../AudioEngine';
 
-describe('EngineStore Auto-wiring', () => {
+vi.mock('../AudioEngine', () => {
+  const disconnectNodeMock = vi.fn();
+  const unregisterMediaElementMock = vi.fn();
+  return {
+    AudioEngine: {
+      getInstance: () => ({
+        disconnectNode: disconnectNodeMock,
+        unregisterMediaElement: unregisterMediaElementMock,
+      })
+    }
+  };
+});
+
+describe('EngineStore Auto-wiring & Resource Management', () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     useEngineStore.setState({
       layers: {
         'layer_1': {
@@ -75,5 +90,29 @@ describe('EngineStore Auto-wiring', () => {
     // Output should STILL be disconnected because it's in disconnectedPorts
     const hasOutputEdge = layerAfter.graph?.edges.some(e => e.toNodeId === '__output__');
     expect(hasOutputEdge).toBe(false);
+  });
+
+  it('should disconnect audio nodes when removing an effect', () => {
+    const store = useEngineStore.getState();
+    const effect: AnyEffect = { id: 'audio_fx_1', type: 'AudioTransformer' } as any;
+    store.addEffect('layer_1', effect);
+    
+    store.removeEffect('layer_1', 'audio_fx_1');
+    
+    const layer = useEngineStore.getState().layers['layer_1'];
+    expect(layer.effects.find(e => e.id === 'audio_fx_1')).toBeUndefined();
+    expect(AudioEngine.getInstance().disconnectNode).toHaveBeenCalledWith('audio_fx_1');
+  });
+
+  it('should disconnect audio nodes and unregister media when removing a layer', () => {
+    const store = useEngineStore.getState();
+    const effect: AnyEffect = { id: 'audio_fx_2', type: 'AudioGate' } as any;
+    store.addEffect('layer_1', effect);
+    
+    store.removeLayer('layer_1');
+    
+    expect(useEngineStore.getState().layers['layer_1']).toBeUndefined();
+    expect(AudioEngine.getInstance().disconnectNode).toHaveBeenCalledWith('audio_fx_2');
+    expect(AudioEngine.getInstance().unregisterMediaElement).toHaveBeenCalledWith('layer_1');
   });
 });

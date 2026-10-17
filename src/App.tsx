@@ -5,6 +5,7 @@ import { Renderer } from "./renderer/Renderer";
 import { Sidebar } from "./components/Sidebar";
 import { NodeGraph } from "./components/NodeGraph/NodeGraph";
 import { MidiMappingModal } from "./components/NodeGraph/MidiMappingModal";
+import { AudioEngine } from "./state/AudioEngine";
 
 function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -197,10 +198,13 @@ function App() {
     };
   }, [activeLayerId, activeLayer, cameras, videoProgress]);
 
+  const audioResumedRef = useRef(false);
   const handlePointerDown = () => {
-    import('./state/AudioEngine').then(({ AudioEngine }) => {
-      AudioEngine.getInstance().resume();
-    });
+    if (!audioResumedRef.current) {
+      AudioEngine.getInstance().resume().then(() => {
+        audioResumedRef.current = true;
+      });
+    }
   };
 
   return (
@@ -211,7 +215,7 @@ function App() {
       <div className="top-menu" style={{ height: 40, background: '#111', display: 'flex', alignItems: 'center', padding: '0 15px', borderBottom: '1px solid #222' }}>
         <div style={{ fontWeight: 'bold', letterSpacing: 2 }}>
           TERPSICH<span style={{ color: '#ff4444' }}>O</span><span style={{ color: '#88cc00' }}>R</span><span style={{ color: '#4444ff' }}>E</span>
-          <span style={{ color: '#444', fontSize: '0.8em', marginLeft: 8 }}>v0.3.0</span>
+          <span style={{ color: '#444', fontSize: '0.8em', marginLeft: 8 }}>v0.4.0</span>
         </div>
         <div style={{ flex: 1 }} />
         <button 

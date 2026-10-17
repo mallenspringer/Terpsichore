@@ -985,19 +985,21 @@ export class Renderer {
 
     // --- RENDER & LOGIC PASS ---
     orderedLayers.forEach(layer => {
+      const latestSignals = SignalDispatcher.getInstance().getLatestSignals(layer.id);
+
       // 1. Spawn Logic (Updated to use SignalDispatcher values)
       layer.effects.filter(e => e.type === 'Spawn').forEach(effect => {
         const sp = effect as SpawnEffect;
         const stateKey = `${layer.id}.${effect.id}`;
         let activeSpawns = this.spawnStates.get(stateKey) || [];
 
-        // Resolve triggers and resets from signalValues
-        const triggerInVal = layer.signalValues?.[`${effect.id}.trigger_in`] ?? 0;
+        // Resolve triggers and resets from latestSignals
+        const triggerInVal = latestSignals[`${effect.id}.trigger_in`] ?? 0;
         const lastVal = this.lastTriggerVals.get(stateKey) ?? 0;
         const isTriggered = triggerInVal > 0.5 && lastVal <= 0.5;
         this.lastTriggerVals.set(stateKey, triggerInVal);
 
-        const resetVal = layer.signalValues?.[`${effect.id}.reset_in`] ?? 0;
+        const resetVal = latestSignals[`${effect.id}.reset_in`] ?? 0;
         if (resetVal > 0.5) activeSpawns = [];
 
         if (isTriggered) {
@@ -1503,23 +1505,25 @@ export class Renderer {
                 return manual;
               };
 
-              const rawCountX = layer.signalValues?.[`${nodeId}.countX`] ?? 0;
-              const rawCountY = layer.signalValues?.[`${nodeId}.countY`] ?? 0;
+              const latestSignals = SignalDispatcher.getInstance().getLatestSignals(layer.id);
+
+              const rawCountX = latestSignals[`${nodeId}.countX`] ?? 0;
+              const rawCountY = latestSignals[`${nodeId}.countY`] ?? 0;
               const countMod = ef.syncCount ? (rawCountX + rawCountY) : 0;
               f32[0] = applyLogScale(ef.countX, ef.syncCount ? countMod : rawCountX);
               f32[1] = applyLogScale(ef.countY, ef.syncCount ? countMod : rawCountY);
 
-              const rawSpX = layer.signalValues?.[`${nodeId}.spacingX`] ?? 0;
-              const rawSpY = layer.signalValues?.[`${nodeId}.spacingY`] ?? 0;
+              const rawSpX = latestSignals[`${nodeId}.spacingX`] ?? 0;
+              const rawSpY = latestSignals[`${nodeId}.spacingY`] ?? 0;
               const spModX = ef.syncSpacing ? (rawSpX + rawSpY) : rawSpX;
               const spModY = ef.syncSpacing ? (rawSpX + rawSpY) : rawSpY;
               f32[2] = ef.spacingX + spModX;
               f32[3] = ef.spacingY + spModY;
 
-              const rawOffX = layer.signalValues?.[`${nodeId}.offsetX`] ?? 0;
-              const rawOffY = layer.signalValues?.[`${nodeId}.offsetY`] ?? 0;
+              const rawOffX = latestSignals[`${nodeId}.offsetX`] ?? 0;
+              const rawOffY = latestSignals[`${nodeId}.offsetY`] ?? 0;
               const offModX = ef.syncOffset ? (rawOffX + rawOffY) : rawOffX;
-              const offModY = ef.syncOffset ? (rawOffX + rawOffY) : rawOffY;
+              const offModY = ef.syncOffset ? (rawOffX + rawOffY) : rawOffX;
               f32[4] = ef.offsetX + offModX;
               f32[5] = ef.offsetY + offModY;
 
@@ -1530,12 +1534,12 @@ export class Renderer {
                 this.patternMirrorStates.set(nodeId, mState);
               }
 
-              const trigX = layer.signalValues?.[`${nodeId}.mirror_trig_x`] ?? 0;
+              const trigX = latestSignals[`${nodeId}.mirror_trig_x`] ?? 0;
               const lastX = this.lastTriggerVals.get(`${nodeId}.mirror_trig_x`) ?? 0;
               if (trigX > 0.5 && lastX <= 0.5) mState.x = !mState.x;
               this.lastTriggerVals.set(`${nodeId}.mirror_trig_x`, trigX);
 
-              const trigY = layer.signalValues?.[`${nodeId}.mirror_trig_y`] ?? 0;
+              const trigY = latestSignals[`${nodeId}.mirror_trig_y`] ?? 0;
               const lastY = this.lastTriggerVals.get(`${nodeId}.mirror_trig_y`) ?? 0;
               if (trigY > 0.5 && lastY <= 0.5) mState.y = !mState.y;
               this.lastTriggerVals.set(`${nodeId}.mirror_trig_y`, trigY);
@@ -1550,10 +1554,11 @@ export class Renderer {
               const ef = effect as KaleidoscopeEffect;
               const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 32);
 
-              const rawAngleMod = layer.signalValues?.[`${nodeId}.angle`] ?? 0;
+              const latestSignals = SignalDispatcher.getInstance().getLatestSignals(layer.id);
+              const rawAngleMod = latestSignals[`${nodeId}.angle`] ?? 0;
               const angle = ef.angle + rawAngleMod * 360.0;
 
-              const rawCountMod = layer.signalValues?.[`${nodeId}.segments`] ?? 0;
+              const rawCountMod = latestSignals[`${nodeId}.segments`] ?? 0;
               const manualCount = ef.segments;
               let finalCount = manualCount;
               if (rawCountMod > 0) {
@@ -1575,7 +1580,8 @@ export class Renderer {
               entries = [{ binding: 0, resource: { buffer: uniformBuffer } }, { binding: 1, resource: this.sampler }, { binding: 2, resource: tex.createView() }];
             } else if (effect.type === 'SampleAndHold') {
               const sh = effect as SampleAndHoldEffect;
-              const trigger = layer.signalValues?.[`${nodeId}.trigger`] ?? 0;
+              const latestSignals = SignalDispatcher.getInstance().getLatestSignals(layer.id);
+              const trigger = latestSignals[`${nodeId}.trigger`] ?? 0;
               const lastTrig = this.lastTriggerVals.get(`${nodeId}.trigger`) ?? 0;
 
               const currentManualTime = sh.manualTriggerTime ?? 0;
@@ -1599,7 +1605,7 @@ export class Renderer {
                 this.shLiveStates.set(nodeId, live);
               }
 
-              const toggleTrig = layer.signalValues?.[`${nodeId}.live_toggle`] ?? 0;
+              const toggleTrig = latestSignals[`${nodeId}.live_toggle`] ?? 0;
               const lastToggle = this.lastTriggerVals.get(`${nodeId}.live_toggle`) ?? 0;
               const isToggleRising = toggleTrig > 0.5 && lastToggle <= 0.5;
               this.lastTriggerVals.set(`${nodeId}.live_toggle`, toggleTrig);

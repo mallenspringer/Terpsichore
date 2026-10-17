@@ -1275,5 +1275,8 @@ export class SignalDispatcher {
       });
       this.lastUiCommitTime = now;
     }
+
+    // Clear one-frame MIDI clock pulses after all layers have read them
+    MidiManager.getInstance().clearClockPulses();
   }
 }

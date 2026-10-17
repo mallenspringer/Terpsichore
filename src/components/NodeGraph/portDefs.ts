@@ -127,11 +127,6 @@ export const PORT_DEFS: Record<string, PortDef[]> = {
     { id: 'zoom',            label: 'Zoom',         direction: 'in',  signalType: 'modulation' },
     { id: 'angle',           label: 'Angle',        direction: 'in',  signalType: 'modulation' },
   ],
-  SignalProcessor: [
-    { id: 'in_a', label: 'Input A', direction: 'in',  signalType: 'modulation' },
-    { id: 'in_b', label: 'Input B', direction: 'in',  signalType: 'modulation' },
-    { id: 'out',  label: 'Result',  direction: 'out', signalType: 'modulation' },
-  ],
   AudioSource: [
     { id: 'audio_out', label: 'Audio Out', direction: 'out', signalType: 'audio', priority: 0 },
     { id: 'peak_out',  label: 'Peak Out',  direction: 'out', signalType: 'modulation', priority: 1 },
@@ -466,7 +461,6 @@ export const MODULE_DISPLAY_NAMES: Record<string, string> = {
   AudioInput: 'Audio In',
   AudioFile: 'Audio File',
   SystemAudio: 'Sys Audio',
-  SignalProcessor: 'Processor',
   AudioSource: 'Audio Source',
   Oscilloscope: 'Oscilloscope',
   InterLayerOutput: 'Layer Out',

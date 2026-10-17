@@ -6,7 +6,7 @@ import {
   ShapeGeneratorSource, VideoURLSource, VideoFileSource,
   WebcamCaptureSource, ImageLoaderSource, ImageFileSource,
   AudioInputSource, AudioFileSource, SystemAudioSource,
-  LFOModulatorSource, TriggerPadSource, SignalProcessorSource,
+  LFOModulatorSource, TriggerPadSource,
   NoiseModulatorSource, NoiseVideoSource,
   Transform2DEffect, ColorAdjustEffect, LumaKeyEffect, SimpleFeedbackEffect,
   InterLayerOutputEffect, InterLayerInputEffect, ColorRGBEffect, LumaSplitterEffect,
@@ -1256,29 +1256,7 @@ export const SOURCE_ROWS: Record<string, ControlRowDef[]> = {
     }
   ],
 
-  SignalProcessor: [
-    { id: 'operation', label: 'Op',
-      render: ctx => (
-        <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} onDragStart={e => e.stopPropagation()}>
-          <span className="rack-row-label">Operation</span>
-          <select value={src<SignalProcessorSource>(ctx).operation} 
-            onChange={e => { e.stopPropagation(); chg(ctx)('operation', e.target.value); }}>
-             <option value="add">Add</option>
-             <option value="subtract">Subtract</option>
-             <option value="multiply">Multiply</option>
-             <option value="divide">Divide</option>
-             <option value="modulo">Modulo</option>
-             <option value="pow">Power</option>
-             <option value="min">Min</option>
-             <option value="max">Max</option>
-          </select>
-        </div>
-      )
-    },
-    { id: 'operandB', label: 'Fixed B',
-      render: ctx => <Slider label="Fixed B" min={-10} max={10} step={0.01} value={src<SignalProcessorSource>(ctx).operandB} onChange={v => chg(ctx)('operandB', v)} />
-    },
-  ],
+
 };
 
 // ── EFFECT ROW DEFINITIONS ────────────────────────────────────────────────────

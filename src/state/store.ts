@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { LayerState, LayerGraph, InterLayerEdge, EngineState, PortSettings, AnySource, AnyEffect, MidiBinding, AbsoluteTargetSpec, QueryTargetSpec } from './types';
 import { buildAutoEdges } from './graphUtils';
+import { AudioEngine } from './AudioEngine';
 
 interface EngineActions {
   // Global Settings
@@ -110,6 +111,13 @@ export const useEngineStore = create<StoreState>((set) => ({
 
   removeLayer: (id) =>
     set((state) => {
+      const layer = state.layers[id];
+      if (layer) {
+        layer.effects.forEach(e => {
+          if (e.id) AudioEngine.getInstance().disconnectNode(e.id);
+        });
+        AudioEngine.getInstance().unregisterMediaElement(id);
+      }
       const newLayers = { ...state.layers };
       delete newLayers[id];
       return {
@@ -209,6 +217,7 @@ export const useEngineStore = create<StoreState>((set) => ({
     set((state) => {
       const layer = state.layers[layerId];
       if (!layer) return {};
+      AudioEngine.getInstance().disconnectNode(effectId);
       const nextLayer = { ...layer, effects: layer.effects.filter(e => e.id !== effectId) };
       const nextEdges = buildAutoEdges(nextLayer, layer.graph);
       return { 

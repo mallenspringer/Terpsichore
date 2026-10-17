@@ -19,8 +19,7 @@ export function createDefaultSource(type: string): AnySource {
         scale: 1.0,
         edgeSoftness: 0.05
       };
-    case 'SignalProcessor':
-      return { type: 'SignalProcessor', operation: 'multiply', operandA: 1.0, operandB: 1.0 } as any;
+
     case 'VideoURL':
       return { type: 'VideoURL', videoUrl: "https://vjs.zencdn.net/v/oceans.mp4", playbackSpeed: 1.0, loop: true, playState: 'pause', objectFit: 'cover', volume: 1.0, audioMuted: true };
     case 'VideoFile':
@@ -171,8 +170,7 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
       return { id, ...createDefaultSource('AudioFile') } as any;
     case 'SystemAudio':
       return { id, ...createDefaultSource('SystemAudio') } as any;
-    case 'SignalProcessor':
-      return { id, ...createDefaultSource('SignalProcessor') } as any;
+
     default:
       return { id, type: 'SimpleFeedback', feedbackAmount: 0.9, zoom: 0.95, angle: 0.05 } as any;
   }
