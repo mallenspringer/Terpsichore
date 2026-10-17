@@ -28,6 +28,8 @@ export class AudioEngine {
 
   private modulatorNodes: Map<string, {
     input: GainNode;
+    dryGain: GainNode;
+    wetGain: GainNode;
     ringOsc: OscillatorNode;
     ringMult: GainNode;
     ringMix: GainNode;
@@ -337,6 +339,8 @@ export class AudioEngine {
 
     if (!nodes) {
       const input = this.context.createGain();
+      const dryGain = this.context.createGain();
+      const wetGain = this.context.createGain();
       const ringOsc = this.context.createOscillator();
       const ringMult = this.context.createGain();
       const ringMix = this.context.createGain();
@@ -374,22 +378,27 @@ export class AudioEngine {
       }
       octaveHigh2.curve = curve2;
 
-      // Chain Setup
+      // Dry bypass chain
+      input.connect(dryGain);
+      dryGain.connect(output);
+
+      // Wet chain
       input.connect(ringMult);
       ringMult.connect(ringMix);
-      ringMix.connect(output);
+      ringMix.connect(wetGain);
 
       input.connect(octaveClean);
-      octaveClean.connect(output);
+      octaveClean.connect(wetGain);
 
       input.connect(octaveHigh1);
       octaveHigh1.connect(octaveHigh1Gain);
-      octaveHigh1Gain.connect(output);
+      octaveHigh1Gain.connect(wetGain);
 
       input.connect(octaveHigh2);
       octaveHigh2.connect(octaveHigh2Gain);
-      octaveHigh2Gain.connect(output);
+      octaveHigh2Gain.connect(wetGain);
 
+      wetGain.connect(output);
       output.connect(analyzer);
 
       const bus: AudioBusData = {
@@ -403,7 +412,7 @@ export class AudioEngine {
       };
 
       nodes = { 
-        input, ringOsc, ringMult, ringMix, octaveClean, 
+        input, dryGain, wetGain, ringOsc, ringMult, ringMix, octaveClean, 
         octaveHigh1, octaveHigh2, octaveHigh1Gain, octaveHigh2Gain,
         octaveSub1, octaveSub2, output, analyzer, bus 
       };
@@ -412,10 +421,12 @@ export class AudioEngine {
     }
 
     const now = this.context.currentTime;
-    if (params.bypass) {
-      nodes.output.gain.setTargetAtTime(0, now, 0.05);
-    } else {
-      nodes.output.gain.setTargetAtTime(1, now, 0.05);
+    const dryVal = params.bypass ? 1.0 : 0.0;
+    const wetVal = params.bypass ? 0.0 : 1.0;
+    nodes.dryGain.gain.setTargetAtTime(dryVal, now, 0.02);
+    nodes.wetGain.gain.setTargetAtTime(wetVal, now, 0.02);
+
+    if (!params.bypass) {
       nodes.ringOsc.frequency.setTargetAtTime(params.ringFreq, now, 0.05);
       nodes.ringMix.gain.setTargetAtTime(params.ringMix, now, 0.05);
       nodes.octaveClean.gain.setTargetAtTime(params.octaveClean, now, 0.05);
@@ -600,6 +611,8 @@ export class AudioEngine {
     const mNodes = this.modulatorNodes.get(nodeId);
     if (mNodes) {
       mNodes.input.disconnect();
+      mNodes.dryGain.disconnect();
+      mNodes.wetGain.disconnect();
       try { mNodes.ringOsc.stop(); } catch(e) {}
       mNodes.ringOsc.disconnect();
       mNodes.ringMult.disconnect();

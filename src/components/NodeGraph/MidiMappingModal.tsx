@@ -46,7 +46,7 @@ const MODULE_PARAMS: Record<string, string[]> = {
   InterLayerInput: ['portCount'],
   ColorRGB: ['r', 'g', 'b'],
   LumaSplitter: ['threshold1', 'threshold2', 'softness'],
-  VideoMixer: ['v1', 'v1Alpha', 'v2', 'v2Alpha', 'v3', 'v3Alpha', 'v4', 'v4Alpha', 'masterGain']
+  VideoMixer: ['v1', 'v1Alpha', 'v2', 'v2Alpha', 'v3', 'v3Alpha', 'v4', 'v4Alpha', 'masterGain', 'crossfader']
 };
 
 export function MidiMappingModal({ isOpen, onClose }: MidiMappingModalProps) {

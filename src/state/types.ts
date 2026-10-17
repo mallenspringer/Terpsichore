@@ -21,6 +21,7 @@ export interface ShapeGeneratorSource {
   scale: number;
   fillColor: [number, number, number, number];
   edgeSoftness: number;
+  morph?: number; // 0.0 to 1.0 continuous SDF shape morph
 }
 
 export interface VideoURLSource {
@@ -328,6 +329,8 @@ export interface VideoMixerEffect {
   v3Mode: 'add' | 'normal' | 'screen' | 'mult';
   v4Mode: 'add' | 'normal' | 'screen' | 'mult';
   masterGain: number;
+  crossfader?: number; // 0.0 (Bus A = Ch1/Ch2) to 1.0 (Bus B = Ch3/Ch4)
+  crossfadeEnabled?: boolean;
 }
 
 export interface PathEffect {

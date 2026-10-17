@@ -21,6 +21,7 @@ import { KaleidoscopeWGSL } from './shaders/Kaleidoscope';
 import { OscilloscopeWGSL } from './shaders/Oscilloscope';
 import { SpectralSplitterWGSL } from './shaders/SpectralSplitter';
 import { PixelProcessorFragmentWGSL } from './shaders/PixelProcessor';
+import { SpokenWordVisualizerWGSL } from './shaders/SpokenWordVisualizer';
 
 import { PORT_DEFS } from '../components/NodeGraph/portDefs';
 import { SignalDispatcher } from '../state/SignalDispatcher';
@@ -29,6 +30,7 @@ import {
   SimpleFeedbackEffect, ColorRGBEffect, LumaSplitterEffect, VideoMixerEffect,
   NoiseVideoSource, ColorNoiseSource, InverterEffect, PixelProcessorEffect,
   PatternEffect, KaleidoscopeEffect, SampleAndHoldEffect, OscilloscopeEffect, SpectralSplitterEffect,
+  SpokenWordVisualizerEffect,
   LayerState, AnySource
 } from '../state/types';
 
@@ -72,6 +74,7 @@ export class Renderer {
   private spectralSplitterPipeline!: GPURenderPipeline;
   private pixelProcessorPipeline!: GPURenderPipeline;
   private colorNoisePipeline!: GPURenderPipeline;
+  private spokenWordPipeline!: GPURenderPipeline;
 
   // Isolated layouts to prevent 'Minimum Binding Size' collisions
   private effectLayouts: Map<string, GPUBindGroupLayout> = new Map();
@@ -492,6 +495,18 @@ export class Renderer {
       },
       primitive
     });
+
+    this.spokenWordPipeline = this.device.createRenderPipeline({
+      layout,
+      vertex,
+      fragment: {
+        module: this.device.createShaderModule({ code: SpokenWordVisualizerWGSL }),
+        entryPoint: 'fs_main',
+        targets
+      },
+      primitive
+    });
+    this.effectLayouts.set('SpokenWordVisualizer', this.spokenWordPipeline.getBindGroupLayout(0));
   }
 
   private getStorageBuffer(key: string, size: number): GPUBuffer {
@@ -727,7 +742,13 @@ export class Renderer {
 
             const f32 = new Float32Array(buf);
             f32[2] = src.strokeThreshold ?? 0.1;
-            f32.set(src.fillColor, 4); // index 4..7
+            f32[3] = Math.max(0, Math.min(1, this.getEffectiveParam(layer, 'source', 'morph', src.morph ?? 0, timeSec)));
+
+            const fillR = Math.max(0, Math.min(1, this.getEffectiveParam(layer, 'source', 'fill_r', src.fillColor[0], timeSec)));
+            const fillG = Math.max(0, Math.min(1, this.getEffectiveParam(layer, 'source', 'fill_g', src.fillColor[1], timeSec)));
+            const fillB = Math.max(0, Math.min(1, this.getEffectiveParam(layer, 'source', 'fill_b', src.fillColor[2], timeSec)));
+            const fillA = Math.max(0, Math.min(1, this.getEffectiveParam(layer, 'source', 'fill_a', src.fillColor[3], timeSec)));
+            f32.set([fillR, fillG, fillB, fillA], 4); // index 4..7
 
             f32[8] = this.getEffectiveParam(layer, 'source', 'edgeSoftness', src.edgeSoftness, timeSec);
 
@@ -796,10 +817,13 @@ export class Renderer {
           if (!effect) return;
 
           // Category A: Generators (Sources or Visualizers that don't REQUIRE an input texture)
-          if (['ShapeGenerator', 'VideoFile', 'VideoURL', 'WebcamCapture', 'NoiseSource', 'ColorNoise', 'SpectralSplitter', 'Oscilloscope'].includes(effect.type)) {
+          if (['ShapeGenerator', 'VideoFile', 'VideoURL', 'WebcamCapture', 'NoiseSource', 'ColorNoise', 'SpectralSplitter', 'Oscilloscope', 'SpokenWordVisualizer'].includes(effect.type)) {
             const genTarget = this.ensureTexture(nodeId, 'video_out');
             if (effect.type === 'ShapeGenerator') {
               this.renderShapeSource(layer, nodeId, genTarget, timeSec, commandEncoder);
+              return;
+            } else if (effect.type === 'SpokenWordVisualizer') {
+              this.renderSpokenWordVisualizer(layer, nodeId, genTarget, timeSec, commandEncoder);
               return;
             } else if (effect.type === 'NoiseSource') {
               this.renderNoiseSource(layer, nodeId, genTarget, timeSec, commandEncoder);
@@ -1253,10 +1277,10 @@ export class Renderer {
             } else if (effect.type === 'VideoMixer') {
               pipeline = this.videoMixerPipeline;
               const ef = effect as VideoMixerEffect;
-              const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 56);
+              const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 64);
               const modeMap: Record<string, number> = { normal: 0, add: 1, screen: 2, mult: 3 };
 
-              const f32 = new Float32Array(14);
+              const f32 = new Float32Array(16);
               f32[0] = this.getEffectiveParam(layer, ef.id, 'v1_cv', ef.v1, timeSec);
               f32[1] = this.getEffectiveParam(layer, ef.id, 'v2_cv', ef.v2, timeSec);
               f32[2] = this.getEffectiveParam(layer, ef.id, 'v3_cv', ef.v3, timeSec);
@@ -1274,7 +1298,9 @@ export class Renderer {
               u32[11] = modeMap[ef.v4Mode] || 0;
 
               f32[12] = this.getEffectiveParam(layer, ef.id, 'master_cv', ef.masterGain, timeSec);
-              f32[13] = 0.0; // padding
+              f32[13] = this.getEffectiveParam(layer, ef.id, 'crossfader', ef.crossfader ?? 0.5, timeSec);
+              u32[14] = ef.crossfadeEnabled ? 1 : 0;
+              f32[15] = 0.0; // padding
 
               this.device.queue.writeBuffer(uniformBuffer, 0, f32);
 
@@ -1444,7 +1470,13 @@ export class Renderer {
 
     const f32 = new Float32Array(buf);
     f32[2] = src.strokeThreshold ?? 0.1;
-    f32.set(src.fillColor, 4); // index 4..7
+    f32[3] = Math.max(0, Math.min(1, this.getEffectiveParam(layer, nodeId, 'morph', src.morph ?? 0, timeSec)));
+
+    const fillR = Math.max(0, Math.min(1, this.getEffectiveParam(layer, nodeId, 'fill_r', src.fillColor[0], timeSec)));
+    const fillG = Math.max(0, Math.min(1, this.getEffectiveParam(layer, nodeId, 'fill_g', src.fillColor[1], timeSec)));
+    const fillB = Math.max(0, Math.min(1, this.getEffectiveParam(layer, nodeId, 'fill_b', src.fillColor[2], timeSec)));
+    const fillA = Math.max(0, Math.min(1, this.getEffectiveParam(layer, nodeId, 'fill_a', src.fillColor[3], timeSec)));
+    f32.set([fillR, fillG, fillB, fillA], 4); // index 4..7
 
     f32[8] = this.getEffectiveParam(layer, nodeId, 'edgeSoftness', src.edgeSoftness, timeSec);
     const rawSidesSig = this.getEffectiveParam(layer, nodeId, 'sides', 0, timeSec);
@@ -1590,6 +1622,53 @@ export class Renderer {
   private getSignalValue(layer: LayerState, nodeId: string, portId: string, defaultValue: number): number {
     const signals = SignalDispatcher.getInstance().getLatestSignals(layer.id);
     return signals[`${nodeId}.${portId}`] ?? defaultValue;
+  }
+
+  private renderSpokenWordVisualizer(layer: LayerState, nodeId: string, target: GPUTexture, timeSec: number, commandEncoder: GPUCommandEncoder) {
+    const ef = layer.effects.find(e => e.id === nodeId) as SpokenWordVisualizerEffect;
+    if (!ef) return;
+
+    const pass = commandEncoder.beginRenderPass({
+      colorAttachments: [{ view: target.createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' }]
+    });
+
+    const uniformBuffer = this.getUniformBuffer(`${layer.id}.${nodeId}.spoken_uniforms`, 64);
+    const buf = new ArrayBuffer(64);
+    const u32 = new Uint32Array(buf);
+    const f32 = new Float32Array(buf);
+
+    const modeMap: Record<string, number> = { Constellation: 0, FlowingRibbon: 1, RadialWaterfall: 2 };
+    const palMap: Record<string, number> = { vibrant: 0, neon: 1, cyber: 1, warm: 2, fire: 2, monochrome: 3 };
+
+    u32[0] = modeMap[ef.renderMode] ?? 0;
+    f32[1] = this.canvas.width / this.canvas.height;
+    f32[2] = timeSec;
+
+    const sigs = SignalDispatcher.getInstance().getLatestSignals(layer.id);
+    f32[3] = sigs[`${nodeId}.envelope_out`] ?? 0;
+    f32[4] = sigs[`${nodeId}.cadence_out`] ?? 0;
+    f32[5] = sigs[`${nodeId}.timbre_brightness`] ?? 0;
+    f32[6] = sigs[`${nodeId}.timbre_flatness`] ?? 0;
+    f32[7] = sigs[`${nodeId}.pitch_hz`] ?? 0;
+    f32[8] = sigs[`${nodeId}.pitch_midi`] ?? 0.5;
+    f32[9] = sigs[`${nodeId}.stability`] ?? 0;
+    f32[10] = sigs[`${nodeId}.formant_f1`] ?? 500;
+    f32[11] = sigs[`${nodeId}.formant_f2`] ?? 1500;
+    f32[12] = sigs[`${nodeId}.vowel_x`] ?? 0.5;
+    f32[13] = sigs[`${nodeId}.vowel_y`] ?? 0.5;
+    f32[14] = sigs[`${nodeId}.onset_pulse`] ?? 0;
+    u32[15] = palMap[ef.colorPalette?.toLowerCase()] ?? 0;
+
+    this.device.queue.writeBuffer(uniformBuffer, 0, buf);
+    const bindGroup = this.device.createBindGroup({
+      layout: this.spokenWordPipeline.getBindGroupLayout(0),
+      entries: [{ binding: 0, resource: { buffer: uniformBuffer } }]
+    });
+
+    pass.setPipeline(this.spokenWordPipeline);
+    pass.setBindGroup(0, bindGroup);
+    pass.draw(3);
+    pass.end();
   }
 
   private getFeedbackTexture(layerId: string): GPUTexture {

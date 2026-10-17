@@ -13,6 +13,8 @@ struct VideoMixerUniforms {
   v3Mode: u32,
   v4Mode: u32,
   masterGain: f32,
+  crossfader: f32,
+  crossfadeEnabled: u32,
   padding: f32,
 };
 
@@ -58,14 +60,30 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
   let c3 = textureSample(t3, sourceSampler, in.uv);
   let c4 = textureSample(t4, sourceSampler, in.uv);
 
+  var l1 = uniforms.v1;
+  var l2 = uniforms.v2;
+  var l3 = uniforms.v3;
+  var l4 = uniforms.v4;
+
+  // A/B Bus Crossfader: Bus A = Ch 1 & 2, Bus B = Ch 3 & 4
+  if (uniforms.crossfadeEnabled == 1u) {
+    let xf = clamp(uniforms.crossfader, 0.0, 1.0);
+    let busA = clamp((1.0 - xf) * 2.0, 0.0, 1.0);
+    let busB = clamp(xf * 2.0, 0.0, 1.0);
+    l1 = l1 * busA;
+    l2 = l2 * busA;
+    l3 = l3 * busB;
+    l4 = l4 * busB;
+  }
+
   // Start with pure transparent alpha (0.0)
   var res = vec4<f32>(0.0, 0.0, 0.0, 0.0);
   
   // Blend layers in order (bottom to top)
-  res = blend(res, c1, uniforms.v1, uniforms.v1Alpha, uniforms.v1Mode);
-  res = blend(res, c2, uniforms.v2, uniforms.v2Alpha, uniforms.v2Mode);
-  res = blend(res, c3, uniforms.v3, uniforms.v3Alpha, uniforms.v3Mode);
-  res = blend(res, c4, uniforms.v4, uniforms.v4Alpha, uniforms.v4Mode);
+  res = blend(res, c1, l1, uniforms.v1Alpha, uniforms.v1Mode);
+  res = blend(res, c2, l2, uniforms.v2Alpha, uniforms.v2Mode);
+  res = blend(res, c3, l3, uniforms.v3Alpha, uniforms.v3Mode);
+  res = blend(res, c4, l4, uniforms.v4Alpha, uniforms.v4Mode);
 
   // Apply master gain and keep composited alpha
   let final_rgb = clamp(res.rgb * uniforms.masterGain, vec3<f32>(0.0), vec3<f32>(1.0));

@@ -27,6 +27,9 @@ vi.mock('../AudioEngine', () => ({
       getBusData: vi.fn(),
       getAllBuses: vi.fn(() => []),
       getPeakVolume: vi.fn(() => 0.5),
+      getSpeechFeatures: vi.fn(() => ({ envelope: 0.75, cadence: 0.5, timbral: { centroid: 3200, flatness: 0.15, sibilance: 0.08 } })),
+      getPitchFeatures: vi.fn(() => ({ hz: 261.63, midi: 0.5, confidence: 0.95 })),
+      getFormantFeatures: vi.fn(() => ({ f1: 520, f2: 1600, x: 0.45, y: 0.55 })),
       update: vi.fn()
     })
   }
@@ -371,6 +374,34 @@ describe('SignalDispatcher', () => {
       // Brightness override check
       const brightVal = dispatcher.getMidiOverride('layer_1', 'effect_adjust_1', 'brightness');
       expect(brightVal).toBe(-1.0);
+    });
+
+    it('should extract and dispatch vocal and speech features for SpokenWordVisualizer', () => {
+      const state = useEngineStore.getState();
+      const dispatcher = SignalDispatcher.getInstance();
+
+      state.updateLayer('layer_1', {
+        source: { type: 'AudioInput', deviceId: 'default' } as any,
+        effects: [
+          {
+            id: 'spoken_1',
+            type: 'SpokenWordVisualizer',
+            layerId: 'layer_1',
+            renderMode: 'Constellation',
+            colorPalette: 'vibrant'
+          }
+        ]
+      });
+
+      dispatcher.compileLayer(useEngineStore.getState().layers['layer_1']);
+      dispatcher.execute(true);
+
+      const signals = dispatcher.getLatestSignals('layer_1');
+      expect(signals['spoken_1.envelope_out']).toBe(0.75);
+      expect(signals['spoken_1.pitch_hz']).toBe(261.63);
+      expect(signals['spoken_1.formant_f1']).toBe(520);
+      expect(signals['spoken_1.vowel_x']).toBe(0.45);
+      expect(signals['spoken_1.video_out']).toBe(1.0);
     });
   });
 });

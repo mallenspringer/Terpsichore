@@ -1,5 +1,11 @@
 import { useEngineStore } from './store';
-import { LayerState, TriggerPadSource, LogicGateEffect, TriggeredGateEffect, InverterEffect, SignalMathEffect, SampleAndHoldEffect, StepSequencerEffect, OscilloscopeEffect, SpectralSplitterEffect, AlphaAdjustEffect, AudioTransformerEffect, AudioModulatorEffect, AudioGateEffect } from './types';
+import {
+  LayerState, TriggerPadSource, LogicGateEffect, TriggeredGateEffect, InverterEffect,
+  SignalMathEffect, SampleAndHoldEffect, StepSequencerEffect, OscilloscopeEffect,
+  SpectralSplitterEffect, AlphaAdjustEffect, AudioTransformerEffect, AudioModulatorEffect,
+  AudioGateEffect, SpeechEnvelopeTrackerEffect, VocalPitchTrackerEffect, VowelFormantTrackerEffect,
+  SpokenWordVisualizerEffect
+} from './types';
 import { AudioEngine } from './AudioEngine';
 import { MidiManager } from './MidiManager';
 
@@ -277,7 +283,7 @@ export class SignalDispatcher {
             });
           } else if (effect.type === 'SpeechEnvelopeTracker') {
             pipeline.push((ctx: DispatchContext) => {
-              const ef = ctx.layer.effects.find(e => e.id === nodeId) as any;
+              const ef = ctx.layer.effects.find(e => e.id === nodeId) as SpeechEnvelopeTrackerEffect;
               if (!ef) return;
 
               const edges = ctx.layer.graph?.edges || [];
@@ -315,7 +321,7 @@ export class SignalDispatcher {
             });
           } else if (effect.type === 'VocalPitchTracker') {
             pipeline.push((ctx: DispatchContext) => {
-              const ef = ctx.layer.effects.find(e => e.id === nodeId) as any;
+              const ef = ctx.layer.effects.find(e => e.id === nodeId) as VocalPitchTrackerEffect;
               if (!ef) return;
 
               const edges = ctx.layer.graph?.edges || [];
@@ -352,7 +358,7 @@ export class SignalDispatcher {
             });
           } else if (effect.type === 'VowelFormantTracker') {
             pipeline.push((ctx: DispatchContext) => {
-              const ef = ctx.layer.effects.find(e => e.id === nodeId) as any;
+              const ef = ctx.layer.effects.find(e => e.id === nodeId) as VowelFormantTrackerEffect;
               if (!ef) return;
 
               const edges = ctx.layer.graph?.edges || [];
@@ -403,7 +409,7 @@ export class SignalDispatcher {
             });
           } else if (effect.type === 'SpokenWordVisualizer') {
             pipeline.push((ctx: DispatchContext) => {
-              const ef = ctx.layer.effects.find(e => e.id === nodeId) as any;
+              const ef = ctx.layer.effects.find(e => e.id === nodeId) as SpokenWordVisualizerEffect;
               if (!ef) return;
 
               const edges = ctx.layer.graph?.edges || [];

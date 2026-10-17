@@ -374,6 +374,18 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
     },
     { id: 'v4Alpha', label: 'V4 Alpha', render: ctx => <Slider label="V4 α" min={0} max={1} step={0.01} resetValue={1} value={eff<VideoMixerEffect>(ctx).v4Alpha} onChange={v => upd(ctx)({ v4Alpha: v })} paramId="v4Alpha" ctx={ctx} /> },
     { id: 'master', label: 'Master', render: ctx => <Slider label="Gain" min={0} max={2} step={0.01} resetValue={1} value={eff<VideoMixerEffect>(ctx).masterGain} onChange={v => upd(ctx)({ masterGain: v })} paramId="masterGain" ctx={ctx} /> },
+    { id: 'crossfadeMode', label: 'A/B Mode',
+      render: ctx => {
+        const ef = eff<VideoMixerEffect>(ctx);
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} onDragStart={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <span className="rack-row-label">A/B Bus</span>
+            <input type="checkbox" checked={ef.crossfadeEnabled ?? false} onChange={e => upd(ctx)({ crossfadeEnabled: e.target.checked })} />
+          </div>
+        );
+      }
+    },
+    { id: 'crossfader', label: 'Crossfader', render: ctx => <Slider label="A ◄► B" min={0} max={1} step={0.01} resetValue={0.5} value={eff<VideoMixerEffect>(ctx).crossfader ?? 0.5} onChange={v => upd(ctx)({ crossfader: v })} paramId="crossfader" ctx={ctx} /> },
   ],
 
 
