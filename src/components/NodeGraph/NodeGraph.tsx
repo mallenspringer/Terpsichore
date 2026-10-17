@@ -11,11 +11,11 @@ import { SOURCE_ROWS, EFFECT_ROWS, SourceCtx, EffectCtx } from './moduleControls
 import { PORT_DEFS, SIGNAL_COLORS, SOURCE_WIRE_COLOR, getPrimaryOutput, MODULE_DISPLAY_NAMES } from './portDefs';
 import { ModuleNode, GhostEdge } from './ModuleNode';
 import { NodeUIState, useNodeLayout } from './useNodeLayout';
+import { getNodeFromLayer, getAllLayerNodes, OUTPUT_ID } from '../../state/graphUtils';
 import './NodeGraph.css';
 
 const NODE_W = 220;
 const NODE_GAP = 50;
-const OUTPUT_ID = '__output__';
 
 // ── NodeGraph Component ───────────────────────────────────────────────────────
 
@@ -23,10 +23,12 @@ function edgeColor(edge: GraphEdge, layer: LayerState): string {
   if (edge.signalType) return SIGNAL_COLORS[edge.signalType] || '#f5c518';
   
   // Fallback for legacy edges without signalType
-  if (edge.fromNodeId === 'source') return SOURCE_WIRE_COLOR[layer.source.type] || '#f5c518';
-  const effect = layer.effects.find(e => e.id === edge.fromNodeId);
-  if (effect) {
-    const port = getPrimaryOutput(effect.type);
+  const resolved = getNodeFromLayer(layer, edge.fromNodeId);
+  if (resolved) {
+    if (resolved.kind === 'source') {
+      return SOURCE_WIRE_COLOR[resolved.type] || '#f5c518';
+    }
+    const port = getPrimaryOutput(resolved.type);
     if (port) return SIGNAL_COLORS[port.signalType as keyof typeof SIGNAL_COLORS] || '#f5c518';
   }
   return '#f5c518';
@@ -473,7 +475,7 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
 
   // ── Compute node positions (default auto-layout) ────────────────────────────
 
-  const nodeIds = layer ? ['source', ...layer.effects.map(ef => ef.id), ...Object.keys(layer.modulators || {}), OUTPUT_ID] : [];
+  const nodeIds = layer ? [...getAllLayerNodes(layer).map(n => n.id), OUTPUT_ID] : [];
 
   const getNodeUIState = (nodeId: string, index: number): NodeUIState => {
     const defaultX_ = defaultX(index);
@@ -498,21 +500,15 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
     }
 
     // Resolve port definition
+    const resolved = layer ? getNodeFromLayer(layer, nodeId) : null;
     let ports: any[] = [];
-    if (nodeId === 'source' && layer?.source) {
-       ports = PORT_DEFS[layer.source.type] || [];
-    } else if (layer?.modulators && layer.modulators[nodeId]) {
-       ports = PORT_DEFS[layer.modulators[nodeId].type] || [];
-    } else {
-       const effect = layer?.effects.find(e => e.id === nodeId);
-       if (effect) {
-          const rawPorts = PORT_DEFS[effect.type] || [];
-          if (effect.type === 'InterLayerOutput' || effect.type === 'InterLayerInput') {
-             const count = (effect as any).portCount ?? 1;
-             ports = rawPorts.filter(p => p.direction !== (effect.type === 'InterLayerOutput' ? 'in' : 'out') || parseInt(p.id.split('_')[1]) < count);
-          } else {
-             ports = rawPorts;
-          }
+    if (resolved) {
+       const rawPorts = PORT_DEFS[resolved.type] || [];
+       if (resolved.type === 'InterLayerOutput' || resolved.type === 'InterLayerInput') {
+          const count = (resolved.node as any)?.portCount ?? 1;
+          ports = rawPorts.filter(p => p.direction !== (resolved.type === 'InterLayerOutput' ? 'in' : 'out') || parseInt(p.id.split('_')[1]) < count);
+       } else {
+          ports = rawPorts;
        }
     }
     const portDef = ports.find(p => p.id === portId);

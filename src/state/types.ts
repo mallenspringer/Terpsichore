@@ -571,6 +571,15 @@ export type EffectType =
   | 'SpeechEnvelopeTracker' | 'VocalPitchTracker' | 'VowelFormantTracker' | 'SpokenWordVisualizer'
   | 'ShapeGenerator' | 'VideoURL' | 'VideoFile' | 'WebcamCapture' | 'NoiseSource' | 'ColorNoise' | 'AudioInput' | 'AudioFile' | 'SystemAudio' | 'ImageLoader' | 'ImageFile';
 
+export type GraphNode = AnyEffect;
+
+export interface ResolvedGraphNode {
+  id: string;
+  type: string;
+  kind: 'source' | 'effect' | 'modulator' | 'output';
+  node: AnyEffect | AnySource | null;
+}
+
 // --- GRAPH ---
 export interface GraphEdge {
   id: string;

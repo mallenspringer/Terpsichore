@@ -1,20 +1,93 @@
-import { LayerState, LayerGraph, GraphEdge } from './types';
+import { LayerState, LayerGraph, GraphEdge, ResolvedGraphNode, AnyEffect } from './types';
 import { PORT_DEFS, getPrimaryOutput } from '../components/NodeGraph/portDefs';
 
-const OUTPUT_ID = '__output__';
+export const OUTPUT_ID = '__output__';
 
-interface NodeMeta {
+export interface NodeMeta {
   id: string;
   type: string;
   isDuplicate?: boolean;
 }
 
+export function isSourceNode(nodeId: string): boolean {
+  return nodeId === 'source';
+}
+
+export function getNodeFromLayer(layer: LayerState, nodeId: string): ResolvedGraphNode | null {
+  if (nodeId === OUTPUT_ID) {
+    return {
+      id: OUTPUT_ID,
+      type: '__OUTPUT__',
+      kind: 'output',
+      node: null,
+    };
+  }
+  if (nodeId === 'source') {
+    if (!layer.source || layer.source.type === 'None') return null;
+    return {
+      id: 'source',
+      type: layer.source.type,
+      kind: 'source',
+      node: layer.source as AnyEffect,
+    };
+  }
+  const effect = layer.effects?.find(e => e.id === nodeId);
+  if (effect) {
+    return {
+      id: effect.id || nodeId,
+      type: effect.type,
+      kind: 'effect',
+      node: effect,
+    };
+  }
+  const mod = layer.modulators?.[nodeId];
+  if (mod) {
+    return {
+      id: nodeId,
+      type: mod.type,
+      kind: 'modulator',
+      node: mod as AnyEffect,
+    };
+  }
+  return null;
+}
+
+export function getAllLayerNodes(layer: LayerState): ResolvedGraphNode[] {
+  const result: ResolvedGraphNode[] = [];
+  if (layer.source && layer.source.type !== 'None') {
+    result.push({
+      id: 'source',
+      type: layer.source.type,
+      kind: 'source',
+      node: layer.source as AnyEffect,
+    });
+  }
+  for (const effect of layer.effects || []) {
+    if (effect.id) {
+      result.push({
+        id: effect.id,
+        type: effect.type,
+        kind: 'effect',
+        node: effect,
+      });
+    }
+  }
+  for (const [modId, mod] of Object.entries(layer.modulators || {})) {
+    result.push({
+      id: modId,
+      type: mod.type,
+      kind: 'modulator',
+      node: mod as AnyEffect,
+    });
+  }
+  return result;
+}
+
 export function buildAutoEdges(layer: LayerState, existingGraph?: LayerGraph): GraphEdge[] {
-  const nodes: NodeMeta[] = [
-    ...(layer.source.type !== 'None' ? [{ id: 'source', type: layer.source.type }] : []),
-    ...layer.effects.map(ef => ({ id: ef.id || 'unknown', type: ef.type })),
-    ...Object.entries(layer.modulators || {}).map(([id, mod]) => ({ id, type: mod.type })),
-  ];
+  const nodes: NodeMeta[] = getAllLayerNodes(layer).map(n => ({
+    id: n.id,
+    type: n.type,
+  }));
 
   if (nodes.length === 0) return [];
 

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { SimulationPipeline } from '../SimulationPipeline';
-import { LayerState, SpawnEffect, PathEffect } from '../../state/types';
+import { LayerState, SpawnEffect, PathEffect, AnyEffect } from '../../state/types';
 import { SignalDispatcher } from '../../state/SignalDispatcher';
 
 vi.mock('../../state/SignalDispatcher', () => {
@@ -34,7 +34,7 @@ describe('SimulationPipeline', () => {
   });
 
   const createMockLayer = (spawnEffect: SpawnEffect, pathEffect?: PathEffect): LayerState => {
-    const effects = [spawnEffect];
+    const effects: AnyEffect[] = [spawnEffect];
     const edges: any[] = [];
     if (pathEffect) {
       effects.push(pathEffect);
