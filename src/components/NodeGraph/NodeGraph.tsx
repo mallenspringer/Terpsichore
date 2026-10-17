@@ -9,7 +9,8 @@ import {
 import { createDefaultSource, createDefaultEffect, createDefaultModulator } from '../../state/moduleFactory';
 import { SOURCE_ROWS, EFFECT_ROWS, SourceCtx, EffectCtx } from './moduleControls';
 import { PORT_DEFS, SIGNAL_COLORS, SOURCE_WIRE_COLOR, getPrimaryOutput, MODULE_DISPLAY_NAMES } from './portDefs';
-import { ModuleNode, NodeUIState, useNodeLayout, GhostEdge } from './ModuleNode';
+import { ModuleNode, GhostEdge } from './ModuleNode';
+import { NodeUIState, useNodeLayout } from './useNodeLayout';
 import './NodeGraph.css';
 
 const NODE_W = 220;
