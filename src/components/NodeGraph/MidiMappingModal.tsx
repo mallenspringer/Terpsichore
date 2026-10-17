@@ -46,7 +46,10 @@ const MODULE_PARAMS: Record<string, string[]> = {
   InterLayerInput: ['portCount'],
   ColorRGB: ['r', 'g', 'b'],
   LumaSplitter: ['threshold1', 'threshold2', 'softness'],
-  VideoMixer: ['v1', 'v1Alpha', 'v2', 'v2Alpha', 'v3', 'v3Alpha', 'v4', 'v4Alpha', 'masterGain', 'crossfader']
+  VideoMixer: ['v1', 'v1Alpha', 'v2', 'v2Alpha', 'v3', 'v3Alpha', 'v4', 'v4Alpha', 'masterGain', 'crossfader'],
+  KeyMixer: ['threshold', 'tolerance', 'spillSuppression', 'keyColorR', 'keyColorG', 'keyColorB', 'masterGain'],
+  VideoMath: ['gainA', 'gainB', 'offset', 'masterGain'],
+  Pattern: ['countX', 'countY', 'spacingX', 'spacingY', 'offsetX', 'offsetY', 'radialRings', 'radialSegments', 'tileRotation', 'jitter', 'distortAmount']
 };
 
 export function MidiMappingModal({ isOpen, onClose }: MidiMappingModalProps) {

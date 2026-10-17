@@ -111,8 +111,35 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
     case 'Inverter': return { id, type: 'Inverter', videoMode: 'rgb', cvMode: 'unipolar', triggerMode: 'latch', mix: 1.0, active: true };
     case 'LogicGate': return { id, type: 'LogicGate', mode: 'and', thresholdA: 0.5, thresholdB: 0.5 };
     case 'TriggeredGate': return { id, type: 'TriggeredGate', gateMode: 'momentary', defaultState: 'off', threshold: 0.5, active: false, gateOpen: false };
-    case 'Pattern': return { id, type: 'Pattern', countX: 2, countY: 2, spacingX: 0, spacingY: 0, offsetX: 0, offsetY: 0, alternateMirrorX: false, alternateMirrorY: false, syncCount: true, syncSpacing: true, syncOffset: true, mirrorXTrigger: false, mirrorYTrigger: false } as any;
+    case 'Pattern': return { 
+      id, type: 'Pattern', countX: 2, countY: 2, spacingX: 0, spacingY: 0, offsetX: 0, offsetY: 0, 
+      alternateMirrorX: false, alternateMirrorY: false, syncCount: true, syncSpacing: true, syncOffset: true, mirrorXTrigger: false, mirrorYTrigger: false,
+      mode: 'grid', radialRings: 4, radialSegments: 8, tileRotation: 0, jitter: 0, distortAmount: 0
+    } as any;
     case 'VideoMixer': return { id, type: 'VideoMixer', v1: 1, v2: 0, v3: 0, v4: 0, v1Alpha: 1.0, v2Alpha: 1.0, v3Alpha: 1.0, v4Alpha: 1.0, v1Mode: 'normal', v2Mode: 'add', v3Mode: 'add', v4Mode: 'add', masterGain: 1.0 };
+    case 'KeyMixer': return {
+      id, type: 'KeyMixer',
+      mode: 'chroma',
+      threshold: 0.35,
+      tolerance: 0.15,
+      spillSuppression: 0.6,
+      keyColorR: 0.0,
+      keyColorG: 1.0,
+      keyColorB: 0.0,
+      invertMask: false,
+      blendMode: 'normal',
+      masterGain: 1.0,
+      outputMode: 'composite'
+    };
+    case 'VideoMath': return {
+      id, type: 'VideoMath',
+      operation: 'add',
+      gainA: 1.0,
+      gainB: 1.0,
+      offset: 0.0,
+      clampOutput: true,
+      masterGain: 1.0
+    };
     case 'AlphaAdjust': return { id, type: 'AlphaAdjust', amount: 1.0, invertAmount: false, bypass: false, bypassMode: 'momentary' };
     case 'Kaleidoscope': return { id, type: 'Kaleidoscope', segments: 6, angle: 0, zoom: 1.0, center: [0.5, 0.5] };
     case 'SignalMath':

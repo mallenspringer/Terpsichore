@@ -2,6 +2,7 @@ import {
   Transform2DEffect, ColorAdjustEffect, LumaKeyEffect, SimpleFeedbackEffect,
   InterLayerOutputEffect, InterLayerInputEffect, ColorRGBEffect, LumaSplitterEffect,
   SpawnEffect, PathEffect, LogicGateEffect, TriggeredGateEffect, InverterEffect, VideoMixerEffect,
+  KeyMixerEffect, VideoMathEffect,
   PatternEffect, KaleidoscopeEffect, SignalMathEffect, SampleAndHoldEffect,
   AudioSourceEffect, OscilloscopeEffect, SpectralSplitterEffect, PixelProcessorEffect,
   AudioTransformerEffect, AudioModulatorEffect
@@ -388,6 +389,144 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
     { id: 'crossfader', label: 'Crossfader', render: ctx => <Slider label="A ◄► B" min={0} max={1} step={0.01} resetValue={0.5} value={eff<VideoMixerEffect>(ctx).crossfader ?? 0.5} onChange={v => upd(ctx)({ crossfader: v })} paramId="crossfader" ctx={ctx} /> },
   ],
 
+  KeyMixer: [
+    { id: 'mode', label: 'Key Mode',
+      render: ctx => {
+        const ef = eff<KeyMixerEffect>(ctx);
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <span className="rack-row-label">Mode</span>
+            <select value={ef.mode} onChange={e => upd(ctx)({ mode: e.target.value as any })}>
+              <option value="chroma">Chroma (Color)</option>
+              <option value="luma">Luma (Brightness)</option>
+            </select>
+          </div>
+        );
+      }
+    },
+    { id: 'outputMode', label: 'Output',
+      render: ctx => {
+        const ef = eff<KeyMixerEffect>(ctx);
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <span className="rack-row-label">View</span>
+            <select value={ef.outputMode ?? 'composite'} onChange={e => upd(ctx)({ outputMode: e.target.value as any })}>
+              <option value="composite">Composite (FG + BG)</option>
+              <option value="matte">Matte Only (B&W)</option>
+              <option value="keyedFg">Keyed FG Only</option>
+            </select>
+          </div>
+        );
+      }
+    },
+    { id: 'keyColor', label: 'Key Color',
+      render: ctx => {
+        const ef = eff<KeyMixerEffect>(ctx);
+        if (ef.mode !== 'chroma') return null;
+        const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
+        const toHex = (c: number) => Math.round(clamp(c, 0, 1) * 255).toString(16).padStart(2, '0');
+        const hex = `#${toHex(ef.keyColorR)}${toHex(ef.keyColorG)}${toHex(ef.keyColorB)}`;
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <span className="rack-row-label">Color</span>
+            <input type="color" value={hex} onChange={e => {
+              const h = e.target.value;
+              const r = parseInt(h.substring(1, 3), 16) / 255;
+              const g = parseInt(h.substring(3, 5), 16) / 255;
+              const b = parseInt(h.substring(5, 7), 16) / 255;
+              upd(ctx)({ keyColorR: r, keyColorG: g, keyColorB: b });
+            }} style={{ border: 'none', background: 'transparent', width: 28, height: 22, cursor: 'pointer' }} />
+            <button style={{ fontSize: 9, padding: '2px 4px', background: '#0a3d1b', color: '#4aff75', border: '1px solid #1a7a38', borderRadius: 2, cursor: 'pointer' }}
+              onClick={() => upd(ctx)({ keyColorR: 0, keyColorG: 1, keyColorB: 0 })}>Green</button>
+            <button style={{ fontSize: 9, padding: '2px 4px', background: '#0a1d3d', color: '#4aa3ff', border: '1px solid #1a447a', borderRadius: 2, cursor: 'pointer' }}
+              onClick={() => upd(ctx)({ keyColorR: 0, keyColorG: 0, keyColorB: 1 })}>Blue</button>
+          </div>
+        );
+      }
+    },
+    { id: 'threshold', label: 'Threshold',
+      render: ctx => <Slider label="Threshold" min={0} max={1} step={0.01} resetValue={0.35} value={eff<KeyMixerEffect>(ctx).threshold} onChange={v => upd(ctx)({ threshold: v })} paramId="threshold" ctx={ctx} />
+    },
+    { id: 'tolerance', label: 'Tolerance',
+      render: ctx => <Slider label="Tolerance" min={0} max={1} step={0.01} resetValue={0.15} value={eff<KeyMixerEffect>(ctx).tolerance} onChange={v => upd(ctx)({ tolerance: v })} paramId="tolerance" ctx={ctx} />
+    },
+    { id: 'spill', label: 'Spill Supp.',
+      render: ctx => {
+        const ef = eff<KeyMixerEffect>(ctx);
+        if (ef.mode !== 'chroma') return null;
+        return <Slider label="Spill" min={0} max={1} step={0.01} resetValue={0.6} value={ef.spillSuppression} onChange={v => upd(ctx)({ spillSuppression: v })} paramId="spillSuppression" ctx={ctx} />;
+      }
+    },
+    { id: 'blend', label: 'Blend & Options',
+      render: ctx => {
+        const ef = eff<KeyMixerEffect>(ctx);
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <span className="rack-row-label">Blend</span>
+            <select value={ef.blendMode} onChange={e => upd(ctx)({ blendMode: e.target.value as any })}>
+              <option value="normal">Normal</option>
+              <option value="add">Add</option>
+              <option value="screen">Screen</option>
+              <option value="mult">Multiply</option>
+            </select>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, marginLeft: 'auto' }}>
+              <input type="checkbox" checked={ef.invertMask} onChange={e => upd(ctx)({ invertMask: e.target.checked })} /> Invert
+            </label>
+          </div>
+        );
+      }
+    },
+    { id: 'master', label: 'Master Gain',
+      render: ctx => <Slider label="Master" min={0} max={2} step={0.01} resetValue={1} value={eff<KeyMixerEffect>(ctx).masterGain} onChange={v => upd(ctx)({ masterGain: v })} paramId="masterGain" ctx={ctx} />
+    }
+  ],
+
+  VideoMath: [
+    { id: 'operation', label: 'Operation',
+      render: ctx => {
+        const ef = eff<VideoMathEffect>(ctx);
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <span className="rack-row-label">Op</span>
+            <select value={ef.operation} onChange={e => upd(ctx)({ operation: e.target.value as any })}>
+              <option value="add">Add (A + B)</option>
+              <option value="subtract">Subtract (A - B)</option>
+              <option value="multiply">Multiply (A × B)</option>
+              <option value="min">Min (A, B)</option>
+              <option value="max">Max (A, B)</option>
+              <option value="difference">Difference |A - B|</option>
+              <option value="screen">Screen</option>
+              <option value="divide">Divide (A / B)</option>
+              <option value="average">Average (A + B)/2</option>
+            </select>
+          </div>
+        );
+      }
+    },
+    { id: 'gainA', label: 'Gain A',
+      render: ctx => <Slider label="Gain A" min={0} max={2} step={0.01} resetValue={1} value={eff<VideoMathEffect>(ctx).gainA} onChange={v => upd(ctx)({ gainA: v })} paramId="gainA" ctx={ctx} />
+    },
+    { id: 'gainB', label: 'Gain B',
+      render: ctx => <Slider label="Gain B" min={0} max={2} step={0.01} resetValue={1} value={eff<VideoMathEffect>(ctx).gainB} onChange={v => upd(ctx)({ gainB: v })} paramId="gainB" ctx={ctx} />
+    },
+    { id: 'offset', label: 'Offset',
+      render: ctx => <Slider label="Offset" min={-1} max={1} step={0.01} resetValue={0} value={eff<VideoMathEffect>(ctx).offset} onChange={v => upd(ctx)({ offset: v })} paramId="offset" ctx={ctx} />
+    },
+    { id: 'clampAndMaster', label: 'Clamp & Gain',
+      render: ctx => {
+        const ef = eff<VideoMathEffect>(ctx);
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10 }}>
+              <input type="checkbox" checked={ef.clampOutput} onChange={e => upd(ctx)({ clampOutput: e.target.checked })} /> Clamp 0..1
+            </label>
+            <Slider label="Master" min={0} max={2} step={0.01} resetValue={1} value={ef.masterGain} onChange={v => upd(ctx)({ masterGain: v })} paramId="masterGain" ctx={ctx} />
+          </div>
+        );
+      }
+    }
+  ],
+
 
   Inverter: [
     { id: 'active', label: 'Active',
@@ -530,21 +669,67 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
   ],
 
   Pattern: [
-    { id: 'counts', label: 'Grid',
+    { id: 'mode', label: 'Pattern Mode',
       render: ctx => {
         const ef = eff<PatternEffect>(ctx);
         return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <span className="rack-row-label">Tiling</span>
+            <select value={ef.mode ?? 'grid'} onChange={e => upd(ctx)({ mode: e.target.value as any })}>
+              <option value="grid">Grid (Cartesian)</option>
+              <option value="radial">Radial (Concentric)</option>
+            </select>
+          </div>
+        );
+      }
+    },
+    { id: 'counts', label: 'Grid',
+      render: ctx => {
+        const ef = eff<PatternEffect>(ctx);
+        if (ef.mode === 'radial') {
+          return (
+            <div className="rack-row-content">
+              <Slider label="Rings" min={1} max={32} step={1} resetValue={4}
+                value={ef.radialRings ?? 4} onChange={v => upd(ctx)({ radialRings: v })} paramId="radialRings" ctx={ctx} />
+              <Slider label="Segs" min={1} max={32} step={1} resetValue={8}
+                value={ef.radialSegments ?? 8} onChange={v => upd(ctx)({ radialSegments: v })} paramId="radialSegments" ctx={ctx} />
+            </div>
+          );
+        }
+        return (
           <div className="rack-row-content">
             <Slider label="X" min={1} max={32} step={1} resetValue={2}
-              value={ef.countX} onChange={v => upd(ctx)({ countX: v, countY: ef.syncCount ? v : ef.countY })} />
+              value={ef.countX} onChange={v => upd(ctx)({ countX: v, countY: ef.syncCount ? v : ef.countY })} paramId="countX" ctx={ctx} />
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: 24 }}>
                <input type="checkbox" checked={ef.syncCount} title="Sync X/Y"
                  onChange={e => { e.stopPropagation(); upd(ctx)({ syncCount: e.target.checked, countY: e.target.checked ? ef.countX : ef.countY }); }} />
             </div>
             <Slider label="Y" min={1} max={32} step={1} resetValue={2}
               value={ef.syncCount ? ef.countX : ef.countY} 
-              onChange={v => ef.syncCount ? upd(ctx)({ countX: v, countY: v }) : upd(ctx)({ countY: v })} />
+              onChange={v => ef.syncCount ? upd(ctx)({ countX: v, countY: v }) : upd(ctx)({ countY: v })} paramId="countY" ctx={ctx} />
           </div>
+        );
+      }
+    },
+    { id: 'rotationAndJitter', label: 'Dynamics',
+      render: ctx => {
+        const ef = eff<PatternEffect>(ctx);
+        return (
+          <div className="rack-row-content">
+            <Slider label="Tile Rot" min={-3.14} max={3.14} step={0.05} resetValue={0}
+              value={ef.tileRotation ?? 0} onChange={v => upd(ctx)({ tileRotation: v })} paramId="tileRotation" ctx={ctx} />
+            <Slider label="Jitter" min={0} max={1} step={0.01} resetValue={0}
+              value={ef.jitter ?? 0} onChange={v => upd(ctx)({ jitter: v })} paramId="jitter" ctx={ctx} />
+          </div>
+        );
+      }
+    },
+    { id: 'distort', label: 'UV Distort',
+      render: ctx => {
+        const ef = eff<PatternEffect>(ctx);
+        return (
+          <Slider label="Distort" min={0} max={1} step={0.01} resetValue={0.5}
+            value={ef.distortAmount ?? 0.5} onChange={v => upd(ctx)({ distortAmount: v })} paramId="distortAmount" ctx={ctx} />
         );
       }
     },
@@ -554,14 +739,14 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
         return (
           <div className="rack-row-content">
             <Slider label="X" min={-1} max={1} step={0.01} resetValue={0}
-              value={ef.spacingX} onChange={v => upd(ctx)({ spacingX: v, spacingY: ef.syncSpacing ? v : ef.spacingY })} />
+              value={ef.spacingX} onChange={v => upd(ctx)({ spacingX: v, spacingY: ef.syncSpacing ? v : ef.spacingY })} paramId="spacingX" ctx={ctx} />
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: 24 }}>
                <input type="checkbox" checked={ef.syncSpacing} title="Sync X/Y"
                  onChange={e => { e.stopPropagation(); upd(ctx)({ syncSpacing: e.target.checked, spacingY: e.target.checked ? ef.spacingX : ef.spacingY }); }} />
             </div>
             <Slider label="Y" min={-1} max={1} step={0.01} resetValue={0}
               value={ef.syncSpacing ? ef.spacingX : ef.spacingY} 
-              onChange={v => ef.syncSpacing ? upd(ctx)({ spacingX: v, spacingY: v }) : upd(ctx)({ spacingY: v })} />
+              onChange={v => ef.syncSpacing ? upd(ctx)({ spacingX: v, spacingY: v }) : upd(ctx)({ spacingY: v })} paramId="spacingY" ctx={ctx} />
           </div>
         );
       }
@@ -572,14 +757,14 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
         return (
           <div className="rack-row-content">
             <Slider label="X" min={-1} max={1} step={0.01} resetValue={0}
-              value={ef.offsetX} onChange={v => upd(ctx)({ offsetX: v, offsetY: ef.syncOffset ? v : ef.offsetY })} />
+              value={ef.offsetX} onChange={v => upd(ctx)({ offsetX: v, offsetY: ef.syncOffset ? v : ef.offsetY })} paramId="offsetX" ctx={ctx} />
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: 24 }}>
                <input type="checkbox" checked={ef.syncOffset} title="Sync X/Y"
                  onChange={e => { e.stopPropagation(); upd(ctx)({ syncOffset: e.target.checked, offsetY: e.target.checked ? ef.offsetX : ef.offsetY }); }} />
             </div>
             <Slider label="Y" min={-1} max={1} step={0.01} resetValue={0}
               value={ef.syncOffset ? ef.offsetX : ef.offsetY} 
-              onChange={v => ef.syncOffset ? upd(ctx)({ offsetX: v, offsetY: v }) : upd(ctx)({ offsetY: v })} />
+              onChange={v => ef.syncOffset ? upd(ctx)({ offsetX: v, offsetY: v }) : upd(ctx)({ offsetY: v })} paramId="offsetY" ctx={ctx} />
           </div>
         );
       }

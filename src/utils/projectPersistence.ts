@@ -1,4 +1,5 @@
 import { useEngineStore } from '../state/store';
+import { rehydrateProjectMedia } from './fileAssetManager';
 
 const LAYOUT_KEY = 'terp_node_layout';
 
@@ -72,7 +73,12 @@ export async function importProject(jsonData: any) {
       throw new Error("Invalid Terpsichore project file structure.");
     }
 
-    // 1. Hydrate Store
+    // 1. Rehydrate Media Assets for Desktop
+    if (project.engine.layers) {
+      project.engine.layers = rehydrateProjectMedia(project.engine.layers);
+    }
+
+    // 2. Hydrate Store
     useEngineStore.getState().loadProject(project.engine);
 
     // 2. Hydrate Layouts

@@ -12,6 +12,7 @@ import { PORT_DEFS, SIGNAL_COLORS, SOURCE_WIRE_COLOR, getPrimaryOutput, MODULE_D
 import { ModuleNode, GhostEdge } from './ModuleNode';
 import { NodeUIState, useNodeLayout } from './useNodeLayout';
 import { getNodeFromLayer, getAllLayerNodes, OUTPUT_ID } from '../../state/graphUtils';
+import { extractFileAsset } from '../../utils/fileAssetManager';
 import './NodeGraph.css';
 
 const NODE_W = 220;
@@ -235,17 +236,17 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
   const handleNodeFileChange = useCallback((nodeId: string, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !layer) return;
-    const url = URL.createObjectURL(file);
+    const asset = extractFileAsset(file);
     
     if (nodeId === 'source') {
       const src = layer.source as (VideoFileSource | ImageFileSource);
-      if (src.fileUrl) URL.revokeObjectURL(src.fileUrl);
-      updateLayer(layer.id, { source: { ...layer.source, fileUrl: url, fileName: file.name } as AnySource });
+      if (src.fileUrl && src.fileUrl.startsWith('blob:')) URL.revokeObjectURL(src.fileUrl);
+      updateLayer(layer.id, { source: { ...layer.source, fileUrl: asset.fileUrl, fileName: asset.fileName, filePath: asset.filePath } as AnySource });
     } else {
       const effect = layer.effects.find(ef => ef.id === nodeId) as (VideoFileSource | ImageFileSource);
-      if (effect && effect.fileUrl) URL.revokeObjectURL(effect.fileUrl);
+      if (effect && effect.fileUrl && effect.fileUrl.startsWith('blob:')) URL.revokeObjectURL(effect.fileUrl);
       const newEffects = layer.effects.map(ef => 
-        ef.id === nodeId ? { ...ef, fileUrl: url, fileName: file.name } as AnyEffect : ef
+        ef.id === nodeId ? { ...ef, fileUrl: asset.fileUrl, fileName: asset.fileName, filePath: asset.filePath } as AnyEffect : ef
       );
       updateLayer(layer.id, { effects: newEffects });
     }

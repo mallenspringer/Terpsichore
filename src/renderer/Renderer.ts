@@ -22,12 +22,15 @@ import { OscilloscopeWGSL } from './shaders/Oscilloscope';
 import { SpectralSplitterWGSL } from './shaders/SpectralSplitter';
 import { PixelProcessorFragmentWGSL } from './shaders/PixelProcessor';
 import { SpokenWordVisualizerWGSL } from './shaders/SpokenWordVisualizer';
+import { KeyMixerWGSL } from './shaders/KeyMixer';
+import { VideoMathWGSL } from './shaders/VideoMath';
 
 import { PORT_DEFS } from '../components/NodeGraph/portDefs';
 import { SignalDispatcher } from '../state/SignalDispatcher';
 import {
   ShapeGeneratorSource, Transform2DEffect, ColorAdjustEffect, LumaKeyEffect,
   SimpleFeedbackEffect, ColorRGBEffect, LumaSplitterEffect, VideoMixerEffect,
+  KeyMixerEffect, VideoMathEffect,
   NoiseVideoSource, ColorNoiseSource, InverterEffect, PixelProcessorEffect,
   PatternEffect, KaleidoscopeEffect, SampleAndHoldEffect, OscilloscopeEffect, SpectralSplitterEffect,
   SpokenWordVisualizerEffect,
@@ -75,6 +78,8 @@ export class Renderer {
   private pixelProcessorPipeline!: GPURenderPipeline;
   private colorNoisePipeline!: GPURenderPipeline;
   private spokenWordPipeline!: GPURenderPipeline;
+  private keyMixerPipeline!: GPURenderPipeline;
+  private videoMathPipeline!: GPURenderPipeline;
 
   // Isolated layouts to prevent 'Minimum Binding Size' collisions
   private effectLayouts: Map<string, GPUBindGroupLayout> = new Map();
@@ -507,6 +512,30 @@ export class Renderer {
       primitive
     });
     this.effectLayouts.set('SpokenWordVisualizer', this.spokenWordPipeline.getBindGroupLayout(0));
+
+    this.keyMixerPipeline = this.device.createRenderPipeline({
+      layout,
+      vertex,
+      fragment: {
+        module: this.device.createShaderModule({ code: KeyMixerWGSL }),
+        entryPoint: 'fs_main',
+        targets
+      },
+      primitive
+    });
+    this.effectLayouts.set('KeyMixer', this.keyMixerPipeline.getBindGroupLayout(0));
+
+    this.videoMathPipeline = this.device.createRenderPipeline({
+      layout,
+      vertex,
+      fragment: {
+        module: this.device.createShaderModule({ code: VideoMathWGSL }),
+        entryPoint: 'fs_main',
+        targets
+      },
+      primitive
+    });
+    this.effectLayouts.set('VideoMath', this.videoMathPipeline.getBindGroupLayout(0));
   }
 
   private getStorageBuffer(key: string, size: number): GPUBuffer {
@@ -1115,9 +1144,10 @@ export class Renderer {
             } else if (effect.type === 'Pattern') {
               pipeline = this.patternPipeline;
               const ef = effect as PatternEffect;
-              const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 32);
-              const buf = new ArrayBuffer(32);
+              const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 64);
+              const buf = new ArrayBuffer(64);
               const f32 = new Float32Array(buf);
+              const u32 = new Uint32Array(buf);
 
               const applyLogScale = (manual: number, mod: number) => {
                 if (mod > 0) return manual * Math.pow(32 / manual, mod);
@@ -1164,11 +1194,28 @@ export class Renderer {
               if (trigY > 0.5 && lastY <= 0.5) mState.y = !mState.y;
               this.lastTriggerVals.set(`${nodeId}.mirror_trig_y`, trigY);
 
-              const u32 = new Uint32Array(buf);
               u32[6] = mState.x ? 1 : 0;
               u32[7] = mState.y ? 1 : 0;
+
+              // Radial & Jitter Engine extensions
+              u32[8] = ef.mode === 'radial' ? 1 : 0;
+              f32[9] = this.getEffectiveParam(layer, nodeId, 'rings_cv', ef.radialRings ?? 4, timeSec);
+              f32[10] = ef.radialSegments ?? 8;
+              f32[11] = this.getEffectiveParam(layer, nodeId, 'rotation_cv', ef.tileRotation ?? 0, timeSec);
+              f32[12] = this.getEffectiveParam(layer, nodeId, 'jitter_cv', ef.jitter ?? 0, timeSec);
+              f32[13] = ef.distortAmount ?? 0.5;
+
+              const distortInput = this.getConnectedInputTexture(layer, nodeId, 'uv_distort_in');
+              u32[14] = distortInput ? 1 : 0;
+              f32[15] = 0.0;
+
               this.device.queue.writeBuffer(uniformBuffer, 0, buf);
-              entries = [{ binding: 0, resource: { buffer: uniformBuffer } }, { binding: 1, resource: this.sampler }, { binding: 2, resource: tex.createView() }];
+              entries = [
+                { binding: 0, resource: { buffer: uniformBuffer } },
+                { binding: 1, resource: this.sampler },
+                { binding: 2, resource: tex.createView() },
+                { binding: 3, resource: (distortInput ?? this.blankTexture).createView() }
+              ];
             } else if (effect.type === 'Kaleidoscope') {
               pipeline = this.kaleidoscopePipeline;
               const ef = effect as KaleidoscopeEffect;
@@ -1316,6 +1363,72 @@ export class Renderer {
                 { binding: 3, resource: v3 },
                 { binding: 4, resource: v4 },
                 { binding: 5, resource: this.sampler }
+              ];
+            } else if (effect.type === 'KeyMixer') {
+              pipeline = this.keyMixerPipeline;
+              const ef = effect as KeyMixerEffect;
+              const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 48);
+              const f32 = new Float32Array(12);
+              const u32 = new Uint32Array(f32.buffer);
+
+              const modeMap: Record<string, number> = { luma: 0, chroma: 1 };
+              const blendMap: Record<string, number> = { normal: 0, add: 1, screen: 2, mult: 3 };
+              const outMap: Record<string, number> = { composite: 0, matte: 1, keyedFg: 2 };
+
+              u32[0] = modeMap[ef.mode] ?? 1;
+              f32[1] = this.getEffectiveParam(layer, nodeId, 'threshold_cv', ef.threshold ?? 0.4, timeSec);
+              f32[2] = this.getEffectiveParam(layer, nodeId, 'tolerance_cv', ef.tolerance ?? 0.2, timeSec);
+              f32[3] = this.getEffectiveParam(layer, nodeId, 'spill_cv', ef.spillSuppression ?? 0.5, timeSec);
+              f32[4] = ef.keyColorR ?? 0.0;
+              f32[5] = ef.keyColorG ?? 1.0;
+              f32[6] = ef.keyColorB ?? 0.0;
+              u32[7] = ef.invertMask ? 1 : 0;
+              u32[8] = blendMap[ef.blendMode] ?? 0;
+              f32[9] = ef.masterGain ?? 1.0;
+              u32[10] = outMap[ef.outputMode] ?? 0;
+              f32[11] = 0.0;
+
+              this.device.queue.writeBuffer(uniformBuffer, 0, f32);
+
+              const bg = this.getConnectedInputTexture(layer, nodeId, 'bg_in')?.createView() ?? this.blankTexture.createView();
+              const fg = this.getConnectedInputTexture(layer, nodeId, 'fg_in')?.createView() ?? inputTex.createView();
+
+              entries = [
+                { binding: 0, resource: { buffer: uniformBuffer } },
+                { binding: 1, resource: bg },
+                { binding: 2, resource: fg },
+                { binding: 3, resource: this.sampler }
+              ];
+            } else if (effect.type === 'VideoMath') {
+              pipeline = this.videoMathPipeline;
+              const ef = effect as VideoMathEffect;
+              const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 32);
+              const f32 = new Float32Array(8);
+              const u32 = new Uint32Array(f32.buffer);
+
+              const opMap: Record<string, number> = {
+                add: 0, subtract: 1, multiply: 2, min: 3, max: 4, difference: 5, screen: 6, divide: 7, average: 8
+              };
+
+              u32[0] = opMap[ef.operation] ?? 0;
+              f32[1] = this.getEffectiveParam(layer, nodeId, 'gain_a_cv', ef.gainA ?? 1.0, timeSec);
+              f32[2] = this.getEffectiveParam(layer, nodeId, 'gain_b_cv', ef.gainB ?? 1.0, timeSec);
+              f32[3] = this.getEffectiveParam(layer, nodeId, 'offset_cv', ef.offset ?? 0.0, timeSec);
+              u32[4] = ef.clampOutput ? 1 : 0;
+              f32[5] = ef.masterGain ?? 1.0;
+              f32[6] = 0.0;
+              f32[7] = 0.0;
+
+              this.device.queue.writeBuffer(uniformBuffer, 0, f32);
+
+              const a = this.getConnectedInputTexture(layer, nodeId, 'a_in')?.createView() ?? inputTex.createView();
+              const b = this.getConnectedInputTexture(layer, nodeId, 'b_in')?.createView() ?? this.blankTexture.createView();
+
+              entries = [
+                { binding: 0, resource: { buffer: uniformBuffer } },
+                { binding: 1, resource: a },
+                { binding: 2, resource: b },
+                { binding: 3, resource: this.sampler }
               ];
             } else if (effect.type === 'PixelProcessor') {
               pipeline = this.pixelProcessorPipeline;

@@ -43,6 +43,8 @@ const ALL_MODULES: ModuleEntry[] = [
   { id: 'PixelProcessor', glyph: '🎞️', label: 'PixelProc', tooltip: 'Advanced Visual Styling (Posterize/Threshold/Edge)', category: 'Effects', moduleType: 'effect:PixelProcessor' },
   { id: 'LumaSplit',      glyph: '▤', label: 'LumaSplit', tooltip: 'Split by luminance bands', category: 'Utility', moduleType: 'effect:LumaSplitter'   },
   { id: 'VideoMixer',     glyph: '⧉', label: 'Mixer',     tooltip: '4-Ch Video Compositor',   category: 'Utility', moduleType: 'effect:VideoMixer'      },
+  { id: 'KeyMixer',       glyph: '✂️', label: 'KeyMixer',  tooltip: 'Luma & Chroma Multi-Source Keyer', category: 'Utility', moduleType: 'effect:KeyMixer'      },
+  { id: 'VideoMath',      glyph: '⨁', label: 'VidMath',   tooltip: 'Algebraic Texture Operations (Add/Sub/Mult/Diff)', category: 'Utility', moduleType: 'effect:VideoMath' },
   // Utility
   { id: 'LFO',            glyph: '〜', label: 'LFO',       tooltip: 'Modular LFO Source',      category: 'Utility', moduleType: 'modulator:LFO'         },
   { id: 'TriggerPad',     glyph: '🔘', label: 'Trig Pad',  tooltip: 'Click-to-trigger Pulse',  category: 'Utility', moduleType: 'modulator:TriggerPad'  },

@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.0] - 2026-10-17
+
+### Added
+- **KeyMixer Compositing Node**: High-performance multi-input WebGPU shader supporting Luma Keying (luminance thresholds) and Chroma Keying (color matching with green/blue edge spill suppression, mask inversion, and B&W matte preview).
+- **Radial & Jitter Pattern Engine**: Major overhaul of the `Pattern` shader adding concentric circular tiling (Radial mode with configurable rings and angular sectors), per-tile incremental rotation, pseudo-random jitter displacement, and external video-signal UV distortion (`uv_distort_in`).
+- **Video Math Module**: Multi-input algebraic texture processor performing real-time GPU operations (`Add`, `Subtract`, `Multiply`, `Min`, `Max`, `Difference`, `Screen`, `Divide`, `Average`) between two video sources with independent gain, offset, and clamping.
+- **Tauri Native Media Stream Asset Manager**: Dedicated desktop file management (`fileAssetManager.ts`) utilizing Tauri's `convertFileSrc` to preserve persistent local file paths and automatically rehydrate video, audio, and image streams across project sessions without browser sandbox restrictions.
+
 ## [0.4.0] - 2026-06-02
 
 ### Added

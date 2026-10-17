@@ -80,14 +80,20 @@ Radial reflection effect.
     *   Allows smooth, musical transitions from low segment counts to dense patterns.
 
 ### Pattern (▦)
-Tiling and grid layout engine.
+Tiling and spatial layout engine supporting both Cartesian grids and concentric radial formations.
+*   **Modes**:
+    *   **Grid**: Standard X/Y rectangular tiling with independent horizontal and vertical repeat counts.
+    *   **Radial**: Concentric circular tiling with configurable **Rings** (radial rings outwards) and **Segments** (angular slices).
 *   **Parameters**:
-    *   **Count X/Y**: Number of tiles per axis (Log-scaled).
+    *   **Count X/Y** / **Rings & Segs**: Density of the tiling.
+    *   **Tile Rotation**: Staggered incremental rotation applied individually to each tile cell.
+    *   **Jitter**: Pseudo-random spatial displacement of tile cells.
+    *   **UV Distort**: Modulates UV coordinate displacement using incoming video signals (`uv_distort_in`).
     *   **Spacing X/Y**: Gaps between tiles.
-    *   **Offset X/Y**: Spatial phase shift.
+    *   **Offset X/Y**: Spatial phase shift (or center offset in radial mode).
     *   **Sync Toggles**: Links X and Y parameters for unified grid scaling.
     *   **Mirror X/Y**: Alternates orientation of every other tile.
-*   **Signal Behavior**: When **Sync** is enabled, modulation signals from both X and Y jacks are **summed** before being applied to both axes.
+*   **Signal Behavior**: When **Sync** is enabled, modulation signals from both X and Y jacks are **summed** before being applied to both axes. Includes CV modulation for `rotation_cv`, `jitter_cv`, and `rings_cv`.
 
 ### Color RGB (RGB)
 Channel manipulation and static color generation.
@@ -95,12 +101,22 @@ Channel manipulation and static color generation.
     *   **Add**: Offsets the channel value.
     *   **Mult**: Scales the channel intensity (ring modulation for color).
 *   **Parameters**: Individual R, G, B levels and modulation jacks.
-### Key Mixer (🔑🎛️)
-*Tentative Roadmap Feature* - A multi-input keying effect node designed to mask and blend layer textures based on pixel values.
+### Key Mixer (✂️)
+A multi-input keying effect node designed to mask and blend foreground video streams over background textures within a single layer.
 *   **Modes**:
-    *   **Luma Key**: Keys pixels out based on luminance/brightness ranges.
-    *   **Chroma Key**: Keys pixels out based on chrominance/color ranges (with tolerance and edge spill suppression).
-*   **Use Cases**: Seamlessly compositing video files against custom generated procedural shapes, or keying green-screen camera streams onto complex visual synthesis loops.
+    *   **Luma Key**: Keys pixels out based on luminance/brightness ranges (`Threshold` and `Tolerance`).
+    *   **Chroma Key**: Keys pixels out based on chrominance/color ranges with color picker, preset shortcuts (Green/Blue screen), and adjustable `Spill Suppression` to eliminate edge fringing.
+*   **Output Modes**: `Composite` (FG keyed over BG), `Matte Only` (B&W key mask), or `Keyed FG Only`.
+*   **Blend Modes**: `Normal`, `Add`, `Screen`, and `Multiply`.
+*   **CV Modulation Ports**: Dynamic modulation of `Threshold`, `Tolerance`, and `Spill`.
+*   **Use Cases**: Compositing webcam camera feeds or keyed video loops over generative shapes and feedback patterns without requiring multi-layer overhead.
+
+### Video Math (⨁)
+Algebraic pixel composition between two incoming video textures (`A In` and `B In`).
+*   **Operations**: `Add (A + B)`, `Subtract (A - B)`, `Multiply (A × B)`, `Min (A, B)`, `Max (A, B)`, `Difference |A - B|`, `Screen`, `Divide (A / B)`, and `Average ((A + B) / 2)`.
+*   **Parameters**: Individual input gains (`Gain A`, `Gain B`), additive `Offset`, `Clamp (0..1)`, and `Master Gain`.
+*   **CV Modulation Ports**: `gain_a_cv`, `gain_b_cv`, `offset_cv`.
+*   **Use Cases**: Precision visual mixing, difference keying/motion extraction, and complex texture multiplication.
 
 ---
 

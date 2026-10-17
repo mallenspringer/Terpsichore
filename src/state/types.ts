@@ -42,6 +42,7 @@ export interface VideoFileSource {
   id?: string;
   type: 'VideoFile';
   fileUrl: string;
+  filePath?: string;
   fileName: string;
   playbackSpeed: number;
   loop: boolean;
@@ -71,6 +72,7 @@ export interface ImageFileSource {
   id?: string;
   type: 'ImageFile';
   fileUrl: string;
+  filePath?: string;
   fileName: string;
   objectFit: 'cover' | 'contain' | 'fill';
 }
@@ -87,6 +89,7 @@ export interface AudioFileSource {
   id?: string;
   type: 'AudioFile';
   fileUrl: string;
+  filePath?: string;
   fileName: string;
   volume: number;
   muted: boolean;
@@ -333,6 +336,33 @@ export interface VideoMixerEffect {
   crossfadeEnabled?: boolean;
 }
 
+export interface KeyMixerEffect {
+  id: string;
+  type: 'KeyMixer';
+  mode: 'luma' | 'chroma';
+  threshold: number; // 0..1
+  tolerance: number; // 0..1
+  spillSuppression: number; // 0..1
+  keyColorR: number; // 0..1
+  keyColorG: number; // 0..1
+  keyColorB: number; // 0..1
+  invertMask: boolean;
+  blendMode: 'normal' | 'add' | 'screen' | 'mult';
+  masterGain: number;
+  outputMode: 'composite' | 'matte' | 'keyedFg';
+}
+
+export interface VideoMathEffect {
+  id: string;
+  type: 'VideoMath';
+  operation: 'add' | 'subtract' | 'multiply' | 'min' | 'max' | 'difference' | 'screen' | 'divide' | 'average';
+  gainA: number;
+  gainB: number;
+  offset: number;
+  clampOutput: boolean;
+  masterGain: number;
+}
+
 export interface PathEffect {
   id: string;
   type: 'Path';
@@ -512,6 +542,12 @@ export interface PatternEffect {
   syncOffset: boolean;
   mirrorXTrigger: boolean;
   mirrorYTrigger: boolean;
+  mode?: 'grid' | 'radial';
+  radialRings?: number;
+  radialSegments?: number;
+  tileRotation?: number;
+  jitter?: number;
+  distortAmount?: number;
 }
 
 export interface KaleidoscopeEffect {
@@ -559,6 +595,7 @@ export type AnyEffect =
   | Transform2DEffect | ColorAdjustEffect | LumaKeyEffect | SimpleFeedbackEffect
   | InterLayerOutputEffect | InterLayerInputEffect | ColorRGBEffect | LumaSplitterEffect 
   | SpawnEffect | PathEffect | InverterEffect | VideoMixerEffect | AlphaAdjustEffect
+  | KeyMixerEffect | VideoMathEffect
   | LogicGateEffect | TriggeredGateEffect | PatternEffect | KaleidoscopeEffect 
   | SignalMathEffect | SampleAndHoldEffect | StepSequencerEffect | PixelProcessorEffect
   | AudioSourceEffect | OscilloscopeEffect | SpectralSplitterEffect | AudioTransformerEffect | AudioModulatorEffect | AudioGateEffect
@@ -570,6 +607,7 @@ export type EffectType =
   | 'Transform2D' | 'ColorAdjust' | 'LumaKey' | 'SimpleFeedback' 
   | 'InterLayerOutput' | 'InterLayerInput' 
   | 'ColorRGB' | 'LumaSplitter' | 'Spawn' | 'Path' | 'Inverter' | 'VideoMixer' | 'AlphaAdjust'
+  | 'KeyMixer' | 'VideoMath'
   | 'LogicGate' | 'TriggeredGate' | 'Pattern' | 'Kaleidoscope' | 'SignalMath' | 'SampleAndHold' | 'StepSequencer' | 'AudioSource' | 'Oscilloscope' | 'SpectralSplitter' | 'PixelProcessor' | 'AudioTransformer' | 'AudioModulator' | 'AudioGate'
   | 'SpeechEnvelopeTracker' | 'VocalPitchTracker' | 'VowelFormantTracker' | 'SpokenWordVisualizer'
   | 'ShapeGenerator' | 'VideoURL' | 'VideoFile' | 'WebcamCapture' | 'NoiseSource' | 'ColorNoise' | 'AudioInput' | 'AudioFile' | 'SystemAudio' | 'ImageLoader' | 'ImageFile';
