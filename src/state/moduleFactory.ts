@@ -206,7 +206,7 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
 export function createDefaultModulator(type: string): any {
   switch (type) {
     case 'LFO':
-      return { type, waveform: 'sine', frequency: 0.1, speedRange: 'low', amplitude: 1.0, offset: 0, bipolar: true };
+      return { type, waveform: 'sine', frequency: 1.0, speedRange: 'low', amplitude: 1.0, offset: 0, bipolar: true };
     case 'TriggerPad':
       return { type, isPressed: false, keyMapping: 'none', useEnvelope: false, attack: 0.1, release: 0.5 };
     case 'Noise':

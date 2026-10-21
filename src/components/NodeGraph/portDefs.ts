@@ -11,6 +11,7 @@ export interface PortDef {
   bipolar?: boolean; // native range of the output
   disableBipolar?: boolean; // hide bipolar switch for this input
   enableInvert?: boolean; // selectively enable invert button on inputs
+  enableLatch?: boolean;  // show latch vs momentary toggle switch on trigger inputs
 }
 
 export const PORT_DEFS: Record<string, PortDef[]> = {
@@ -299,8 +300,8 @@ export const PORT_DEFS: Record<string, PortDef[]> = {
     { id: 'rotation_cv', label: 'Tile Rot', direction: 'in', signalType: 'modulation' },
     { id: 'jitter_cv', label: 'Jitter', direction: 'in', signalType: 'modulation' },
     { id: 'rings_cv', label: 'Rings', direction: 'in', signalType: 'modulation' },
-    { id: 'mirror_trig_x', label: 'Mirror X Trig', direction: 'in', signalType: 'trigger' },
-    { id: 'mirror_trig_y', label: 'Mirror Y Trig', direction: 'in', signalType: 'trigger' },
+    { id: 'mirror_trig_x', label: 'Mirror X Trig', direction: 'in', signalType: 'trigger', disableBipolar: true, enableLatch: true },
+    { id: 'mirror_trig_y', label: 'Mirror Y Trig', direction: 'in', signalType: 'trigger', disableBipolar: true, enableLatch: true },
     { id: 'video_out', label: 'Video Out', direction: 'out', signalType: 'video', priority: 0 },
   ],
   Kaleidoscope: [

@@ -750,8 +750,14 @@ export function Sidebar({ activeLayerId, onSelectLayer, activeLayer, sourceCtx, 
                       const newId = `${type.toLowerCase()}_${Date.now()}`;
                       
                       if (category === 'source') {
-                        const newSource = createDefaultSource(type);
-                        useEngineStore.getState().setSource(activeLayerId, newSource);
+                        const activeLayer = layers[activeLayerId];
+                        if (!activeLayer || !activeLayer.source || activeLayer.source.type === 'None') {
+                          const newSource = createDefaultSource(type);
+                          useEngineStore.getState().setSource(activeLayerId, newSource);
+                        } else {
+                          const newEffect = createDefaultEffect(type as any, newId);
+                          addEffect(activeLayerId, newEffect);
+                        }
                       } else if (category === 'effect') {
                         const newEffect = createDefaultEffect(type, newId);
                         addEffect(activeLayerId, newEffect);

@@ -106,13 +106,15 @@ export class MediaManager {
     key: string
   ) {
     const globalMute = useEngineStore.getState().globalAudioMuted;
+    const isModuleMuted = !!(src.audioMuted || src.muted);
+    const shouldMute = isModuleMuted || isMutedFromLayer || globalMute;
 
-    // We keep the element itself unmuted so the MediaElementAudioSourceNode captures signal
-    el.muted = false;
-    el.volume = 1.0; // Keep full volume for the Web Audio chain
+    // Physical element level mute & volume clamping to prevent rogue direct-to-speaker leaks
+    el.muted = shouldMute;
+    el.volume = shouldMute ? 0 : 1.0;
 
     const ae = AudioEngine.getInstance();
-    ae.setModuleMute(key, src.audioMuted || src.muted);
+    ae.setModuleMute(key, isModuleMuted);
     ae.setLayerMute(key, isMutedFromLayer);
     ae.setMasterMute(globalMute);
   }
@@ -151,8 +153,8 @@ export class MediaManager {
         vid.onloadedmetadata = () => {};
         this.videoElements[key] = vid;
 
-        // Register with AudioEngine for signal dispatching
-        setTimeout(() => AudioEngine.getInstance().registerMediaElement(key, vid), 50);
+        // Register with AudioEngine for signal dispatching immediately
+        AudioEngine.getInstance().registerMediaElement(key, vid);
       }
 
       if (source.type === 'VideoURL') {

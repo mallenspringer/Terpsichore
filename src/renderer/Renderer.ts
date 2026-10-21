@@ -1184,14 +1184,26 @@ export class Renderer {
                 this.patternMirrorStates.set(nodeId, mState);
               }
 
+              const settingsX = layer.inputSettings?.[`${nodeId}.mirror_trig_x`];
+              const isLatchX = settingsX?.latch !== false;
               const trigX = latestSignals[`${nodeId}.mirror_trig_x`] ?? 0;
               const lastX = this.lastTriggerVals.get(`${nodeId}.mirror_trig_x`) ?? 0;
-              if (trigX > 0.5 && lastX <= 0.5) mState.x = !mState.x;
+              if (isLatchX) {
+                if (trigX > 0.5 && lastX <= 0.5) mState.x = !mState.x;
+              } else {
+                mState.x = trigX > 0.5 ? !ef.alternateMirrorX : ef.alternateMirrorX;
+              }
               this.lastTriggerVals.set(`${nodeId}.mirror_trig_x`, trigX);
 
+              const settingsY = layer.inputSettings?.[`${nodeId}.mirror_trig_y`];
+              const isLatchY = settingsY?.latch !== false;
               const trigY = latestSignals[`${nodeId}.mirror_trig_y`] ?? 0;
               const lastY = this.lastTriggerVals.get(`${nodeId}.mirror_trig_y`) ?? 0;
-              if (trigY > 0.5 && lastY <= 0.5) mState.y = !mState.y;
+              if (isLatchY) {
+                if (trigY > 0.5 && lastY <= 0.5) mState.y = !mState.y;
+              } else {
+                mState.y = trigY > 0.5 ? !ef.alternateMirrorY : ef.alternateMirrorY;
+              }
               this.lastTriggerVals.set(`${nodeId}.mirror_trig_y`, trigY);
 
               u32[6] = mState.x ? 1 : 0;

@@ -1198,9 +1198,17 @@ export class SignalDispatcher {
       const isModuleAudioMuted = (layer.source as any).audioMuted || (layer.source as any).muted;
       audioEngine.setModuleMute(layer.id, !!isModuleAudioMuted);
 
-      if (this.frameCount % 120 === 0) {
-        audioEngine.setMasterMute(!!state.globalAudioMuted);
+      if (layer.effects && layer.effects.length > 0) {
+        for (const ef of layer.effects) {
+          if (ef.id) {
+            const isEfAudioMuted = (ef as any).audioMuted || (ef as any).muted;
+            audioEngine.setModuleMute(ef.id, !!isEfAudioMuted);
+            audioEngine.setLayerMute(ef.id, !!isLayerAudioMuted);
+          }
+        }
       }
+
+      audioEngine.setMasterMute(!!state.globalAudioMuted);
 
       state.interLayerEdges.filter(e => e.toLayerId === layer.id).forEach(edge => {
         const busKey = `${edge.fromLayerId}.${edge.fromEffectId}.${edge.fromPortIdx}`;

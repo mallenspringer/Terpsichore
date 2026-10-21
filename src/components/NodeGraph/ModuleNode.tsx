@@ -343,6 +343,18 @@ export function ModuleNode({
                 </button>
               )}
 
+              {port.enableLatch && (
+                <button 
+                  className={`patchbay-invert-toggle ${settings.latch !== false ? 'active' : ''}`}
+                  onPointerDown={e => { e.stopPropagation(); e.preventDefault(); }}
+                  onClick={(e) => { e.stopPropagation(); useEngineStore.getState().updateInputSettings(layerId, settingsKey, { latch: !(settings.latch !== false) }); }}
+                  title={settings.latch !== false ? "Trigger Mode: Latch (Toggle on pulse)" : "Trigger Mode: Momentary (Active while High)"}
+                  style={{ fontSize: 11, fontWeight: 'bold' }}
+                >
+                  {settings.latch !== false ? '⤾' : '⎍'}
+                </button>
+              )}
+
               {port.enableInvert && (
                 <button 
                   className={`patchbay-invert-toggle ${settings.invert ? 'active' : ''}`}

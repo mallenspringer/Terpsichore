@@ -643,6 +643,7 @@ export interface PortSettings {
   amount: number;   // 0.0 to 1.0
   bipolar: boolean; // if true, converts 0-1 to -1 to 1
   invert?: boolean;  // if true, inverts 0-1 range to 1-0 range (decreases on increase)
+  latch?: boolean;   // if true/false for triggers: toggle/latch mode vs momentary mode
 }
 
 export interface LayerState {

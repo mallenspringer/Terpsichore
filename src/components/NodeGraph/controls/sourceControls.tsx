@@ -432,9 +432,10 @@ export const SOURCE_ROWS: Record<string, ControlRowDef[]> = {
             </div>
             <Slider 
               label={`Rate (${isLow ? 'Hz' : 'Hz'})`} 
-              min={isLow ? 0.1 : 1.0} 
+              min={isLow ? 0.01 : 1.0} 
               max={isLow ? 4.0 : 60.0} 
-              step={isLow ? 0.01 : 1.0} 
+              step={isLow ? 0.005 : 0.5} 
+              resetValue={1.0}
               value={lfo.frequency} 
               onChange={v => chg(ctx)('frequency', v)} 
             />
