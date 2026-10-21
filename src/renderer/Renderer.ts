@@ -208,7 +208,7 @@ export class Renderer {
       pass.setPipeline(this.spawnPipeline);
 
       const storageBuffer = this.getStorageBuffer(`${stateKey}.instances`, instanceData.byteLength);
-      this.device.queue.writeBuffer(storageBuffer, 0, instanceData);
+      this.device.queue.writeBuffer(storageBuffer, 0, instanceData as any);
 
       const globalUniforms = this.getUniformBuffer(`${stateKey}.globals`, 16);
       this.device.queue.writeBuffer(globalUniforms, 0, new Float32Array([aspect, 0, 0, 0]));
