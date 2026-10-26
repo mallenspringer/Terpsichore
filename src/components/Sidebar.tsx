@@ -61,6 +61,7 @@ const ALL_MODULES: ModuleEntry[] = [
   { id: 'VocalPitchTracker', glyph: '🗣️🎼', label: 'Vocal Pitch', tooltip: 'Vocal Pitch Tracker (YIN fundamental freq & notes)', category: 'Audio', moduleType: 'effect:VocalPitchTracker' },
   { id: 'VowelFormantTracker', glyph: '🗣️🎨', label: 'Vocal Vowel', tooltip: 'Vowel Formant Coordinate Tracker (F1/F2 2D space)', category: 'Audio', moduleType: 'effect:VowelFormantTracker' },
   { id: 'SpokenWordVisualizer', glyph: '🗣️💎', label: 'Vocal Console', tooltip: 'Spoken Word Visualizer Routing Bay (17 Analytical Signals)', category: 'Audio', moduleType: 'effect:SpokenWordVisualizer' },
+  { id: 'AudioToCV',      glyph: '⚡🔊', label: 'Audio CV', tooltip: 'Audio to Control Signal Converter (RMS/Peak/Env/dB)', category: 'Utility', moduleType: 'effect:AudioToCV' },
   { id: 'Path',           glyph: '🛤️', label: 'Path',      tooltip: 'Trajectory Generator',    category: 'Utility', moduleType: 'effect:Path'           },
   { id: 'Noise',          glyph: '🎲', label: 'Noise',     tooltip: 'Stochastic Signal Gen',   category: 'Utility', moduleType: 'modulator:Noise'        },
   { id: 'MidiInput',      glyph: '🎹', label: 'MIDI Input',tooltip: 'MIDI Keyboard & CC Control inputs', category: 'Utility', moduleType: 'modulator:MidiInput'    },

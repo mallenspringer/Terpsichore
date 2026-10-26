@@ -2,7 +2,7 @@ import {
   Transform2DEffect, ColorAdjustEffect, LumaKeyEffect, SimpleFeedbackEffect,
   InterLayerOutputEffect, InterLayerInputEffect, ColorRGBEffect, LumaSplitterEffect,
   SpawnEffect, PathEffect, LogicGateEffect, TriggeredGateEffect, InverterEffect, VideoMixerEffect,
-  KeyMixerEffect, VideoMathEffect, UVDisplaceEffect,
+  KeyMixerEffect, VideoMathEffect, UVDisplaceEffect, AudioToCVEffect,
   PatternEffect, KaleidoscopeEffect, SignalMathEffect, SampleAndHoldEffect,
   AudioSourceEffect, OscilloscopeEffect, SpectralSplitterEffect, PixelProcessorEffect,
   AudioTransformerEffect, AudioModulatorEffect
@@ -1159,6 +1159,56 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
                 onClick={() => upd(ctx)({ wrapMode: w })}
               >{w}</button>
             ))}
+          </div>
+        );
+      }
+    }
+  ],
+  AudioToCV: [
+    { id: 'mode', label: 'Mode',
+      render: ctx => {
+        const ef = eff<AudioToCVEffect>(ctx);
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'row', gap: 4 }}>
+            {(['envelope', 'rms', 'peak', 'db'] as const).map(m => (
+              <button key={m}
+                className={`mode-toggle ${ef.mode === m ? 'active' : ''}`}
+                style={{ flex: 1, textTransform: 'uppercase', fontSize: 10, padding: '2px 4px' }}
+                onClick={() => upd(ctx)({ mode: m })}
+              >{m === 'envelope' ? 'Env' : m}</button>
+            ))}
+          </div>
+        );
+      }
+    },
+    { id: 'gain', label: 'Gain / Sens',
+      render: ctx => <Slider label="Gain" min={0.1} max={5} step={0.05} resetValue={1.0} value={eff<AudioToCVEffect>(ctx).gain ?? 1.0} onChange={v => upd(ctx)({ gain: v })} paramId="gain" ctx={ctx} />
+    },
+    { id: 'timing', label: 'Response',
+      render: ctx => {
+        const ef = eff<AudioToCVEffect>(ctx);
+        return ef.mode === 'envelope' ? (
+          <div className="rack-row-content">
+            <Slider label="Atk ms" min={1} max={250} step={1} resetValue={10} value={ef.attack ?? 10} onChange={v => upd(ctx)({ attack: v })} paramId="attack" ctx={ctx} />
+            <Slider label="Rel ms" min={10} max={1000} step={5} resetValue={100} value={ef.release ?? 100} onChange={v => upd(ctx)({ release: v })} paramId="release" ctx={ctx} />
+          </div>
+        ) : (
+          <div className="rack-row-content">
+            <Slider label="Smoothing" min={0.0} max={0.95} step={0.02} resetValue={0.1} value={ef.smoothing ?? 0.1} onChange={v => upd(ctx)({ smoothing: v })} paramId="smoothing" ctx={ctx} />
+          </div>
+        );
+      }
+    },
+    { id: 'gateAndPolarity', label: 'Gate & Polarity',
+      render: ctx => {
+        const ef = eff<AudioToCVEffect>(ctx);
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Slider label="Gate Thresh" min={0.05} max={0.95} step={0.02} resetValue={0.4} value={ef.gateThreshold ?? 0.4} onChange={v => upd(ctx)({ gateThreshold: v })} paramId="gateThreshold" ctx={ctx} />
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, whiteSpace: 'nowrap' }}>
+              <input type="checkbox" checked={ef.bipolar ?? false} onChange={e => upd(ctx)({ bipolar: e.target.checked })} />
+              ± Bipolar
+            </label>
           </div>
         );
       }

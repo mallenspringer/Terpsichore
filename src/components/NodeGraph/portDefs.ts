@@ -193,6 +193,14 @@ export const PORT_DEFS: Record<string, PortDef[]> = {
     { id: 'input_rms',   label: 'Input RMS',  direction: 'out', signalType: 'modulation', priority: 4 },
     { id: 'input_db',    label: 'Input dB',   direction: 'out', signalType: 'pitchHz', priority: 5 },
   ],
+  AudioToCV: [
+    { id: 'audio_in',   label: 'Audio In',   direction: 'in',  signalType: 'audio', priority: 0 },
+    { id: 'gain_cv',    label: 'Gain CV',    direction: 'in',  signalType: 'modulation' },
+    { id: 'thresh_cv',  label: 'Thresh CV',  direction: 'in',  signalType: 'modulation' },
+    { id: 'cv_out',     label: 'CV Out',     direction: 'out', signalType: 'modulation', priority: 1 },
+    { id: 'gate_out',   label: 'Gate Out',   direction: 'out', signalType: 'trigger', priority: 2 },
+    { id: 'audio_thru', label: 'Audio Thru', direction: 'out', signalType: 'audio', priority: 3 },
+  ],
   SpeechEnvelopeTracker: [
     { id: 'audio_in', label: 'Audio In', direction: 'in', signalType: 'audio', priority: 0 },
     { id: 'envelope_out', label: 'Env Out', direction: 'out', signalType: 'modulation', priority: 1 },
@@ -518,5 +526,6 @@ export const MODULE_DISPLAY_NAMES: Record<string, string> = {
   KeyMixer: 'Key Mixer',
   VideoMath: 'Video Math',
   UVDisplace: 'UV Displace',
+  AudioToCV: 'Audio to CV',
   MidiInput: 'MIDI Input',
 };

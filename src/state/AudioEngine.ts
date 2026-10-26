@@ -721,6 +721,22 @@ export class AudioEngine {
     return this.buses.get(id)?.peak ?? 0;
   }
 
+  public getAudioEnvelope(busId: string, attackMs: number, releaseMs: number): number {
+    const bus = this.buses.get(busId);
+    const analyzer = this.analyzers.get(busId) || this.processingNodes.get(busId)?.analyzer || this.modulatorNodes.get(busId)?.analyzer || this.gateNodes.get(busId)?.outputAnalyzer;
+    if (!bus) return 0;
+    if (!analyzer) return bus.rms;
+
+    let follower = this.envelopeFollowers.get(`to_cv_${busId}`);
+    if (!follower) {
+      follower = new EnvelopeFollower(this.context.sampleRate);
+      this.envelopeFollowers.set(`to_cv_${busId}`, follower);
+    }
+    follower.setConstants(attackMs, releaseMs);
+    analyzer.getFloatTimeDomainData(bus.waveform as any);
+    return follower.process(bus.waveform);
+  }
+
   public getSpeechFeatures(busId: string, attackMs: number, releaseMs: number) {
     const bus = this.buses.get(busId);
     const analyzer = this.analyzers.get(busId) || this.processingNodes.get(busId)?.analyzer || this.modulatorNodes.get(busId)?.analyzer || this.gateNodes.get(busId)?.outputAnalyzer;

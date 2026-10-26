@@ -4,7 +4,7 @@ import {
   SignalMathEffect, SampleAndHoldEffect, StepSequencerEffect, OscilloscopeEffect,
   SpectralSplitterEffect, AlphaAdjustEffect, AudioTransformerEffect, AudioModulatorEffect,
   AudioGateEffect, SpeechEnvelopeTrackerEffect, VocalPitchTrackerEffect, VowelFormantTrackerEffect,
-  SpokenWordVisualizerEffect
+  SpokenWordVisualizerEffect, AudioToCVEffect
 } from './types';
 import { AudioEngine } from './AudioEngine';
 import { MidiManager } from './MidiManager';
@@ -42,6 +42,7 @@ export class SignalDispatcher {
   private speechStateMap = new Map<string, boolean>();
   private pitchStateMap = new Map<string, number>();
   private vowelStateMap = new Map<string, string>();
+  private audioToCvSmoothed = new Map<string, number>();
   private midiOverrides = new Map<string, number>();
 
   private constructor() {
@@ -703,6 +704,69 @@ export class SignalDispatcher {
                 ctx.signalValues[`${nodeId}.input_db`] = -100;
                 ctx.signalValues[`${nodeId}.input_rms`] = 0.0;
               }
+            });
+          } else if (effect.type === 'AudioToCV') {
+            pipeline.push((ctx: DispatchContext) => {
+              const ef = ctx.layer.effects.find(e => e.id === nodeId) as AudioToCVEffect;
+              if (!ef) return;
+
+              const edges = ctx.layer.graph?.edges || [];
+              const incomingEdge = edges.find(e => e.toNodeId === nodeId && e.toPort === 'audio_in');
+
+              const resolveAudioBusId = (fromNodeId: string, visited = new Set<string>()): string => {
+                if (visited.has(fromNodeId)) return 'master';
+                visited.add(fromNodeId);
+                if (fromNodeId === 'source') return ctx.layer.id;
+                const fromEffect = ctx.layer.effects.find(e => e.id === fromNodeId);
+                if (fromEffect?.type === 'AudioToCV') {
+                  const upstreamEdge = edges.find(e => e.toNodeId === fromNodeId && e.toPort === 'audio_in');
+                  return upstreamEdge ? resolveAudioBusId(upstreamEdge.fromNodeId, visited) : 'master';
+                }
+                return fromNodeId;
+              };
+
+              const busId = incomingEdge ? resolveAudioBusId(incomingEdge.fromNodeId) : 'master';
+              const bus = ctx.audioEngine.getBusData(busId);
+              let rawLevel = 0;
+
+              const gainMod = ctx.signalValues[`${nodeId}.gain_cv`] ?? 0;
+              const effectiveGain = Math.max(0, (ef.gain ?? 1.0) * (1.0 + gainMod));
+
+              if (bus) {
+                if (ef.mode === 'peak') {
+                  rawLevel = bus.peak * effectiveGain;
+                } else if (ef.mode === 'rms') {
+                  rawLevel = bus.rms * effectiveGain;
+                } else if (ef.mode === 'db') {
+                  // Standard dB conversion: -60dB -> 0.0, 0dB -> 1.0
+                  const rms = Math.max(0.0001, bus.rms * effectiveGain);
+                  const db = 20 * Math.log10(rms);
+                  rawLevel = Math.max(0, Math.min(1.0, (db + 60) / 60));
+                } else { // 'envelope'
+                  rawLevel = ctx.audioEngine.getAudioEnvelope(busId, ef.attack || 10, ef.release || 100) * effectiveGain;
+                }
+              }
+
+              // Smoothing: envelope mode handles smoothing via its own attack/release coefficients
+              const smoothing = ef.mode === 'envelope' ? 0.0 : Math.max(0, Math.min(0.99, ef.smoothing ?? 0.1));
+              const stateKey = `${ctx.layer.id}.${nodeId}`;
+              const prev = this.audioToCvSmoothed.get(stateKey) ?? rawLevel;
+              const smoothed = prev * smoothing + rawLevel * (1.0 - smoothing);
+              this.audioToCvSmoothed.set(stateKey, smoothed);
+
+              let finalVal = Math.max(0, Math.min(1.0, smoothed));
+              if (ef.bipolar) {
+                finalVal = (finalVal * 2.0) - 1.0;
+              }
+
+              // Gate evaluation
+              const threshMod = ctx.signalValues[`${nodeId}.thresh_cv`] ?? 0;
+              const effectiveThresh = Math.max(0, Math.min(1.0, (ef.gateThreshold ?? 0.4) + threshMod));
+              const isGateHigh = smoothed >= effectiveThresh;
+
+              ctx.signalValues[`${nodeId}.cv_out`] = finalVal;
+              ctx.signalValues[`${nodeId}.gate_out`] = isGateHigh ? 1.0 : 0.0;
+              ctx.signalValues[`${nodeId}.audio_thru`] = 1.0;
             });
           } else if (effect.type === 'Inverter') {
             pipeline.push((ctx: DispatchContext) => {

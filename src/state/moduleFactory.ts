@@ -73,6 +73,17 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
       bypassLatching: true,
       releaseMs: 150
     };
+    case 'AudioToCV': return {
+      id,
+      type: 'AudioToCV',
+      mode: 'envelope',
+      gain: 1.0,
+      attack: 10,
+      release: 100,
+      smoothing: 0.1,
+      gateThreshold: 0.4,
+      bipolar: false
+    };
     case 'SpeechEnvelopeTracker': return {
       id, type: 'SpeechEnvelopeTracker',
       layerId: '',

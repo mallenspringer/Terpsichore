@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createDefaultEffect } from '../moduleFactory';
 import { PORT_DEFS, MODULE_DISPLAY_NAMES } from '../../components/NodeGraph/portDefs';
-import { KeyMixerEffect, VideoMathEffect, PatternEffect, UVDisplaceEffect } from '../types';
+import { KeyMixerEffect, VideoMathEffect, PatternEffect, UVDisplaceEffect, AudioToCVEffect } from '../types';
 
 describe('Tier 4 Modules', () => {
   describe('KeyMixer', () => {
@@ -137,6 +137,44 @@ describe('Tier 4 Modules', () => {
 
     it('has proper display name', () => {
       expect(MODULE_DISPLAY_NAMES.UVDisplace).toBe('UV Displace');
+    });
+  });
+
+  describe('AudioToCV (Dedicated Audio to Control Signal Utility)', () => {
+    it('creates default AudioToCV effect with valid initial configuration', () => {
+      const effect = createDefaultEffect('AudioToCV', 'atc_1') as AudioToCVEffect;
+      expect(effect.id).toBe('atc_1');
+      expect(effect.type).toBe('AudioToCV');
+      expect(effect.mode).toBe('envelope');
+      expect(effect.gain).toBe(1.0);
+      expect(effect.attack).toBe(10);
+      expect(effect.release).toBe(100);
+      expect(effect.smoothing).toBe(0.1);
+      expect(effect.gateThreshold).toBe(0.4);
+      expect(effect.bipolar).toBe(false);
+    });
+
+    it('has audio_in, gain_cv, thresh_cv, cv_out, gate_out, and audio_thru ports', () => {
+      const ports = PORT_DEFS.AudioToCV;
+      expect(ports).toBeDefined();
+
+      const audioIn = ports.find(p => p.id === 'audio_in');
+      const gainCv = ports.find(p => p.id === 'gain_cv');
+      const threshCv = ports.find(p => p.id === 'thresh_cv');
+      const cvOut = ports.find(p => p.id === 'cv_out');
+      const gateOut = ports.find(p => p.id === 'gate_out');
+      const audioThru = ports.find(p => p.id === 'audio_thru');
+
+      expect(audioIn?.signalType).toBe('audio');
+      expect(gainCv?.signalType).toBe('modulation');
+      expect(threshCv?.signalType).toBe('modulation');
+      expect(cvOut?.signalType).toBe('modulation');
+      expect(gateOut?.signalType).toBe('trigger');
+      expect(audioThru?.signalType).toBe('audio');
+    });
+
+    it('has proper display name', () => {
+      expect(MODULE_DISPLAY_NAMES.AudioToCV).toBe('Audio to CV');
     });
   });
 });

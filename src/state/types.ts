@@ -449,6 +449,18 @@ export interface AudioGateEffect {
   releaseMs: number; // 10 to 1000 ms
 }
 
+export interface AudioToCVEffect {
+  id: string;
+  type: 'AudioToCV';
+  mode: 'rms' | 'peak' | 'envelope' | 'db';
+  gain: number;            // Sensitivity multiplier (default: 1.0, 0.1 to 10.0)
+  attack: number;          // ms for envelope mode (default: 10, 1 to 500)
+  release: number;         // ms for envelope mode (default: 100, 5 to 2000)
+  smoothing: number;       // smoothing factor for RMS/Peak/dB (default: 0.1, 0.0 to 0.99)
+  gateThreshold: number;   // threshold for gate_out (default: 0.4, 0.0 to 1.0)
+  bipolar: boolean;        // if true, maps 0..1 to -1..1 (default: false)
+}
+
 export interface SpeechEnvelopeTrackerEffect {
   id: string;
   type: 'SpeechEnvelopeTracker';
@@ -607,7 +619,7 @@ export type AnyEffect =
   | KeyMixerEffect | VideoMathEffect | UVDisplaceEffect
   | LogicGateEffect | TriggeredGateEffect | PatternEffect | KaleidoscopeEffect 
   | SignalMathEffect | SampleAndHoldEffect | StepSequencerEffect | PixelProcessorEffect
-  | AudioSourceEffect | OscilloscopeEffect | SpectralSplitterEffect | AudioTransformerEffect | AudioModulatorEffect | AudioGateEffect
+  | AudioSourceEffect | OscilloscopeEffect | SpectralSplitterEffect | AudioTransformerEffect | AudioModulatorEffect | AudioGateEffect | AudioToCVEffect
   | SpeechEnvelopeTrackerEffect | VocalPitchTrackerEffect | VowelFormantTrackerEffect | SpokenWordVisualizerEffect
   | ShapeGeneratorSource | VideoURLSource | VideoFileSource | WebcamCaptureSource | NoiseVideoSource | ColorNoiseSource
   | AudioInputSource | AudioFileSource | SystemAudioSource | ImageLoaderSource | ImageFileSource;
@@ -617,7 +629,7 @@ export type EffectType =
   | 'InterLayerOutput' | 'InterLayerInput' 
   | 'ColorRGB' | 'LumaSplitter' | 'Spawn' | 'Path' | 'Inverter' | 'VideoMixer' | 'AlphaAdjust'
   | 'KeyMixer' | 'VideoMath' | 'UVDisplace'
-  | 'LogicGate' | 'TriggeredGate' | 'Pattern' | 'Kaleidoscope' | 'SignalMath' | 'SampleAndHold' | 'StepSequencer' | 'AudioSource' | 'Oscilloscope' | 'SpectralSplitter' | 'PixelProcessor' | 'AudioTransformer' | 'AudioModulator' | 'AudioGate'
+  | 'LogicGate' | 'TriggeredGate' | 'Pattern' | 'Kaleidoscope' | 'SignalMath' | 'SampleAndHold' | 'StepSequencer' | 'AudioSource' | 'Oscilloscope' | 'SpectralSplitter' | 'PixelProcessor' | 'AudioTransformer' | 'AudioModulator' | 'AudioGate' | 'AudioToCV'
   | 'SpeechEnvelopeTracker' | 'VocalPitchTracker' | 'VowelFormantTracker' | 'SpokenWordVisualizer'
   | 'ShapeGenerator' | 'VideoURL' | 'VideoFile' | 'WebcamCapture' | 'NoiseSource' | 'ColorNoise' | 'AudioInput' | 'AudioFile' | 'SystemAudio' | 'ImageLoader' | 'ImageFile';
 

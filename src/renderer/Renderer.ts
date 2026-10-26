@@ -978,7 +978,7 @@ export class Renderer {
               const sourceEffect = layer?.effects.find(e => e.id === edge.fromNodeId);
               if (sourceEffect?.type === 'AudioSource') {
                 busId = (sourceEffect as any).busId || 'master';
-              } else if (edge.fromNodeId === 'source' || sourceEffect?.type === 'VideoFile' || sourceEffect?.type === 'VideoURL' || sourceEffect?.type === 'AudioFile' || sourceEffect?.type === 'AudioInput' || sourceEffect?.type === 'SystemAudio' || sourceEffect?.type === 'AudioTransformer') {
+              } else if (edge.fromNodeId === 'source' || sourceEffect?.type === 'VideoFile' || sourceEffect?.type === 'VideoURL' || sourceEffect?.type === 'AudioFile' || sourceEffect?.type === 'AudioInput' || sourceEffect?.type === 'SystemAudio' || sourceEffect?.type === 'AudioTransformer' || sourceEffect?.type === 'AudioToCV') {
                 busId = edge.fromNodeId === 'source' ? layer.id : edge.fromNodeId;
               }
             }
@@ -1020,7 +1020,7 @@ export class Renderer {
             if (edge) {
               const sourceEffect = layer?.effects.find(e => e.id === edge.fromNodeId);
               if (sourceEffect?.type === 'AudioSource') busId = (sourceEffect as any).busId;
-              else if (edge.fromNodeId === 'source' || sourceEffect?.type === 'VideoFile' || sourceEffect?.type === 'VideoURL' || sourceEffect?.type === 'AudioFile' || sourceEffect?.type === 'AudioInput' || sourceEffect?.type === 'SystemAudio' || sourceEffect?.type === 'AudioTransformer') {
+              else if (edge.fromNodeId === 'source' || sourceEffect?.type === 'VideoFile' || sourceEffect?.type === 'VideoURL' || sourceEffect?.type === 'AudioFile' || sourceEffect?.type === 'AudioInput' || sourceEffect?.type === 'SystemAudio' || sourceEffect?.type === 'AudioTransformer' || sourceEffect?.type === 'AudioToCV') {
                 busId = edge.fromNodeId === 'source' ? layer.id : edge.fromNodeId;
               }
             }
