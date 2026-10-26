@@ -2,7 +2,7 @@ import {
   Transform2DEffect, ColorAdjustEffect, LumaKeyEffect, SimpleFeedbackEffect,
   InterLayerOutputEffect, InterLayerInputEffect, ColorRGBEffect, LumaSplitterEffect,
   SpawnEffect, PathEffect, LogicGateEffect, TriggeredGateEffect, InverterEffect, VideoMixerEffect,
-  KeyMixerEffect, VideoMathEffect,
+  KeyMixerEffect, VideoMathEffect, UVDisplaceEffect,
   PatternEffect, KaleidoscopeEffect, SignalMathEffect, SampleAndHoldEffect,
   AudioSourceEffect, OscilloscopeEffect, SpectralSplitterEffect, PixelProcessorEffect,
   AudioTransformerEffect, AudioModulatorEffect
@@ -724,15 +724,6 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
         );
       }
     },
-    { id: 'distort', label: 'UV Distort',
-      render: ctx => {
-        const ef = eff<PatternEffect>(ctx);
-        return (
-          <Slider label="Distort" min={0} max={1} step={0.01} resetValue={0.5}
-            value={ef.distortAmount ?? 0.5} onChange={v => upd(ctx)({ distortAmount: v })} paramId="distortAmount" ctx={ctx} />
-        );
-      }
-    },
     { id: 'spacing', label: 'Spacing',
       render: ctx => {
         const ef = eff<PatternEffect>(ctx);
@@ -1116,6 +1107,62 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
         );
       }
     },
+  ],
+  UVDisplace: [
+    { id: 'amount', label: 'Amount',
+      render: ctx => {
+        const ef = eff<UVDisplaceEffect>(ctx);
+        return (
+          <Slider label="Depth" min={0} max={1} step={0.01} resetValue={0.2}
+            value={ef.amount} onChange={v => upd(ctx)({ amount: v })} paramId="amount" ctx={ctx} />
+        );
+      }
+    },
+    { id: 'axes', label: 'Scale X/Y',
+      render: ctx => {
+        const ef = eff<UVDisplaceEffect>(ctx);
+        return (
+          <div className="rack-row-content">
+            <Slider label="X" min={0} max={2} step={0.05} resetValue={1.0}
+              value={ef.amountX ?? 1.0} onChange={v => upd(ctx)({ amountX: v })} paramId="amountX" ctx={ctx} />
+            <Slider label="Y" min={0} max={2} step={0.05} resetValue={1.0}
+              value={ef.amountY ?? 1.0} onChange={v => upd(ctx)({ amountY: v })} paramId="amountY" ctx={ctx} />
+          </div>
+        );
+      }
+    },
+    { id: 'mode', label: 'Mode',
+      render: ctx => {
+        const ef = eff<UVDisplaceEffect>(ctx);
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'row', gap: 4 }}>
+            {(['cartesian', 'radial', 'luma'] as const).map(m => (
+              <button key={m}
+                className={`mode-toggle ${ef.mode === m ? 'active' : ''}`}
+                style={{ flex: 1, textTransform: 'capitalize', fontSize: 10, padding: '2px 4px' }}
+                onClick={() => upd(ctx)({ mode: m })}
+              >{m}</button>
+            ))}
+          </div>
+        );
+      }
+    },
+    { id: 'wrap', label: 'Wrap',
+      render: ctx => {
+        const ef = eff<UVDisplaceEffect>(ctx);
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'row', gap: 4 }}>
+            {(['clamp', 'wrap', 'mirror'] as const).map(w => (
+              <button key={w}
+                className={`mode-toggle ${ef.wrapMode === w ? 'active' : ''}`}
+                style={{ flex: 1, textTransform: 'capitalize', fontSize: 10, padding: '2px 4px' }}
+                onClick={() => upd(ctx)({ wrapMode: w })}
+              >{w}</button>
+            ))}
+          </div>
+        );
+      }
+    }
   ],
   SpeechEnvelopeTracker: [],
   VocalPitchTracker: [],

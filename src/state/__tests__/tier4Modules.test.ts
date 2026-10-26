@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createDefaultEffect } from '../moduleFactory';
 import { PORT_DEFS, MODULE_DISPLAY_NAMES } from '../../components/NodeGraph/portDefs';
-import { KeyMixerEffect, VideoMathEffect, PatternEffect } from '../types';
+import { KeyMixerEffect, VideoMathEffect, PatternEffect, UVDisplaceEffect } from '../types';
 
 describe('Tier 4 Modules', () => {
   describe('KeyMixer', () => {
@@ -90,10 +90,9 @@ describe('Tier 4 Modules', () => {
       expect(effect.radialSegments).toBe(8);
       expect(effect.tileRotation).toBe(0);
       expect(effect.jitter).toBe(0);
-      expect(effect.distortAmount).toBe(0.15);
     });
 
-    it('has UV distortion port and dynamic CV modulation ports in PORT_DEFS', () => {
+    it('has dynamic CV modulation ports in PORT_DEFS and no UV distort port', () => {
       const ports = PORT_DEFS.Pattern;
       expect(ports).toBeDefined();
 
@@ -102,10 +101,42 @@ describe('Tier 4 Modules', () => {
       const jitter = ports.find(p => p.id === 'jitter_cv');
       const rings = ports.find(p => p.id === 'rings_cv');
 
-      expect(distort?.signalType).toBe('video');
+      expect(distort).toBeUndefined();
       expect(rot?.signalType).toBe('modulation');
       expect(jitter?.signalType).toBe('modulation');
       expect(rings?.signalType).toBe('modulation');
+    });
+  });
+
+  describe('UVDisplace (Dedicated Standalone Warp Module)', () => {
+    it('creates default UVDisplace effect with valid configuration', () => {
+      const effect = createDefaultEffect('UVDisplace', 'uv_1') as UVDisplaceEffect;
+      expect(effect.id).toBe('uv_1');
+      expect(effect.type).toBe('UVDisplace');
+      expect(effect.amount).toBe(0.2);
+      expect(effect.amountX).toBe(1.0);
+      expect(effect.amountY).toBe(1.0);
+      expect(effect.mode).toBe('cartesian');
+      expect(effect.wrapMode).toBe('clamp');
+    });
+
+    it('has required video_in, map_in, amount_cv, and video_out ports', () => {
+      const ports = PORT_DEFS.UVDisplace;
+      expect(ports).toBeDefined();
+
+      const videoIn = ports.find(p => p.id === 'video_in');
+      const mapIn = ports.find(p => p.id === 'map_in');
+      const amountCv = ports.find(p => p.id === 'amount_cv');
+      const videoOut = ports.find(p => p.id === 'video_out');
+
+      expect(videoIn?.signalType).toBe('video');
+      expect(mapIn?.signalType).toBe('video');
+      expect(amountCv?.signalType).toBe('modulation');
+      expect(videoOut?.signalType).toBe('video');
+    });
+
+    it('has proper display name', () => {
+      expect(MODULE_DISPLAY_NAMES.UVDisplace).toBe('UV Displace');
     });
   });
 });

@@ -45,6 +45,7 @@ const ALL_MODULES: ModuleEntry[] = [
   { id: 'VideoMixer',     glyph: '⧉', label: 'Mixer',     tooltip: '4-Ch Video Compositor',   category: 'Utility', moduleType: 'effect:VideoMixer'      },
   { id: 'KeyMixer',       glyph: '✂️', label: 'KeyMixer',  tooltip: 'Luma & Chroma Multi-Source Keyer', category: 'Utility', moduleType: 'effect:KeyMixer'      },
   { id: 'VideoMath',      glyph: '⨁', label: 'VidMath',   tooltip: 'Algebraic Texture Operations (Add/Sub/Mult/Diff)', category: 'Utility', moduleType: 'effect:VideoMath' },
+  { id: 'UVDisplace',     glyph: '🌊', label: 'Displace',  tooltip: 'Coordinate Domain Displacement Warp', category: 'Effects', moduleType: 'effect:UVDisplace' },
   // Utility
   { id: 'LFO',            glyph: '〜', label: 'LFO',       tooltip: 'Modular LFO Source',      category: 'Utility', moduleType: 'modulator:LFO'         },
   { id: 'TriggerPad',     glyph: '🔘', label: 'Trig Pad',  tooltip: 'Click-to-trigger Pulse',  category: 'Utility', moduleType: 'modulator:TriggerPad'  },

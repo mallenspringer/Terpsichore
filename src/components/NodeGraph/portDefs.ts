@@ -290,7 +290,6 @@ export const PORT_DEFS: Record<string, PortDef[]> = {
   ],
   Pattern: [
     { id: 'video_in',  label: 'Video In',  direction: 'in',  signalType: 'video' },
-    { id: 'uv_distort_in', label: 'UV Distort', direction: 'in', signalType: 'video' },
     { id: 'countX',    label: 'Count X',   direction: 'in',  signalType: 'modulation' },
     { id: 'countY',    label: 'Count Y',   direction: 'in',  signalType: 'modulation' },
     { id: 'spacingX',  label: 'Spacing X', direction: 'in',  signalType: 'modulation' },
@@ -302,6 +301,12 @@ export const PORT_DEFS: Record<string, PortDef[]> = {
     { id: 'rings_cv', label: 'Rings', direction: 'in', signalType: 'modulation' },
     { id: 'mirror_trig_x', label: 'Mirror X Trig', direction: 'in', signalType: 'trigger', disableBipolar: true, enableLatch: true },
     { id: 'mirror_trig_y', label: 'Mirror Y Trig', direction: 'in', signalType: 'trigger', disableBipolar: true, enableLatch: true },
+    { id: 'video_out', label: 'Video Out', direction: 'out', signalType: 'video', priority: 0 },
+  ],
+  UVDisplace: [
+    { id: 'video_in',  label: 'Video In',  direction: 'in',  signalType: 'video', priority: 0 },
+    { id: 'map_in',    label: 'Map In',    direction: 'in',  signalType: 'video', priority: 1 },
+    { id: 'amount_cv', label: 'Amount CV', direction: 'in',  signalType: 'modulation', priority: 2 },
     { id: 'video_out', label: 'Video Out', direction: 'out', signalType: 'video', priority: 0 },
   ],
   Kaleidoscope: [
@@ -512,5 +517,6 @@ export const MODULE_DISPLAY_NAMES: Record<string, string> = {
   SpokenWordVisualizer: 'Vocal Visualizer',
   KeyMixer: 'Key Mixer',
   VideoMath: 'Video Math',
+  UVDisplace: 'UV Displace',
   MidiInput: 'MIDI Input',
 };

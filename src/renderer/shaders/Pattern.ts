@@ -13,15 +13,14 @@ struct PatternUniforms {
   radialSegments: f32,
   tileRotation: f32,     // rotation per tile index
   jitter: f32,           // position jitter amount
-  distortAmount: f32,    // UV displacement intensity
-  hasDistortTex: u32,    // 0: false, 1: true
   pad0: f32,
+  pad1: f32,
+  pad2: f32,
 };
 
 @group(0) @binding(0) var<uniform> uniforms : PatternUniforms;
 @group(0) @binding(1) var mainSampler: sampler;
 @group(0) @binding(2) var mainTexture: texture_2d<f32>;
-@group(0) @binding(3) var distortTexture: texture_2d<f32>;
 
 const PI: f32 = 3.14159265359;
 
@@ -34,13 +33,6 @@ fn hash22(p: vec2<f32>) -> vec2<f32> {
 @fragment
 fn fs_main(@builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
     var p = uv;
-
-    // Apply UV Texture Distortion if connected
-    if (uniforms.hasDistortTex == 1u && uniforms.distortAmount != 0.0) {
-      let dSample = textureSample(distortTexture, mainSampler, uv);
-      let warp = (dSample.rg - 0.5) * uniforms.distortAmount;
-      p = p + warp;
-    }
 
     var cellX = 0.0;
     var cellY = 0.0;

@@ -24,13 +24,14 @@ import { PixelProcessorFragmentWGSL } from './shaders/PixelProcessor';
 import { SpokenWordVisualizerWGSL } from './shaders/SpokenWordVisualizer';
 import { KeyMixerWGSL } from './shaders/KeyMixer';
 import { VideoMathWGSL } from './shaders/VideoMath';
+import { UVDisplaceWGSL } from './shaders/UVDisplace';
 
 import { PORT_DEFS } from '../components/NodeGraph/portDefs';
 import { SignalDispatcher } from '../state/SignalDispatcher';
 import {
   ShapeGeneratorSource, Transform2DEffect, ColorAdjustEffect, LumaKeyEffect,
   SimpleFeedbackEffect, ColorRGBEffect, LumaSplitterEffect, VideoMixerEffect,
-  KeyMixerEffect, VideoMathEffect,
+  KeyMixerEffect, VideoMathEffect, UVDisplaceEffect,
   NoiseVideoSource, ColorNoiseSource, InverterEffect, PixelProcessorEffect,
   PatternEffect, KaleidoscopeEffect, SampleAndHoldEffect, OscilloscopeEffect, SpectralSplitterEffect,
   SpokenWordVisualizerEffect,
@@ -80,6 +81,7 @@ export class Renderer {
   private spokenWordPipeline!: GPURenderPipeline;
   private keyMixerPipeline!: GPURenderPipeline;
   private videoMathPipeline!: GPURenderPipeline;
+  private uvDisplacePipeline!: GPURenderPipeline;
 
   // Isolated layouts to prevent 'Minimum Binding Size' collisions
   private effectLayouts: Map<string, GPUBindGroupLayout> = new Map();
@@ -536,6 +538,18 @@ export class Renderer {
       primitive
     });
     this.effectLayouts.set('VideoMath', this.videoMathPipeline.getBindGroupLayout(0));
+
+    this.uvDisplacePipeline = this.device.createRenderPipeline({
+      layout,
+      vertex,
+      fragment: {
+        module: this.device.createShaderModule({ code: UVDisplaceWGSL }),
+        entryPoint: 'fs_main',
+        targets
+      },
+      primitive
+    });
+    this.effectLayouts.set('UVDisplace', this.uvDisplacePipeline.getBindGroupLayout(0));
   }
 
   private getStorageBuffer(key: string, size: number): GPUBuffer {
@@ -872,7 +886,7 @@ export class Renderer {
 
           const incomingEdges = layer.graph?.edges.filter(e => e.toNodeId === nodeId && (e.signalType === 'video' || e.toPort === 'sig_in')) || [];
           const primaryEdge = incomingEdges.find(e => e.toPort === 'video_in' || e.toPort === 'sig_in') 
-            || incomingEdges.find(e => e.toPort !== 'uv_distort_in') 
+            || incomingEdges.find(e => e.toPort !== 'map_in' && e.toPort !== 'uv_distort_in') 
             || incomingEdges[0];
           let inputTex = primaryEdge ? this.getTextureForNode(primaryEdge.fromNodeId, primaryEdge.fromPort) : this.nodeTextures.get('__dummy__');
 
@@ -1220,25 +1234,44 @@ export class Renderer {
               f32[10] = ef.radialSegments ?? 8;
               f32[11] = this.getEffectiveParam(layer, nodeId, 'rotation_cv', ef.tileRotation ?? 0, timeSec);
               f32[12] = this.getEffectiveParam(layer, nodeId, 'jitter_cv', ef.jitter ?? 0, timeSec);
-              f32[13] = ef.distortAmount ?? 0.5;
-
-              const distortInput = this.getConnectedInputTexture(layer, nodeId, 'uv_distort_in');
-              u32[14] = distortInput ? 1 : 0;
+              f32[13] = 0.0;
+              f32[14] = 0.0;
               f32[15] = 0.0;
-
-              const lastDistortConn = (this as any)[`_lastDistort_${nodeId}`];
-              const isConn = !!distortInput;
-              if (lastDistortConn !== isConn) {
-                (this as any)[`_lastDistort_${nodeId}`] = isConn;
-                console.log(`[Pattern ${nodeId}] UV Distort texture ${isConn ? 'CONNECTED' : 'DISCONNECTED'}. Distort amount:`, f32[13]);
-              }
 
               this.device.queue.writeBuffer(uniformBuffer, 0, buf);
               entries = [
                 { binding: 0, resource: { buffer: uniformBuffer } },
                 { binding: 1, resource: this.sampler },
+                { binding: 2, resource: tex.createView() }
+              ];
+            } else if (effect.type === 'UVDisplace') {
+              pipeline = this.uvDisplacePipeline;
+              const ef = effect as UVDisplaceEffect;
+              const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 16);
+              const buf = new ArrayBuffer(16);
+              const f32 = new Float32Array(buf);
+              const u32 = new Uint32Array(buf);
+
+              const modAmount = this.getEffectiveParam(layer, nodeId, 'amount_cv', ef.amount ?? 0.2, timeSec);
+              const ax = (ef.amountX ?? 1.0) * modAmount;
+              const ay = (ef.amountY ?? 1.0) * modAmount;
+              f32[0] = ax;
+              f32[1] = ay;
+
+              const modeMap: Record<string, number> = { cartesian: 0, radial: 1, luma: 2 };
+              const wrapMap: Record<string, number> = { clamp: 0, wrap: 1, mirror: 2 };
+              u32[2] = modeMap[ef.mode] ?? 0;
+              u32[3] = wrapMap[ef.wrapMode] ?? 0;
+
+              this.device.queue.writeBuffer(uniformBuffer, 0, buf);
+
+              const mapTex = this.getConnectedInputTexture(layer, nodeId, 'map_in') ?? this.blankTexture;
+
+              entries = [
+                { binding: 0, resource: { buffer: uniformBuffer } },
+                { binding: 1, resource: this.sampler },
                 { binding: 2, resource: tex.createView() },
-                { binding: 3, resource: (distortInput ?? this.blankTexture).createView() }
+                { binding: 3, resource: mapTex.createView() }
               ];
             } else if (effect.type === 'Kaleidoscope') {
               pipeline = this.kaleidoscopePipeline;

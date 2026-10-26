@@ -547,7 +547,16 @@ export interface PatternEffect {
   radialSegments?: number;
   tileRotation?: number;
   jitter?: number;
-  distortAmount?: number;
+}
+
+export interface UVDisplaceEffect {
+  id: string;
+  type: 'UVDisplace';
+  amount: number;       // Master depth 0.0 .. 1.0 (default 0.2)
+  amountX: number;      // 0.0 .. 2.0 (default 1.0)
+  amountY: number;      // 0.0 .. 2.0 (default 1.0)
+  mode: 'cartesian' | 'radial' | 'luma';
+  wrapMode: 'clamp' | 'wrap' | 'mirror';
 }
 
 export interface KaleidoscopeEffect {
@@ -595,7 +604,7 @@ export type AnyEffect =
   | Transform2DEffect | ColorAdjustEffect | LumaKeyEffect | SimpleFeedbackEffect
   | InterLayerOutputEffect | InterLayerInputEffect | ColorRGBEffect | LumaSplitterEffect 
   | SpawnEffect | PathEffect | InverterEffect | VideoMixerEffect | AlphaAdjustEffect
-  | KeyMixerEffect | VideoMathEffect
+  | KeyMixerEffect | VideoMathEffect | UVDisplaceEffect
   | LogicGateEffect | TriggeredGateEffect | PatternEffect | KaleidoscopeEffect 
   | SignalMathEffect | SampleAndHoldEffect | StepSequencerEffect | PixelProcessorEffect
   | AudioSourceEffect | OscilloscopeEffect | SpectralSplitterEffect | AudioTransformerEffect | AudioModulatorEffect | AudioGateEffect
@@ -607,7 +616,7 @@ export type EffectType =
   | 'Transform2D' | 'ColorAdjust' | 'LumaKey' | 'SimpleFeedback' 
   | 'InterLayerOutput' | 'InterLayerInput' 
   | 'ColorRGB' | 'LumaSplitter' | 'Spawn' | 'Path' | 'Inverter' | 'VideoMixer' | 'AlphaAdjust'
-  | 'KeyMixer' | 'VideoMath'
+  | 'KeyMixer' | 'VideoMath' | 'UVDisplace'
   | 'LogicGate' | 'TriggeredGate' | 'Pattern' | 'Kaleidoscope' | 'SignalMath' | 'SampleAndHold' | 'StepSequencer' | 'AudioSource' | 'Oscilloscope' | 'SpectralSplitter' | 'PixelProcessor' | 'AudioTransformer' | 'AudioModulator' | 'AudioGate'
   | 'SpeechEnvelopeTracker' | 'VocalPitchTracker' | 'VowelFormantTracker' | 'SpokenWordVisualizer'
   | 'ShapeGenerator' | 'VideoURL' | 'VideoFile' | 'WebcamCapture' | 'NoiseSource' | 'ColorNoise' | 'AudioInput' | 'AudioFile' | 'SystemAudio' | 'ImageLoader' | 'ImageFile';
