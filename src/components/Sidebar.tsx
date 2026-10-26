@@ -3,88 +3,44 @@ import { useEngineStore } from '../state/store';
 import { VideoFileSource, ImageFileSource } from '../state/types';
 import { createDefaultSource, createDefaultEffect, createDefaultModulator } from '../state/moduleFactory';
 import { exportProject, importProject } from '../utils/projectPersistence';
-import { FoundationalPanel } from './NodeGraph/FoundationalPanel';
+import {
+  ALL_MODULES,
+  CATEGORIES,
+  CATEGORY_COLORS,
+  CategoryType,
+  CategoryBankConfig,
+  BankConfig,
+  ModuleEntry,
+  loadBankConfig,
+  saveBankConfig
+} from './ModuleCatalog/moduleRegistry';
+import { MasterCatalogModal } from './ModuleCatalog/MasterCatalogModal';
 import './Sidebar.css';
-
-// ─── Module Bank Data ─────────────────────────────────────────────────────────
-
-type ModuleEntry = {
-  id: string;
-  glyph: string;
-  label: string;
-  tooltip: string;
-  category: 'Sources' | 'Effects' | 'Utility' | 'Audio';
-  moduleType: string; // passed in dataTransfer when dragging to rack
-};
-
-const ALL_MODULES: ModuleEntry[] = [
-  // Sources
-  { id: 'VideoFile',      glyph: '📹', label: 'Vid File',  tooltip: 'Local Video File',       category: 'Sources', moduleType: 'source:VideoFile'      },
-  { id: 'VideoURL',       glyph: '🌐', label: 'Vid URL',   tooltip: 'Video from URL',          category: 'Sources', moduleType: 'source:VideoURL'       },
-  { id: 'Webcam',         glyph: '📷', label: 'Webcam',    tooltip: 'Webcam Capture',          category: 'Sources', moduleType: 'source:WebcamCapture'  },
-  { id: 'ImageFile',      glyph: '🖼️', label: 'Img File',  tooltip: 'Local Image File',        category: 'Sources', moduleType: 'source:ImageFile'      },
-  { id: 'ImageURL',       glyph: '🔗', label: 'Img URL',   tooltip: 'Image from URL',          category: 'Sources', moduleType: 'source:ImageLoader'    },
-  { id: 'ShapeGen',       glyph: '⬜', label: 'Shape',     tooltip: 'Shape Generator',         category: 'Sources', moduleType: 'source:ShapeGenerator' },
-  { id: 'NoiseSource',    glyph: '🌫️', label: 'Noise Gen',  tooltip: '2D Procedural Noise',    category: 'Sources', moduleType: 'source:NoiseSource'    },
-  { id: 'ColorNoise',     glyph: '🌈🌫️', label: 'Color Noise', tooltip: 'Multichromatic Procedural Noise', category: 'Sources', moduleType: 'source:ColorNoise' },
-  { id: 'AudioInput',     glyph: '🎤', label: 'Audio In',  tooltip: 'Live Audio Input',        category: 'Audio',   moduleType: 'source:AudioInput'     },
-  { id: 'AudioFile',      glyph: '🎵', label: 'Audio File',tooltip: 'Local Audio File',       category: 'Audio',   moduleType: 'source:AudioFile'      },
-  { id: 'SystemAudio',    glyph: '🔊', label: 'Sys Audio', tooltip: 'System Audio Capture',    category: 'Audio',   moduleType: 'source:SystemAudio'    },
-  // Effects
-  { id: 'Transform2D',    glyph: '↔️', label: 'Transform', tooltip: 'Transform 2D',            category: 'Effects', moduleType: 'effect:Transform2D'    },
-  { id: 'Spawn',          glyph: '✨', label: 'Spawn',     tooltip: 'Triggered Object Emitter', category: 'Utility', moduleType: 'effect:Spawn'          },
-  { id: 'ColorAdjust',    glyph: '🎨', label: 'Color',     tooltip: 'Color Adjust',            category: 'Effects', moduleType: 'effect:ColorAdjust'    },
-  { id: 'LumaKey',        glyph: '🔑', label: 'LumaKey',   tooltip: 'Luminance Key',           category: 'Effects', moduleType: 'effect:LumaKey'        },
-  { id: 'ColorRGB',       glyph: 'RGB_STRIPES', label: 'RGB',        tooltip: 'RGB Channel Split/Gen',   category: 'Effects', moduleType: 'effect:ColorRGB'       },
-  { id: 'SimpleFeedback', glyph: '🔄', label: 'Feedback',  tooltip: 'Simple Feedback Loop',    category: 'Effects', moduleType: 'effect:SimpleFeedback' },
-  { id: 'Pattern',        glyph: '▦', label: 'Pattern',   tooltip: 'Tiling & Grid Layout',    category: 'Effects', moduleType: 'effect:Pattern'         },
-  { id: 'Kaleidoscope',   glyph: '✺', label: 'Kaleido',   tooltip: 'Radial Reflections',      category: 'Effects', moduleType: 'effect:Kaleidoscope'    },
-  { id: 'AlphaAdjust',    glyph: 'α', label: 'Alpha',     tooltip: 'Transparency & Bypass',   category: 'Effects', moduleType: 'effect:AlphaAdjust'     },
-  { id: 'PixelProcessor', glyph: '🎞️', label: 'PixelProc', tooltip: 'Advanced Visual Styling (Posterize/Threshold/Edge)', category: 'Effects', moduleType: 'effect:PixelProcessor' },
-  { id: 'LumaSplit',      glyph: '▤', label: 'LumaSplit', tooltip: 'Split by luminance bands', category: 'Utility', moduleType: 'effect:LumaSplitter'   },
-  { id: 'VideoMixer',     glyph: '⧉', label: 'Mixer',     tooltip: '4-Ch Video Compositor',   category: 'Utility', moduleType: 'effect:VideoMixer'      },
-  { id: 'KeyMixer',       glyph: '✂️', label: 'KeyMixer',  tooltip: 'Luma & Chroma Multi-Source Keyer', category: 'Utility', moduleType: 'effect:KeyMixer'      },
-  { id: 'VideoMath',      glyph: '⨁', label: 'VidMath',   tooltip: 'Algebraic Texture Operations (Add/Sub/Mult/Diff)', category: 'Utility', moduleType: 'effect:VideoMath' },
-  { id: 'UVDisplace',     glyph: '🌊', label: 'Displace',  tooltip: 'Coordinate Domain Displacement Warp', category: 'Effects', moduleType: 'effect:UVDisplace' },
-  // Utility
-  { id: 'LFO',            glyph: '〜', label: 'LFO',       tooltip: 'Modular LFO Source',      category: 'Utility', moduleType: 'modulator:LFO'         },
-  { id: 'TriggerPad',     glyph: '🔘', label: 'Trig Pad',  tooltip: 'Click-to-trigger Pulse',  category: 'Utility', moduleType: 'modulator:TriggerPad'  },
-  { id: 'LayerOut',       glyph: '⎆', label: 'Layer Out', tooltip: 'Send signal to other layer', category: 'Utility', moduleType: 'effect:InterLayerOutput' },
-  { id: 'LayerIn',        glyph: '⎆', label: 'Layer In',  tooltip: 'Receive signal from other layer', category: 'Utility', moduleType: 'effect:InterLayerInput' },
-  { id: 'AudioSource',    glyph: '📻', label: 'Audio Src', tooltip: 'Global Bus Tune-in',     category: 'Audio',   moduleType: 'effect:AudioSource'  },
-  { id: 'Oscilloscope',   glyph: '〰️', label: 'Scope',     tooltip: 'Signal Visualizer',       category: 'Audio',   moduleType: 'effect:Oscilloscope' },
-  { id: 'SpectralSplit',  glyph: '📊', label: 'Spectral',  tooltip: 'Multi-band Analysis',     category: 'Audio',   moduleType: 'effect:SpectralSplitter' },
-  { id: 'AudioUtility',   glyph: '🎛️', label: 'Audio Util', tooltip: 'Audio Side-chain Processor (Filter/Comp/Env)', category: 'Audio', moduleType: 'effect:AudioTransformer' },
-  { id: 'AudioModulator', glyph: '🧬', label: 'Modulator', tooltip: 'Harmonic Sculptor (Ring Mod / Octave Bank)', category: 'Audio', moduleType: 'effect:AudioModulator' },
-  { id: 'AudioGate',      glyph: '🎚️', label: 'Audio Gate', tooltip: 'Adjustable Threshold Noise Gate', category: 'Audio', moduleType: 'effect:AudioGate' },
-  { id: 'SpeechEnvelopeTracker', glyph: '🗣️📈', label: 'Vocal Env', tooltip: 'Speech Envelope Tracker (Loudness & Gates)', category: 'Audio', moduleType: 'effect:SpeechEnvelopeTracker' },
-  { id: 'VocalPitchTracker', glyph: '🗣️🎼', label: 'Vocal Pitch', tooltip: 'Vocal Pitch Tracker (YIN fundamental freq & notes)', category: 'Audio', moduleType: 'effect:VocalPitchTracker' },
-  { id: 'VowelFormantTracker', glyph: '🗣️🎨', label: 'Vocal Vowel', tooltip: 'Vowel Formant Coordinate Tracker (F1/F2 2D space)', category: 'Audio', moduleType: 'effect:VowelFormantTracker' },
-  { id: 'SpokenWordVisualizer', glyph: '🗣️💎', label: 'Vocal Console', tooltip: 'Spoken Word Visualizer Routing Bay (17 Analytical Signals)', category: 'Audio', moduleType: 'effect:SpokenWordVisualizer' },
-  { id: 'AudioToCV',      glyph: '⚡🔊', label: 'Audio CV', tooltip: 'Audio to Control Signal Converter (RMS/Peak/Env/dB)', category: 'Utility', moduleType: 'effect:AudioToCV' },
-  { id: 'Path',           glyph: '🛤️', label: 'Path',      tooltip: 'Trajectory Generator',    category: 'Utility', moduleType: 'effect:Path'           },
-  { id: 'Noise',          glyph: '🎲', label: 'Noise',     tooltip: 'Stochastic Signal Gen',   category: 'Utility', moduleType: 'modulator:Noise'        },
-  { id: 'MidiInput',      glyph: '🎹', label: 'MIDI Input',tooltip: 'MIDI Keyboard & CC Control inputs', category: 'Utility', moduleType: 'modulator:MidiInput'    },
-  { id: 'Inverter',       glyph: '⇅', label: 'Inverter',  tooltip: 'Polarity/Color Inversion', category: 'Utility', moduleType: 'effect:Inverter'         },
-  { id: 'LogicGate',      glyph: '⊦', label: 'Logic',     tooltip: 'Signal Comparison (AND/OR/XOR)', category: 'Utility', moduleType: 'effect:LogicGate'       },
-  { id: 'TriggeredGate',  glyph: 'Gate', label: 'Trig Gate', tooltip: 'Signal Gating / Routing',      category: 'Utility', moduleType: 'effect:TriggeredGate'   },
-  { id: 'SignalMath',     glyph: '∑', label: 'Math',      tooltip: 'Signal Processing (A + B, A * B)', category: 'Utility', moduleType: 'effect:SignalMath'     },
-  { id: 'SampleAndHold',  glyph: '◲', label: 'S&H',       tooltip: 'Capture Signal/Frame on Trigger', category: 'Utility', moduleType: 'effect:SampleAndHold'  },
-  { id: 'StepSequencer',  glyph: '🪜', label: 'Sequencer', tooltip: '16-Step Modular Sequencer', category: 'Utility', moduleType: 'effect:StepSequencer' },
-];
-
-const DEFAULT_BANK_IDS = ALL_MODULES.map(m => m.id);
-const BANK_STORAGE_KEY = 'terp_bank_ids';
 
 // ─── Context Menu ─────────────────────────────────────────────────────────────
 
-type ContextMenuState = { x: number; y: number; moduleId: string } | null;
+type ContextMenuState = {
+  x: number;
+  y: number;
+  moduleId: string;
+  category: CategoryType;
+} | null;
 
-function ContextMenu({ menu, inBank, onRemove, onAdd, onClose }: {
+function ContextMenu({
+  menu,
+  onRemove,
+  onMoveLeft,
+  onMoveRight,
+  canMoveLeft,
+  canMoveRight,
+  onClose
+}: {
   menu: ContextMenuState;
-  inBank: boolean;
   onRemove: () => void;
-  onAdd: () => void;
+  onMoveLeft: () => void;
+  onMoveRight: () => void;
+  canMoveLeft: boolean;
+  canMoveRight: boolean;
   onClose: () => void;
 }) {
   useEffect(() => {
@@ -100,13 +56,17 @@ function ContextMenu({ menu, inBank, onRemove, onAdd, onClose }: {
       style={{ top: menu.y, left: menu.x }}
       onMouseDown={e => e.stopPropagation()}
     >
-      {inBank ? (
-        <div className="bank-context-menu-item danger" onClick={onRemove}>
-          Remove from Bank
+      <div className="bank-context-menu-item danger" onClick={onRemove}>
+        ✕ Remove from Bank
+      </div>
+      {canMoveLeft && (
+        <div className="bank-context-menu-item" onClick={onMoveLeft}>
+          ← Move Left
         </div>
-      ) : (
-        <div className="bank-context-menu-item" onClick={onAdd}>
-          Add to Bank
+      )}
+      {canMoveRight && (
+        <div className="bank-context-menu-item" onClick={onMoveRight}>
+          → Move Right
         </div>
       )}
     </div>
@@ -151,13 +111,10 @@ const getLayerContextualName = (layer: any) => {
 interface SidebarProps {
   activeLayerId: string | null;
   onSelectLayer: (id: string) => void;
-  // Foundational props
-  activeLayer: any;
-  sourceCtx: any;
   onOpenMidiModal?: () => void;
 }
 
-export function Sidebar({ activeLayerId, onSelectLayer, activeLayer, sourceCtx, onOpenMidiModal }: SidebarProps) {
+export function Sidebar({ activeLayerId, onSelectLayer, onOpenMidiModal }: SidebarProps) {
   const layers = useEngineStore(s => s.layers);
   const layerOrder = useEngineStore(s => s.layerOrder);
   const resolution = useEngineStore(s => s.resolution);
@@ -228,32 +185,74 @@ export function Sidebar({ activeLayerId, onSelectLayer, activeLayer, sourceCtx, 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [tempName, setTempName] = useState("");
 
-  // Module bank visible IDs (persisted to localStorage)
-  const [bankIds, setBankIds] = useState<string[]>(() => {
-    try {
-      const saved = localStorage.getItem(BANK_STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved) as string[];
-        const merged = [...parsed];
-        let hasNew = false;
-        DEFAULT_BANK_IDS.forEach(id => {
-          if (!merged.includes(id)) {
-            merged.push(id);
-            hasNew = true;
-          }
-        });
-        if (hasNew) {
-          localStorage.setItem(BANK_STORAGE_KEY, JSON.stringify(merged));
-        }
-        return merged;
-      }
-    } catch {}
-    return DEFAULT_BANK_IDS;
-  });
+  // Module bank configuration (persisted to localStorage)
+  const [bankConfig, setBankConfig] = useState<BankConfig>(loadBankConfig);
+  const [isCatalogOpen, setCatalogOpen] = useState(false);
+  const [catalogInitialCategory, setCatalogInitialCategory] = useState<CategoryType | 'All'>('All');
 
-  const saveBankIds = (ids: string[]) => {
-    setBankIds(ids);
-    localStorage.setItem(BANK_STORAGE_KEY, JSON.stringify(ids));
+  // Keep bank in sync with project imports or cross-tab updates
+  useEffect(() => {
+    const handleSync = () => setBankConfig(loadBankConfig());
+    window.addEventListener('terp_bank_config_updated', handleSync);
+    return () => window.removeEventListener('terp_bank_config_updated', handleSync);
+  }, []);
+
+  const updateCategoryBank = (cat: CategoryType, updater: (prev: CategoryBankConfig) => CategoryBankConfig) => {
+    setBankConfig(prev => {
+      const current = prev[cat] || { order: [], sort: 'custom', collapsed: false };
+      const updated = {
+        ...prev,
+        [cat]: updater(current)
+      };
+      saveBankConfig(updated);
+      return updated;
+    });
+  };
+
+  const toggleCategoryCollapse = (cat: CategoryType) => {
+    updateCategoryBank(cat, prev => ({ ...prev, collapsed: !prev.collapsed }));
+  };
+
+  const toggleSortMode = (cat: CategoryType, e: React.MouseEvent) => {
+    e.stopPropagation();
+    updateCategoryBank(cat, prev => ({
+      ...prev,
+      sort: prev.sort === 'custom' ? 'az' : 'custom'
+    }));
+  };
+
+  const removeModuleFromBank = (cat: CategoryType, modId: string) => {
+    updateCategoryBank(cat, prev => ({
+      ...prev,
+      order: prev.order.filter(id => id !== modId)
+    }));
+  };
+
+  const moveModuleInBank = (cat: CategoryType, modId: string, direction: -1 | 1) => {
+    updateCategoryBank(cat, prev => {
+      const idx = prev.order.indexOf(modId);
+      if (idx === -1) return prev;
+      const targetIdx = idx + direction;
+      if (targetIdx < 0 || targetIdx >= prev.order.length) return prev;
+      const newOrder = [...prev.order];
+      const temp = newOrder[idx];
+      newOrder[idx] = newOrder[targetIdx];
+      newOrder[targetIdx] = temp;
+      return { ...prev, order: newOrder };
+    });
+  };
+
+  const reorderModuleInBank = (cat: CategoryType, draggedId: string, targetId: string) => {
+    if (draggedId === targetId) return;
+    updateCategoryBank(cat, prev => {
+      const fromIdx = prev.order.indexOf(draggedId);
+      const toIdx = prev.order.indexOf(targetId);
+      if (fromIdx === -1 || toIdx === -1) return prev;
+      const newOrder = [...prev.order];
+      newOrder.splice(fromIdx, 1);
+      newOrder.splice(toIdx, 0, draggedId);
+      return { ...prev, order: newOrder, sort: 'custom' };
+    });
   };
 
   // Context menu state
@@ -340,16 +339,33 @@ export function Sidebar({ activeLayerId, onSelectLayer, activeLayer, sourceCtx, 
     e.dataTransfer.setData('text/plain', mod.moduleType);
   };
 
-  // ── Context menu ─────────────────────────────────────────────────────────
-
-  const handleModuleRightClick = (e: React.MouseEvent, modId: string) => {
+  const handleModuleRightClick = (e: React.MouseEvent, mod: ModuleEntry) => {
     e.preventDefault();
-    setContextMenu({ x: e.clientX, y: e.clientY, moduleId: modId });
+    setContextMenu({ x: e.clientX, y: e.clientY, moduleId: mod.id, category: mod.category });
   };
 
-  const visibleModules = ALL_MODULES.filter(m => bankIds.includes(m.id));
-  const hiddenModules  = ALL_MODULES.filter(m => !bankIds.includes(m.id));
-  const CATEGORIES: Array<'Sources' | 'Effects' | 'Utility' | 'Audio'> = ['Sources', 'Effects', 'Utility', 'Audio'];
+  const handleAddModuleToLayer = (mod: ModuleEntry) => {
+    if (!activeLayerId) return;
+    const [category, type] = mod.moduleType.split(':');
+    const newId = `${type.toLowerCase()}_${Date.now()}`;
+    
+    if (category === 'source') {
+      const activeLayer = layers[activeLayerId];
+      if (!activeLayer || !activeLayer.source || activeLayer.source.type === 'None') {
+        const newSource = createDefaultSource(type);
+        useEngineStore.getState().setSource(activeLayerId, newSource);
+      } else {
+        const newEffect = createDefaultEffect(type as any, newId);
+        addEffect(activeLayerId, newEffect);
+      }
+    } else if (category === 'effect') {
+      const newEffect = createDefaultEffect(type, newId);
+      addEffect(activeLayerId, newEffect);
+    } else if (category === 'modulator') {
+      const newMod = createDefaultModulator(type);
+      addModulator(activeLayerId, newId, newMod);
+    }
+  };
 
   const layerCount = Object.keys(layers).length;
 
@@ -725,116 +741,159 @@ export function Sidebar({ activeLayerId, onSelectLayer, activeLayer, sourceCtx, 
 
       {/* ── Section C: Module Bank ── */}
       <SbSection title="Module Bank" className="bank">
+        <div className="bank-master-browse-bar">
+          <button
+            className="bank-browse-catalog-btn"
+            onClick={() => {
+              setCatalogInitialCategory('All');
+              setCatalogOpen(true);
+            }}
+          >
+            <span>📚</span>
+            <span>Browse All Modules ({ALL_MODULES.length})</span>
+          </button>
+        </div>
+
         {CATEGORIES.map(cat => {
-          const mods = visibleModules.filter(m => m.category === cat);
-          if (mods.length === 0) return null;
+          const config = bankConfig[cat] || { order: [], sort: 'custom', collapsed: false };
+          const moduleMap = new Map(ALL_MODULES.map(m => [m.id, m]));
+          const pinnedMods = config.order
+            .map(id => moduleMap.get(id))
+            .filter((m): m is ModuleEntry => !!m);
+
+          const displayMods = config.sort === 'az'
+            ? [...pinnedMods].sort((a, b) => a.label.localeCompare(b.label))
+            : pinnedMods;
+
+          const isCollapsed = !!config.collapsed;
+          const catColor = CATEGORY_COLORS[cat];
+
           return (
             <div className="bank-category" key={cat}>
-              <div className="bank-category-divider">
-                <span className="bank-category-label" style={{ 
-                  color: cat === 'Sources' ? '#f5c518' : 
-                         cat === 'Effects' ? '#d918f5' : 
-                         cat === 'Utility' ? '#f58c18' : 
-                         cat === 'Audio' ? '#18e4f5' : '#555' 
-                }}>{cat}</span>
-                <div className="bank-category-line" />
-              </div>
-              <div className="bank-icon-grid">
-                {mods.map(mod => (
-                  <div
-                    key={mod.id}
-                    className="bank-icon"
-                    draggable
-                    onDragStart={e => handleModuleDragStart(e, mod)}
-                    onClick={() => {
-                      if (!activeLayerId) return;
-                      const [category, type] = mod.moduleType.split(':');
-                      const newId = `${type.toLowerCase()}_${Date.now()}`;
-                      
-                      if (category === 'source') {
-                        const activeLayer = layers[activeLayerId];
-                        if (!activeLayer || !activeLayer.source || activeLayer.source.type === 'None') {
-                          const newSource = createDefaultSource(type);
-                          useEngineStore.getState().setSource(activeLayerId, newSource);
-                        } else {
-                          const newEffect = createDefaultEffect(type as any, newId);
-                          addEffect(activeLayerId, newEffect);
-                        }
-                      } else if (category === 'effect') {
-                        const newEffect = createDefaultEffect(type, newId);
-                        addEffect(activeLayerId, newEffect);
-                      } else if (category === 'modulator') {
-                        const newMod = createDefaultModulator(type);
-                        addModulator(activeLayerId, newId, newMod);
-                      }
+              <div className="bank-cat-header" onClick={() => toggleCategoryCollapse(cat)}>
+                <div className="bank-cat-header-left">
+                  <span className="bank-cat-chevron">{isCollapsed ? '▶' : '▼'}</span>
+                  <span className="bank-cat-title" style={{ color: catColor }}>{cat}</span>
+                  <span className="bank-cat-count">({displayMods.length})</span>
+                </div>
+                <div className="bank-cat-header-tools" onClick={e => e.stopPropagation()}>
+                  <button
+                    className={`bank-sort-btn ${config.sort === 'az' ? 'active-az' : ''}`}
+                    onClick={e => toggleSortMode(cat, e)}
+                    title={config.sort === 'custom' ? 'Custom Order (Click for A-Z)' : 'Alphabetical (Click for Custom)'}
+                  >
+                    {config.sort === 'custom' ? '⇄' : 'AZ'}
+                  </button>
+                  <button
+                    className="bank-add-btn"
+                    onClick={e => {
+                      e.stopPropagation();
+                      setCatalogInitialCategory(cat);
+                      setCatalogOpen(true);
                     }}
-                    onContextMenu={e => handleModuleRightClick(e, mod.id)}
-                    title={mod.tooltip}
+                    title={`Add more ${cat} to Bank`}
                   >
-                                        {mod.glyph === 'RGB_STRIPES' ? (
-                      <div className="icon-glyph rgb-stripes-icon">
-                        <div className="stripe red" />
-                        <div className="stripe green" />
-                        <div className="stripe blue" />
-                      </div>
-                    ) : (
-                      <span className="icon-glyph">{mod.glyph}</span>
-                    )}
-                    <span className="icon-label">{mod.label}</span>
-                    <span className="icon-tooltip">{mod.tooltip}</span>
-                  </div>
-                ))}
-
-                {/* Hidden modules shown faded with right-click to add back */}
-                {hiddenModules.filter(m => m.category === cat).map(mod => (
-                  <div
-                    key={mod.id}
-                    className="bank-icon"
-                    style={{ opacity: 0.2, cursor: 'default' }}
-                    onContextMenu={e => handleModuleRightClick(e, mod.id)}
-                    title={`${mod.tooltip} (hidden — right-click to restore)`}
-                  >
-                                        {mod.glyph === 'RGB_STRIPES' ? (
-                      <div className="icon-glyph rgb-stripes-icon">
-                        <div className="stripe red" />
-                        <div className="stripe green" />
-                        <div className="stripe blue" />
-                      </div>
-                    ) : (
-                      <span className="icon-glyph">{mod.glyph}</span>
-                    )}
-                    <span className="icon-label">{mod.label}</span>
-                  </div>
-                ))}
+                    +
+                  </button>
+                </div>
               </div>
+
+              {!isCollapsed && (
+                <div className="bank-icon-grid">
+                  {displayMods.length === 0 ? (
+                    <div className="bank-empty-notice">
+                      No modules in bank. Click <b>+</b> to add.
+                    </div>
+                  ) : (
+                    displayMods.map(mod => (
+                      <div
+                        key={mod.id}
+                        className="bank-icon"
+                        draggable
+                        onDragStart={e => {
+                          handleModuleDragStart(e, mod);
+                          e.dataTransfer.setData('application/terp-bank-reorder', JSON.stringify({ cat, id: mod.id }));
+                        }}
+                        onDragOver={e => {
+                          if (config.sort === 'custom') {
+                            e.preventDefault();
+                          }
+                        }}
+                        onDrop={e => {
+                          const raw = e.dataTransfer.getData('application/terp-bank-reorder');
+                          if (raw) {
+                            try {
+                              const data = JSON.parse(raw);
+                              if (data.cat === cat && data.id !== mod.id) {
+                                reorderModuleInBank(cat, data.id, mod.id);
+                              }
+                            } catch {}
+                          }
+                        }}
+                        onClick={() => handleAddModuleToLayer(mod)}
+                        onContextMenu={e => handleModuleRightClick(e, mod)}
+                        title={mod.tooltip}
+                      >
+                        {mod.glyph === 'RGB_STRIPES' ? (
+                          <div className="icon-glyph rgb-stripes-icon">
+                            <div className="stripe red" />
+                            <div className="stripe green" />
+                            <div className="stripe blue" />
+                          </div>
+                        ) : (
+                          <span className="icon-glyph">{mod.glyph}</span>
+                        )}
+                        <span className="icon-label">{mod.label}</span>
+                        <span className="icon-tooltip">{mod.tooltip}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
             </div>
           );
         })}
       </SbSection>
-      
-      <SbSection title="Foundational" className="foundational">
-        <FoundationalPanel 
-          nodeId={activeLayer ? 'source' : null}
-          source={activeLayer?.source || null}
-          sourceCtx={sourceCtx as any}
-          effect={null}
-          effectCtx={null}
-        />
-      </SbSection>
 
-      {/* Context Menu (portal-ish via fixed positioning) */}
-      <ContextMenu
-        menu={contextMenu}
-        inBank={contextMenu ? bankIds.includes(contextMenu.moduleId) : false}
-        onRemove={() => {
-          if (contextMenu) saveBankIds(bankIds.filter(id => id !== contextMenu.moduleId));
-          setContextMenu(null);
-        }}
-        onAdd={() => {
-          if (contextMenu) saveBankIds([...bankIds, contextMenu.moduleId]);
-          setContextMenu(null);
-        }}
-        onClose={() => setContextMenu(null)}
+      {/* Context Menu */}
+      {(() => {
+        const currentCatOrder = contextMenu ? bankConfig[contextMenu.category]?.order || [] : [];
+        const currentModIdx = contextMenu ? currentCatOrder.indexOf(contextMenu.moduleId) : -1;
+        const isCustomSort = contextMenu ? bankConfig[contextMenu.category]?.sort === 'custom' : false;
+        const canMoveLeft = isCustomSort && currentModIdx > 0;
+        const canMoveRight = isCustomSort && currentModIdx !== -1 && currentModIdx < currentCatOrder.length - 1;
+
+        return (
+          <ContextMenu
+            menu={contextMenu}
+            onRemove={() => {
+              if (contextMenu) removeModuleFromBank(contextMenu.category, contextMenu.moduleId);
+              setContextMenu(null);
+            }}
+            onMoveLeft={() => {
+              if (contextMenu) moveModuleInBank(contextMenu.category, contextMenu.moduleId, -1);
+              setContextMenu(null);
+            }}
+            onMoveRight={() => {
+              if (contextMenu) moveModuleInBank(contextMenu.category, contextMenu.moduleId, 1);
+              setContextMenu(null);
+            }}
+            canMoveLeft={canMoveLeft}
+            canMoveRight={canMoveRight}
+            onClose={() => setContextMenu(null)}
+          />
+        );
+      })()}
+
+      {/* Master Module Catalog Modal */}
+      <MasterCatalogModal
+        isOpen={isCatalogOpen}
+        onClose={() => setCatalogOpen(false)}
+        bankConfig={bankConfig}
+        onUpdateBankConfig={setBankConfig}
+        activeLayerId={activeLayerId}
+        onAddModuleToLayer={handleAddModuleToLayer}
+        initialCategory={catalogInitialCategory}
       />
 
       {/* Inter-Layer Static Cables */}

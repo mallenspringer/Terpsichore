@@ -29,12 +29,20 @@ export function exportProject() {
     midiBindings: state.midiBindings,
   };
 
-  // 2. Gather UI Layouts
+  // 2. Gather UI Layouts and Bank Config
   let layouts = {};
   try {
     layouts = JSON.parse(localStorage.getItem(LAYOUT_KEY) || '{}');
   } catch (e) {
     console.error("Failed to parse layouts for export", e);
+  }
+
+  let bankConfig = null;
+  try {
+    const rawBank = localStorage.getItem('terp_bank_config');
+    if (rawBank) bankConfig = JSON.parse(rawBank);
+  } catch (e) {
+    console.error("Failed to parse bank config for export", e);
   }
 
   // 3. Construct Project Object
@@ -49,7 +57,8 @@ export function exportProject() {
     } as ProjectMetadata,
     engine,
     ui: {
-      layouts
+      layouts,
+      bankConfig
     }
   };
 
@@ -81,9 +90,15 @@ export async function importProject(jsonData: any) {
     // 2. Hydrate Store
     useEngineStore.getState().loadProject(project.engine);
 
-    // 2. Hydrate Layouts
+    // 3. Hydrate Layouts
     if (project.ui.layouts) {
       localStorage.setItem(LAYOUT_KEY, JSON.stringify(project.ui.layouts));
+    }
+
+    // 4. Hydrate Bank Config
+    if (project.ui.bankConfig) {
+      localStorage.setItem('terp_bank_config', JSON.stringify(project.ui.bankConfig));
+      window.dispatchEvent(new CustomEvent('terp_bank_config_updated'));
     }
 
     // Force a reload of the layout for the active layer by briefly clearing and resetting or similar?

@@ -6,6 +6,7 @@ import { Sidebar } from "./components/Sidebar";
 import { NodeGraph } from "./components/NodeGraph/NodeGraph";
 import { MidiMappingModal } from "./components/NodeGraph/MidiMappingModal";
 import { AudioEngine } from "./state/AudioEngine";
+import { ExternalWindowManager } from "./utils/ExternalWindowManager";
 
 function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -17,14 +18,23 @@ function App() {
   const activeLayerId = useEngineStore(s => s.activeLayerId);
   const setActiveLayerId = useEngineStore(s => s.setActiveLayerId);
   const updateLayer = useEngineStore(s => s.updateLayer);
-  const setSource = useEngineStore(s => s.setSource);
   const globalAudioMuted = useEngineStore(s => s.globalAudioMuted);
   const setGlobalAudioMuted = useEngineStore(s => s.setGlobalAudioMuted);
 
-  // Local State
   const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
   const [videoProgress, setVideoProgress] = useState<Record<string, {currentTime: number, duration: number}>>({});
   const [isMidiModalOpen, setMidiModalOpen] = useState(false);
+  const [isPopoutOpen, setPopoutOpen] = useState(false);
+
+  useEffect(() => {
+    return ExternalWindowManager.getInstance().subscribe(setPopoutOpen);
+  }, []);
+
+  const handleTogglePopout = () => {
+    if (canvasRef.current) {
+      ExternalWindowManager.getInstance().toggle(canvasRef.current, rendererRef.current);
+    }
+  };
 
   const activeLayer = useMemo(() => activeLayerId ? layers[activeLayerId] : null, [layers, activeLayerId]);
 
@@ -170,34 +180,6 @@ function App() {
     }
   };
 
-  const sourceCtx = useMemo(() => {
-    if (!activeLayerId || !activeLayer) return null;
-    return {
-      source: activeLayer.source,
-      onChange: (key: string, val: any) => setSource(activeLayerId, { ...activeLayer.source, [key]: val }),
-      onUpdate: (upd: any) => setSource(activeLayerId, { ...activeLayer.source, ...upd }),
-      videoProgress: videoProgress['source'] || { currentTime: 0, duration: 0 },
-      onSeek: handleSeek,
-      onSeekStart: (nodeId: string) => { 
-        if (rendererRef.current && activeLayerId) {
-          const key = nodeId === 'source' ? activeLayerId : nodeId;
-          rendererRef.current.isSeeking[key] = true;
-        }
-      },
-      onSeekEnd: (nodeId: string) => { 
-        if (rendererRef.current && activeLayerId) {
-          const key = nodeId === 'source' ? activeLayerId : nodeId;
-          rendererRef.current.isSeeking[key] = false;
-        }
-      },
-      cameras,
-      layerOpacity: activeLayer.opacity,
-      layerBlendMode: activeLayer.blendMode,
-      layerAudioMuted: activeLayer.audioMuted || activeLayer.muted,
-      onLayerUpdate: (updates: any) => updateLayer(activeLayerId, updates)
-    };
-  }, [activeLayerId, activeLayer, cameras, videoProgress]);
-
   const audioResumedRef = useRef(false);
   const handlePointerDown = () => {
     if (!audioResumedRef.current) {
@@ -218,6 +200,28 @@ function App() {
           <span style={{ color: '#444', fontSize: '0.8em', marginLeft: 8 }}>v0.4.0</span>
         </div>
         <div style={{ flex: 1 }} />
+        <button
+          onClick={handleTogglePopout}
+          style={{
+            background: isPopoutOpen ? 'rgba(0, 255, 170, 0.15)' : '#1a1a1a',
+            border: isPopoutOpen ? '1px solid #00ffaa' : '1px solid #333',
+            color: isPopoutOpen ? '#00ffaa' : '#ccc',
+            cursor: 'pointer',
+            fontSize: 12,
+            padding: '4px 12px',
+            borderRadius: 4,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            marginRight: 10,
+            transition: 'all 0.2s ease'
+          }}
+          title={isPopoutOpen ? "Focus or close external projector window" : "Open external window for second monitor / projector"}
+        >
+          <span style={{ fontSize: 13 }}>🗗</span>
+          <span>{isPopoutOpen ? 'Projector Out (Active)' : 'Pop Out Window'}</span>
+          {isPopoutOpen && <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#00ffaa', display: 'inline-block' }} />}
+        </button>
         <button 
           onClick={() => setGlobalAudioMuted(!globalAudioMuted)}
           style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: globalAudioMuted ? '#f44' : '#eee', padding: 5, borderRadius: 4 }}
@@ -230,13 +234,11 @@ function App() {
         <Sidebar 
           activeLayerId={activeLayerId} 
           onSelectLayer={setActiveLayerId} 
-          activeLayer={activeLayer}
-          sourceCtx={sourceCtx as any}
           onOpenMidiModal={() => setMidiModalOpen(true)}
         />
 
         <div className="main-area">
-          <div className="canvas-container">
+          <div className="canvas-container" style={{ position: 'relative' }}>
             <canvas 
               ref={canvasRef} 
               width={resolution.width} 
@@ -249,6 +251,28 @@ function App() {
                 background: '#000' // Ensure the actual canvas is black
               }} 
             />
+            {isPopoutOpen && (
+              <div style={{
+                position: 'absolute',
+                top: 10,
+                right: 14,
+                background: 'rgba(0, 255, 170, 0.15)',
+                border: '1px solid #00ffaa',
+                color: '#00ffaa',
+                fontSize: 11,
+                fontFamily: 'monospace',
+                padding: '4px 10px',
+                borderRadius: 4,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                pointerEvents: 'none',
+                backdropFilter: 'blur(4px)'
+              }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#00ffaa', display: 'inline-block' }} />
+                MIRRORED TO EXTERNAL DISPLAY
+              </div>
+            )}
           </div>
 
           <div style={{ height: 490, flexShrink: 0, background: '#111', borderTop: '1px solid #222', display: 'flex' }}>

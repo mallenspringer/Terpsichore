@@ -98,6 +98,41 @@ export class Renderer {
   private sampler!: GPUSampler;
   private blankTexture!: GPUTexture;
 
+  private externalCanvas: HTMLCanvasElement | null = null;
+  private externalContext: GPUCanvasContext | null = null;
+
+  public setExternalCanvas(canvas: HTMLCanvasElement | null): boolean {
+    if (!canvas) {
+      this.externalCanvas = null;
+      this.externalContext = null;
+      return true;
+    }
+
+    try {
+      const ctx = canvas.getContext('webgpu') as GPUCanvasContext | null;
+      if (!ctx) {
+        console.warn('[Renderer] External canvas does not support webgpu context');
+        this.externalCanvas = null;
+        this.externalContext = null;
+        return false;
+      }
+      ctx.configure({
+        device: this.device,
+        format: this.format,
+        alphaMode: 'premultiplied'
+      });
+      this.externalCanvas = canvas;
+      this.externalContext = ctx;
+      console.log('[Renderer] External WebGPU canvas configured for zero-copy native presentation');
+      return true;
+    } catch (err) {
+      console.warn('[Renderer] Could not configure external WebGPU canvas with device:', err);
+      this.externalCanvas = null;
+      this.externalContext = null;
+      return false;
+    }
+  }
+
   private isRunning = false;
   private _isDestroyed = false;
   private animationFrameId: number = 0;
@@ -1595,6 +1630,25 @@ export class Renderer {
     const finalBlitBindGroup = this.device.createBindGroup({ layout: this.blitPipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: this.masterFBO.createView() }, { binding: 1, resource: this.sampler }] });
     canvasPass.setPipeline(this.blitPipeline); canvasPass.setBindGroup(0, finalBlitBindGroup); canvasPass.draw(3); canvasPass.end();
 
+    if (this.externalContext && this.externalCanvas) {
+      try {
+        const extCanvasPass = commandEncoder.beginRenderPass({
+          colorAttachments: [{
+            view: this.externalContext.getCurrentTexture().createView(),
+            clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
+            loadOp: 'clear',
+            storeOp: 'store'
+          }]
+        });
+        extCanvasPass.setPipeline(this.blitPipeline);
+        extCanvasPass.setBindGroup(0, finalBlitBindGroup);
+        extCanvasPass.draw(3);
+        extCanvasPass.end();
+      } catch (err) {
+        // External canvas may be resizing or detached
+      }
+    }
+
     this.device.queue.submit([commandEncoder.finish()]);
 
     // Defer mapAsync until AFTER queue submission to prevent GPU pipeline stall
@@ -1614,6 +1668,8 @@ export class Renderer {
   public destroy() {
     this._isDestroyed = true;
     this.isRunning = false;
+    this.externalCanvas = null;
+    this.externalContext = null;
     cancelAnimationFrame(this.animationFrameId);
     if (this.masterFBO) this.masterFBO.destroy();
     if (this.layerFBO_A) this.layerFBO_A.destroy();

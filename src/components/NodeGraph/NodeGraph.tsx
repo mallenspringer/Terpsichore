@@ -609,8 +609,6 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
 
   return (
     <div className="node-graph-bar">
-      {/* ── Foundational Panel ── */}
-
       {/* ── Graph Canvas ── */}
       <div
         ref={graphRef}
