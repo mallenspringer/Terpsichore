@@ -1046,6 +1046,9 @@ export class SignalDispatcher {
           
           if (edge.fromNodeId === 'source' && edge.fromPort === 'audio_out') {
             rawValue = ctx.audioEngine.getPeakVolume(ctx.layer.id);
+          } else if (edge.signalType === 'video' || edge.toPort === 'uv_distort_in') {
+            // Video connections carry active video streams without expensive CPU readbacks
+            rawValue = 1.0;
           } else {
             const renderer = (window as any).renderer;
             if (renderer && renderer.latestLumaValues) {

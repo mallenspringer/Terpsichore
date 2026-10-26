@@ -114,7 +114,7 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
     case 'Pattern': return { 
       id, type: 'Pattern', countX: 2, countY: 2, spacingX: 0, spacingY: 0, offsetX: 0, offsetY: 0, 
       alternateMirrorX: false, alternateMirrorY: false, syncCount: true, syncSpacing: true, syncOffset: true, mirrorXTrigger: false, mirrorYTrigger: false,
-      mode: 'grid', radialRings: 4, radialSegments: 8, tileRotation: 0, jitter: 0, distortAmount: 0.5
+      mode: 'grid', radialRings: 4, radialSegments: 8, tileRotation: 0, jitter: 0, distortAmount: 0.15
     } as any;
     case 'VideoMixer': return { id, type: 'VideoMixer', v1: 1, v2: 0, v3: 0, v4: 0, v1Alpha: 1.0, v2Alpha: 1.0, v3Alpha: 1.0, v4Alpha: 1.0, v1Mode: 'normal', v2Mode: 'add', v3Mode: 'add', v4Mode: 'add', masterGain: 1.0 };
     case 'KeyMixer': return {

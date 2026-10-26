@@ -747,6 +747,8 @@ export class Renderer {
 
     this.mediaManager.cleanupInactive(activeNodeIds, state.layers);
 
+    const pendingReadbacks: { buf: GPUBuffer; key: string }[] = [];
+
     orderedLayers.forEach(layer => {
       const sortedNodeIds = this.sortNodes(layer);
 
@@ -1511,9 +1513,9 @@ export class Renderer {
         const targetType = (edge.toNodeId === '__output__') ? '__OUTPUT__' : (targetEffect ? targetEffect.type : edge.toNodeId.split('_')[0]);
         const targetPortDef = (PORT_DEFS[targetType] || []).find(p => p.id === edge.toPort);
 
-        // Perform GPU analysis if the source is a video signal and the target is a modulation input or UV distort
+        // Only perform GPU analysis if the source is a video signal and the target is a modulation input
         const isVideoSrc = fromPortDef?.signalType === 'video' || fromPortDef?.signalType === 'red' || fromPortDef?.signalType === 'green' || fromPortDef?.signalType === 'blue';
-        const isModTarget = targetPortDef?.signalType === 'modulation' || targetPortDef?.id === 'uv_distort_in';
+        const isModTarget = targetPortDef?.signalType === 'modulation';
 
         return isVideoSrc && isModTarget;
       });
@@ -1551,15 +1553,7 @@ export class Renderer {
           commandEncoder.copyTextureToBuffer({ texture: this.lumaAnalysisTexture }, { buffer: readbackBuf }, [1, 1]);
 
           this.analysisBusy.add(analysisKey);
-          readbackBuf.mapAsync(GPUMapMode.READ).then(() => {
-            if (this._isDestroyed) return;
-            const data = new Float32Array(readbackBuf!.getMappedRange());
-            this.latestLumaValues[analysisKey] = data[0];
-            readbackBuf!.unmap();
-            this.analysisBusy.delete(analysisKey);
-          }).catch(() => {
-            this.analysisBusy.delete(analysisKey);
-          });
+          pendingReadbacks.push({ buf: readbackBuf, key: analysisKey });
         }
       });
     });
@@ -1569,6 +1563,19 @@ export class Renderer {
     canvasPass.setPipeline(this.blitPipeline); canvasPass.setBindGroup(0, finalBlitBindGroup); canvasPass.draw(3); canvasPass.end();
 
     this.device.queue.submit([commandEncoder.finish()]);
+
+    // Defer mapAsync until AFTER queue submission to prevent GPU pipeline stall
+    pendingReadbacks.forEach(({ buf, key }) => {
+      buf.mapAsync(GPUMapMode.READ).then(() => {
+        if (this._isDestroyed) return;
+        const data = new Float32Array(buf.getMappedRange());
+        this.latestLumaValues[key] = data[0];
+        buf.unmap();
+        this.analysisBusy.delete(key);
+      }).catch(() => {
+        this.analysisBusy.delete(key);
+      });
+    });
   }
 
   public destroy() {
