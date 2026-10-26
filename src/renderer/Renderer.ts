@@ -25,13 +25,16 @@ import { SpokenWordVisualizerWGSL } from './shaders/SpokenWordVisualizer';
 import { KeyMixerWGSL } from './shaders/KeyMixer';
 import { VideoMathWGSL } from './shaders/VideoMath';
 import { UVDisplaceWGSL } from './shaders/UVDisplace';
+import { CanvasBackgroundWGSL } from './shaders/CanvasBackground';
+import { AlphaAdjustWGSL } from './shaders/AlphaAdjust';
 
 import { PORT_DEFS } from '../components/NodeGraph/portDefs';
 import { SignalDispatcher } from '../state/SignalDispatcher';
 import {
   ShapeGeneratorSource, Transform2DEffect, ColorAdjustEffect, LumaKeyEffect,
   SimpleFeedbackEffect, ColorRGBEffect, LumaSplitterEffect, VideoMixerEffect,
-  KeyMixerEffect, VideoMathEffect, UVDisplaceEffect,
+  KeyMixerEffect, VideoMathEffect, UVDisplaceEffect, CanvasBackgroundEffect,
+  AlphaAdjustEffect,
   NoiseVideoSource, ColorNoiseSource, InverterEffect, PixelProcessorEffect,
   PatternEffect, KaleidoscopeEffect, SampleAndHoldEffect, OscilloscopeEffect, SpectralSplitterEffect,
   SpokenWordVisualizerEffect,
@@ -82,6 +85,8 @@ export class Renderer {
   private keyMixerPipeline!: GPURenderPipeline;
   private videoMathPipeline!: GPURenderPipeline;
   private uvDisplacePipeline!: GPURenderPipeline;
+  private canvasBackgroundPipeline!: GPURenderPipeline;
+  private alphaAdjustPipeline!: GPURenderPipeline;
 
   // Isolated layouts to prevent 'Minimum Binding Size' collisions
   private effectLayouts: Map<string, GPUBindGroupLayout> = new Map();
@@ -585,6 +590,30 @@ export class Renderer {
       primitive
     });
     this.effectLayouts.set('UVDisplace', this.uvDisplacePipeline.getBindGroupLayout(0));
+
+    this.canvasBackgroundPipeline = this.device.createRenderPipeline({
+      layout,
+      vertex,
+      fragment: {
+        module: this.device.createShaderModule({ code: CanvasBackgroundWGSL }),
+        entryPoint: 'fs_main',
+        targets
+      },
+      primitive
+    });
+    this.effectLayouts.set('CanvasBackground', this.canvasBackgroundPipeline.getBindGroupLayout(0));
+
+    this.alphaAdjustPipeline = this.device.createRenderPipeline({
+      layout,
+      vertex,
+      fragment: {
+        module: this.device.createShaderModule({ code: AlphaAdjustWGSL }),
+        entryPoint: 'fs_main',
+        targets
+      },
+      primitive
+    });
+    this.effectLayouts.set('AlphaAdjust', this.alphaAdjustPipeline.getBindGroupLayout(0));
   }
 
   private getStorageBuffer(key: string, size: number): GPUBuffer {
@@ -785,6 +814,15 @@ export class Renderer {
       colorAttachments: [{ view: this.masterFBO.createView(), clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 }, loadOp: 'clear', storeOp: 'store' }],
     });
     masterPass.end();
+
+    // Render CanvasBackground backdrop behind all layers if present
+    for (const layer of orderedLayers) {
+      const bgEffect = layer.effects.find(e => e.type === 'CanvasBackground') as CanvasBackgroundEffect | undefined;
+      if (bgEffect) {
+        this.renderCanvasBackground(layer, bgEffect.id, bgEffect, this.masterFBO, timeSec, commandEncoder);
+        break;
+      }
+    }
 
     // Cleanup video/audio for nodes (layers or effects) that no longer exist
     const activeNodeIds = new Set<string>();
@@ -1547,6 +1585,49 @@ export class Renderer {
               ];
             } else if (effect.type === 'AudioFile' || effect.type === 'AudioInput' || effect.type === 'SystemAudio') {
               this.manageMediaSource(nodeId, { ...effect, _layerAudioMuted: layer.audioMuted } as any);
+            } else if (effect.type === 'CanvasBackground') {
+              const ef = effect as CanvasBackgroundEffect;
+              const outTex = this.ensureTexture(nodeId, 'video_out');
+              this.renderCanvasBackground(layer, nodeId, ef, outTex, timeSec, commandEncoder);
+              pipeline = null;
+            } else if (effect.type === 'AlphaAdjust') {
+              pipeline = this.alphaAdjustPipeline;
+              const ef = effect as AlphaAdjustEffect;
+              const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 16);
+
+              let rawAmount = this.getEffectiveParam(layer, nodeId, 'amount_cv', ef.amount ?? 1.0, timeSec);
+              if (ef.invertAmount) {
+                rawAmount = 1.0 - rawAmount;
+              }
+              const finalAmount = Math.max(0.0, Math.min(1.0, rawAmount));
+
+              const isLatch = ef.bypassMode === 'latch';
+              const trig = this.getSignalValue(layer, nodeId, 'bypass_trig', 0);
+              const lastTrig = this.lastTriggerVals.get(`${nodeId}.bypass_trig`) ?? 0;
+              let bypassLatched = this.lastTriggerVals.get(`${nodeId}.bypass_latched`) ?? (ef.bypass ? 1 : 0);
+              if (isLatch) {
+                if (trig > 0.5 && lastTrig <= 0.5) {
+                  bypassLatched = bypassLatched > 0.5 ? 0 : 1;
+                  this.lastTriggerVals.set(`${nodeId}.bypass_latched`, bypassLatched);
+                }
+              } else {
+                bypassLatched = (trig > 0.5 || ef.bypass) ? 1 : 0;
+              }
+              this.lastTriggerVals.set(`${nodeId}.bypass_trig`, trig);
+              const isBypassed = isLatch ? (bypassLatched > 0.5 || ef.bypass) : (trig > 0.5 || ef.bypass);
+
+              this.device.queue.writeBuffer(uniformBuffer, 0, new Float32Array([
+                finalAmount,
+                isBypassed ? 1.0 : 0.0,
+                0.0,
+                0.0
+              ]));
+
+              entries = [
+                { binding: 0, resource: { buffer: uniformBuffer } },
+                { binding: 1, resource: tex.createView() },
+                { binding: 2, resource: this.sampler }
+              ];
             }
 
             if (pipeline) {
@@ -1853,6 +1934,74 @@ export class Renderer {
   private getSignalValue(layer: LayerState, nodeId: string, portId: string, defaultValue: number): number {
     const signals = SignalDispatcher.getInstance().getLatestSignals(layer.id);
     return signals[`${nodeId}.${portId}`] ?? defaultValue;
+  }
+
+  private renderCanvasBackground(
+    layer: LayerState,
+    nodeId: string,
+    ef: CanvasBackgroundEffect,
+    target: GPUTexture,
+    _timeSec: number,
+    commandEncoder: GPUCommandEncoder
+  ) {
+    const uniformBuffer = this.getUniformBuffer(`${layer.id}.${nodeId}.bg_uniforms`, 96);
+    const buf = new ArrayBuffer(96);
+    const f32 = new Float32Array(buf);
+    const u32 = new Uint32Array(buf);
+
+    f32.set(ef.colorA, 0);
+    f32.set(ef.colorB, 4);
+    f32.set(ef.colorC, 8);
+
+    const modeMap: Record<string, number> = { solid: 0, linear: 1, radial: 2 };
+    u32[12] = modeMap[ef.mode] ?? 1;
+    u32[13] = ef.useThreeColors ? 1 : 0;
+
+    const angleMod = this.getSignalValue(layer, nodeId, 'angle_cv', 0);
+    const totalAngleDeg = (ef.angle ?? 0) + angleMod * 360.0;
+    const angleRad = (totalAngleDeg * Math.PI) / 180.0;
+    f32[14] = angleRad;
+
+    const spreadMod = this.getSignalValue(layer, nodeId, 'spread_cv', 0);
+    const spread = Math.max(0.01, Math.min(0.99, (ef.spread ?? 0.5) + spreadMod));
+    f32[15] = spread;
+
+    f32[16] = ef.radialCenterX ?? 0.5;
+    f32[17] = ef.radialCenterY ?? 0.5;
+    f32[18] = Math.max(0.001, ef.radialRadius ?? 0.7);
+
+    const lumaModSig = this.getSignalValue(layer, nodeId, 'luma_cv', 0);
+    const totalLuma = Math.max(-1.0, Math.min(1.0, (ef.luma ?? 0) + lumaModSig));
+    f32[19] = totalLuma;
+
+    const chromaModSig = this.getSignalValue(layer, nodeId, 'chroma_cv', 0);
+    const totalChroma = Math.max(-1.0, Math.min(1.0, (ef.chroma ?? 0) + chromaModSig));
+    f32[20] = totalChroma;
+
+    f32[21] = this.canvas.width / this.canvas.height;
+    f32[22] = 0;
+    f32[23] = 0;
+
+    this.device.queue.writeBuffer(uniformBuffer, 0, buf);
+
+    const pass = commandEncoder.beginRenderPass({
+      colorAttachments: [{
+        view: target.createView(),
+        clearValue: { r: 0, g: 0, b: 0, a: 1 },
+        loadOp: 'clear',
+        storeOp: 'store'
+      }]
+    });
+
+    const bindGroup = this.device.createBindGroup({
+      layout: this.canvasBackgroundPipeline.getBindGroupLayout(0),
+      entries: [{ binding: 0, resource: { buffer: uniformBuffer } }]
+    });
+
+    pass.setPipeline(this.canvasBackgroundPipeline);
+    pass.setBindGroup(0, bindGroup);
+    pass.draw(3);
+    pass.end();
   }
 
   private renderSpokenWordVisualizer(layer: LayerState, nodeId: string, target: GPUTexture, timeSec: number, commandEncoder: GPUCommandEncoder) {

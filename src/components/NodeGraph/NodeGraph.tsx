@@ -83,20 +83,26 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
   const [patchbayNode, setPatchbayNode] = useState<string | null>(null);
   const [hoveredPortId, setHoveredPortId] = useState<string | null>(null);
 
-  // Keep output strip pinned to right edge
+  // Keep output strip pinned to right edge without causing re-render storms
   useEffect(() => {
     const el = graphRef.current;
     if (!el) return;
+    let animId: number | null = null;
     const updateStrip = () => {
-      const scrollL = el.scrollLeft;
-      const viewW = el.clientWidth;
-      const targetX = (scrollL + viewW - 80) / zoomRef.current;
-      setStripX(targetX);
+      if (animId) return;
+      animId = requestAnimationFrame(() => {
+        animId = null;
+        const scrollL = el.scrollLeft;
+        const viewW = el.clientWidth;
+        const targetX = (scrollL + viewW - 90) / zoomRef.current;
+        setStripX(targetX);
+      });
     };
-    el.addEventListener('scroll', updateStrip);
+    el.addEventListener('scroll', updateStrip, { passive: true });
     window.addEventListener('resize', updateStrip);
     updateStrip();
     return () => {
+      if (animId) cancelAnimationFrame(animId);
       el.removeEventListener('scroll', updateStrip);
       window.removeEventListener('resize', updateStrip);
     };
@@ -111,17 +117,12 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
     }
   }, [layerId]);
 
-  // Position output node
-  useEffect(() => {
-     updateNodeState(OUTPUT_ID, { x: stripX, y: 0 });
-  }, [stripX, updateNodeState]);
-
 
   const applyZoom = useCallback((nextK: number, mouseX: number, mouseY: number) => {
     const el = graphRef.current;
     if (!el) return;
 
-    const k = Math.min(Math.max(nextK, 0.15), 2.0);
+    const k = Math.min(Math.max(nextK, 0.2), 2.5);
 
     // Adjust scroll to keep mouse over the same world point
     const worldX = (el.scrollLeft + mouseX) / zoomRef.current;
@@ -129,8 +130,6 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
 
     setZoom(k);
     
-    // We must wait for the next frame or use a trick because setting zoom 
-    // changes the scrollable range. 
     requestAnimationFrame(() => {
       el.scrollLeft = worldX * k - mouseX;
       el.scrollTop = worldY * k - mouseY;
@@ -146,16 +145,13 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
       const mouseX = e.clientX - rect.left;
       const mouseY = e.clientY - rect.top;
 
-      if (e.ctrlKey) {
-        // Zoom behavior (override default)
+      if (e.ctrlKey || e.altKey) {
+        // Zoom behavior (Ctrl + Wheel or Alt + Wheel)
         e.preventDefault();
-        const zoomSpeed = 0.001;
+        const zoomSpeed = 0.0015;
         const delta = -e.deltaY * zoomSpeed;
         const nextK = zoomRef.current * Math.exp(delta);
         applyZoom(nextK, mouseX, mouseY);
-      } else {
-        // Natural browser scroll! 
-        // We don't call e.preventDefault() so the scrollbars work normally.
       }
     };
 
@@ -163,15 +159,33 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
     return () => el.removeEventListener('wheel', onWheel);
   }, [applyZoom, layerId]);
 
+  const [isSpaceDown, setIsSpaceDown] = useState(false);
+  const [isPanning, setIsPanning] = useState(false);
+
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
-    // Pan with middle click or Space + left click
-    const isPan = e.button === 1 || (e.button === 0 && (window as any).isSpaceDown);
-    if (!isPan) return;
+    // Check if clicked element is an interactive node control or port
+    const isInteractive = !!(e.target as HTMLElement).closest('.module-node, .port-dot, .port-dot-wrap, button, input, select, textarea');
+    
+    // Pan trigger conditions:
+    // 1. Middle mouse button (button === 1) anywhere on canvas
+    // 2. Right mouse button (button === 2) on empty canvas background
+    // 3. Left mouse button (button === 0) if Space is held, Alt is held, or clicking empty canvas background
+    const isMiddle = e.button === 1;
+    const isRight = e.button === 2 && !isInteractive;
+    const isLeftPan = e.button === 0 && ((window as any).isSpaceDown || e.altKey || !isInteractive);
+
+    if (!isMiddle && !isRight && !isLeftPan) return;
+
+    // CRITICAL: e.preventDefault() prevents browser-native autoscroll (middle click)
+    // and context menu popup (right click on background)
+    e.preventDefault();
 
     const startX = e.clientX;
     const startY = e.clientY;
     const startScrollLeft = graphRef.current?.scrollLeft ?? 0;
     const startScrollTop = graphRef.current?.scrollTop ?? 0;
+
+    setIsPanning(true);
 
     const onMove = (me: PointerEvent) => {
       const dx = me.clientX - startX;
@@ -183,6 +197,7 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
     };
 
     const onUp = () => {
+      setIsPanning(false);
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
     };
@@ -191,10 +206,30 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
     window.addEventListener('pointerup', onUp);
   }, []);
 
+  const handleCanvasContextMenu = useCallback((e: React.MouseEvent) => {
+    const isInteractive = !!(e.target as HTMLElement).closest('.module-node, button, input, select, textarea');
+    if (!isInteractive) {
+      e.preventDefault();
+    }
+  }, []);
+
   // Track space bar for panning
   useEffect(() => {
-    const down = (e: KeyboardEvent) => { if (e.code === 'Space') (window as any).isSpaceDown = true; };
-    const up = (e: KeyboardEvent) => { if (e.code === 'Space') (window as any).isSpaceDown = false; };
+    const down = (e: KeyboardEvent) => {
+      if (e.code === 'Space') {
+        const activeTag = document.activeElement?.tagName?.toLowerCase();
+        if (activeTag !== 'input' && activeTag !== 'textarea') {
+          (window as any).isSpaceDown = true;
+          setIsSpaceDown(true);
+        }
+      }
+    };
+    const up = (e: KeyboardEvent) => {
+      if (e.code === 'Space') {
+        (window as any).isSpaceDown = false;
+        setIsSpaceDown(false);
+      }
+    };
     window.addEventListener('keydown', down);
     window.addEventListener('keyup', up);
     return () => {
@@ -222,11 +257,25 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
     setSource(layer.id, { type: 'None' } as AnySource);
   }, [layer, setSource]);
 
-  const handleSetSource = useCallback((type: string) => {
+  const getDefaultSpawnPos = useCallback(() => {
+    const el = graphRef.current;
+    if (el) {
+      const viewCenterX = Math.max(10, Math.round((el.scrollLeft + el.clientWidth / 2) / zoomRef.current) - 110);
+      const viewCenterY = Math.max(10, Math.round((el.scrollTop + el.clientHeight / 2) / zoomRef.current) - 80);
+      return { x: viewCenterX, y: viewCenterY };
+    }
+    return undefined;
+  }, []);
+
+  const handleSetSource = useCallback((type: string, initialPos?: { x: number; y: number }) => {
     if (!layer) return;
+    const pos = initialPos || getDefaultSpawnPos();
+    if (pos) {
+      updateNodeState('source', pos);
+    }
     const newSource = createDefaultSource(type);
     setSource(layer.id, newSource);
-  }, [layer, setSource]);
+  }, [layer, setSource, updateNodeState, getDefaultSpawnPos]);
 
   const handleSourceChange = useCallback((key: string, value: any) => {
     if (!layer) return;
@@ -274,19 +323,27 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
     removeModulator(layer.id, modId);
   }, [layer, removeModulator]);
 
-  const handleAddModulator = useCallback((type: string) => {
+  const handleAddModulator = useCallback((type: string, initialPos?: { x: number; y: number }) => {
     if (!layer) return;
     const newId = `mod_${Date.now()}`;
+    const pos = initialPos || getDefaultSpawnPos();
+    if (pos) {
+      updateNodeState(newId, pos);
+    }
     const newMod = createDefaultModulator(type);
     addModulator(layer.id, newId, newMod);
-  }, [layer, addModulator]);
+  }, [layer, addModulator, updateNodeState, getDefaultSpawnPos]);
 
-  const handleAddEffect = useCallback((type: AnyEffect['type']) => {
+  const handleAddEffect = useCallback((type: AnyEffect['type'], initialPos?: { x: number; y: number }) => {
     if (!layer) return;
     const newId = `effect_${Date.now()}`;
+    const pos = initialPos || getDefaultSpawnPos();
+    if (pos) {
+      updateNodeState(newId, pos);
+    }
     const newEffect = createDefaultEffect(type, newId);
     addEffect(layer.id, newEffect);
-  }, [layer, addEffect]);
+  }, [layer, addEffect, updateNodeState, getDefaultSpawnPos]);
 
   // ── Ghost edge drag ─────────────────────────────────────────────────────────
 
@@ -450,27 +507,39 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
     }
   }, [layer, handleRemoveEdge, handlePortPointerDown]);
 
-  // ── Drop from module bank ───────────────────────────────────────────────────
+  // ── Drop from module bank at mouse location ───────────────────────────────
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setDropOver(false);
     const moduleType = e.dataTransfer.getData('application/terp-module') || e.dataTransfer.getData('text/plain');
     if (!moduleType || !layer) return;
+
+    const el = graphRef.current;
+    let dropWorldPos: { x: number; y: number } | undefined;
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+      // Convert screen mouse position to world canvas coordinates accounting for zoom and scroll
+      dropWorldPos = {
+        x: Math.max(10, Math.round((el.scrollLeft + mouseX) / zoomRef.current) - 40),
+        y: Math.max(10, Math.round((el.scrollTop + mouseY) / zoomRef.current) - 20)
+      };
+    }
+
     const [category, type] = moduleType.split(':');
     
     if (category === 'effect') {
-      handleAddEffect(type as AnyEffect['type']);
+      handleAddEffect(type as AnyEffect['type'], dropWorldPos);
     } else if (category === 'source') {
-      // If we don't have a primary source yet, set it. 
-      // Otherwise, add it as an effect (since we've enabled source-as-effect in types/factory)
       if (layer.source.type === 'None') {
-        handleSetSource(type);
+        handleSetSource(type, dropWorldPos);
       } else {
-        handleAddEffect(type as any);
+        handleAddEffect(type as any, dropWorldPos);
       }
     } else if (category === 'modulator') {
-      handleAddModulator(type);
+      handleAddModulator(type, dropWorldPos);
     }
   }, [layer, handleAddEffect, handleSetSource, handleAddModulator]);
 
@@ -478,10 +547,69 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
 
   const nodeIds = layer ? [...getAllLayerNodes(layer).map(n => n.id), OUTPUT_ID] : [];
 
-  const getNodeUIState = (nodeId: string, index: number): NodeUIState => {
+  const getNodeUIState = useCallback((nodeId: string, index: number): NodeUIState => {
+    if (nodeId === OUTPUT_ID) {
+      return {
+        x: stripX,
+        y: 0,
+        controlOrder: [],
+        visibleRows: 3,
+        expanded: false,
+        patchbayExpanded: false
+      };
+    }
     const defaultX_ = defaultX(index);
     return getNodeState(nodeId, { x: defaultX_, y: 10 });
-  };
+  }, [stripX, getNodeState]);
+
+  // ── Fit View to All Nodes ───────────────────────────────────────────────────
+
+  const handleFitView = useCallback(() => {
+    const el = graphRef.current;
+    if (!el || !layer) return;
+
+    const nodes = getAllLayerNodes(layer);
+    if (nodes.length === 0) {
+      el.scrollLeft = 0;
+      el.scrollTop = 0;
+      setZoom(1.0);
+      return;
+    }
+
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+
+    nodes.forEach((n, idx) => {
+      const state = getNodeUIState(n.id, idx);
+      const w = 240;
+      const h = 280;
+      if (state.x < minX) minX = state.x;
+      if (state.y < minY) minY = state.y;
+      if (state.x + w > maxX) maxX = state.x + w;
+      if (state.y + h > maxY) maxY = state.y + h;
+    });
+
+    if (minX === Infinity) return;
+
+    const pad = 80;
+    const contentW = maxX - minX + pad * 2;
+    const contentH = maxY - minY + pad * 2;
+    const viewW = el.clientWidth;
+    const viewH = el.clientHeight;
+
+    const targetZoom = Math.min(Math.max(Math.min(viewW / contentW, viewH / contentH), 0.25), 1.25);
+    setZoom(targetZoom);
+
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+
+    requestAnimationFrame(() => {
+      el.scrollLeft = Math.max(0, centerX * targetZoom - viewW / 2);
+      el.scrollTop = Math.max(0, centerY * targetZoom - viewH / 2);
+    });
+  }, [layer, getNodeUIState]);
 
   // ── SVG edge path ───────────────────────────────────────────────────────────
 
@@ -612,11 +740,12 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
       {/* ── Graph Canvas ── */}
       <div
         ref={graphRef}
-        className="graph-canvas"
+        className={`graph-canvas ${isPanning ? 'panning' : isSpaceDown ? 'space-grab' : ''}`}
         onDragOver={e => { e.preventDefault(); setDropOver(true); }}
         onDragLeave={() => setDropOver(false)}
         onDrop={handleDrop}
         onPointerDown={handlePointerDown}
+        onContextMenu={handleCanvasContextMenu}
       >
         <div 
           className="graph-canvas-inner"
@@ -839,16 +968,47 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
         </div>
       </div>
 
-      {/* ── Zoom Controls HUD (Anchored to node-graph-bar) ── */}
+      {/* ── Viewport Navigation HUD ── */}
       <div className="graph-zoom-hud">
-        <button className="zoom-reset-btn" onClick={() => applyZoom(1.0, 0, 0)} title="Reset Zoom">
-          {Math.round(zoom * 100)}%
-        </button>
-        <button className="zoom-step-btn" onClick={() => applyZoom(zoom * 1.15, 0, 0)} title="Zoom In">
+        <button
+          className="zoom-step-btn"
+          onClick={() => {
+            const el = graphRef.current;
+            const cx = el ? el.clientWidth / 2 : 0;
+            const cy = el ? el.clientHeight / 2 : 0;
+            applyZoom(zoomRef.current * 1.2, cx, cy);
+          }}
+          title="Zoom In (Ctrl + Wheel Up)"
+        >
           +
         </button>
-        <button className="zoom-step-btn" onClick={() => applyZoom(zoom / 1.15, 0, 0)} title="Zoom Out">
-          -
+        <button
+          className="zoom-reset-btn"
+          onClick={() => {
+            const el = graphRef.current;
+            const cx = el ? el.clientWidth / 2 : 0;
+            const cy = el ? el.clientHeight / 2 : 0;
+            applyZoom(1.0, cx, cy);
+          }}
+          title="Reset Zoom to 100%"
+        >
+          {Math.round(zoom * 100)}%
+        </button>
+        <button
+          className="zoom-step-btn"
+          onClick={() => {
+            const el = graphRef.current;
+            const cx = el ? el.clientWidth / 2 : 0;
+            const cy = el ? el.clientHeight / 2 : 0;
+            applyZoom(zoomRef.current / 1.2, cx, cy);
+          }}
+          title="Zoom Out (Ctrl + Wheel Down)"
+        >
+          −
+        </button>
+        <div className="hud-sep" />
+        <button className="zoom-fit-btn" onClick={handleFitView} title="Fit All Modules to Screen">
+          ⛶ Fit View
         </button>
       </div>
     </div>

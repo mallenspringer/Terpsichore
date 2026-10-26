@@ -8,6 +8,7 @@ import {
 } from './types';
 import { AudioEngine } from './AudioEngine';
 import { MidiManager } from './MidiManager';
+import { MediaManager } from '../renderer/MediaManager';
 
 type SignalFunction = (context: DispatchContext, dt: number) => void;
 
@@ -124,6 +125,10 @@ export class SignalDispatcher {
       if (nodeId === 'source') {
         pipeline.push((ctx) => {
           ctx.signalValues['source.video_out'] = 1.0;
+          const srcType = ctx.layer.source.type;
+          if (srcType === 'VideoFile' || srcType === 'VideoURL' || srcType === 'AudioFile') {
+            this.handlePlayerTriggers(ctx, 'source', ctx.layer.source as any, true);
+          }
         });
       } else {
         const mod = layer.modulators?.[nodeId];
@@ -267,6 +272,21 @@ export class SignalDispatcher {
                 ctx.signalValues[`${nodeId}.peak_out`] = bus.peak;
                 ctx.signalValues[`${nodeId}.audio_out`] = 1.0;
               }
+              if (effect.type === 'AudioFile') {
+                const ef = ctx.layer.effects.find(e => e.id === nodeId);
+                if (ef) this.handlePlayerTriggers(ctx, nodeId, ef as any, false);
+              }
+            });
+          } else if (effect.type === 'VideoFile' || effect.type === 'VideoURL') {
+            pipeline.push((ctx: DispatchContext) => {
+              const ef = ctx.layer.effects.find(e => e.id === nodeId);
+              if (!ef) return;
+              ctx.signalValues[`${nodeId}.video_out`] = 1.0;
+              const bus = ctx.audioEngine.getBusData(nodeId);
+              if (bus) {
+                ctx.signalValues[`${nodeId}.audio_out`] = 1.0;
+              }
+              this.handlePlayerTriggers(ctx, nodeId, ef as any, false);
             });
           } else if (effect.type === 'AudioSource') {
             pipeline.push((ctx: DispatchContext) => {
@@ -1359,5 +1379,65 @@ export class SignalDispatcher {
 
     // Clear one-frame MIDI clock pulses after all layers have read them
     MidiManager.getInstance().clearClockPulses();
+  }
+
+  private handlePlayerTriggers(
+    ctx: DispatchContext,
+    nodeId: string,
+    node: any,
+    isSource: boolean
+  ) {
+    const pausePortKey = `${nodeId}.pause_in`;
+    const resetPortKey = `${nodeId}.reset_in`;
+    const stateKey = `${ctx.layer.id}.${nodeId}`;
+
+    // ── 1. Pause Trigger ──
+    const pauseSettings = ctx.layer.inputSettings?.[pausePortKey];
+    const isLatch = pauseSettings?.latch !== false; // default is latch (toggle on trigger pulse)
+
+    const pauseTrig = ctx.signalValues[pausePortKey] ?? 0;
+    const lastPauseTrig = this.lastTriggerVals.get(`${stateKey}.pause`) ?? 0;
+    const isPauseRising = pauseTrig > 0.5 && lastPauseTrig <= 0.5;
+    this.lastTriggerVals.set(`${stateKey}.pause`, pauseTrig);
+
+    if (isLatch) {
+      if (isPauseRising) {
+        const nextPlayState = node.playState === 'play' ? 'pause' : 'play';
+        if (isSource) {
+          useEngineStore.getState().updateLayer(ctx.layer.id, {
+            source: { ...ctx.layer.source, playState: nextPlayState } as any
+          });
+        } else {
+          useEngineStore.getState().updateEffect(ctx.layer.id, nodeId, { playState: nextPlayState } as any);
+        }
+      }
+    } else {
+      // Momentary mode: paused while High (>0.5), playing while Low (<=0.5)
+      const shouldBePaused = pauseTrig > 0.5;
+      const isCurrentlyPaused = node.playState === 'pause';
+      if (shouldBePaused !== isCurrentlyPaused) {
+        const nextPlayState = shouldBePaused ? 'pause' : 'play';
+        if (isSource) {
+          useEngineStore.getState().updateLayer(ctx.layer.id, {
+            source: { ...ctx.layer.source, playState: nextPlayState } as any
+          });
+        } else {
+          useEngineStore.getState().updateEffect(ctx.layer.id, nodeId, { playState: nextPlayState } as any);
+        }
+      }
+    }
+
+    // ── 2. Reset Trigger ──
+    const resetTrig = ctx.signalValues[resetPortKey] ?? 0;
+    const lastResetTrig = this.lastTriggerVals.get(`${stateKey}.reset`) ?? 0;
+    const isResetRising = resetTrig > 0.5 && lastResetTrig <= 0.5;
+    this.lastTriggerVals.set(`${stateKey}.reset`, resetTrig);
+
+    if (isResetRising) {
+      const resetTarget = node.resetTarget || 'start flag';
+      const targetTime = resetTarget === 'start of file' ? 0 : (node.loopStart ?? 0);
+      const mediaKey = isSource ? ctx.layer.id : nodeId;
+      MediaManager.getInstance()?.seekMedia(mediaKey, targetTime);
+    }
   }
 }

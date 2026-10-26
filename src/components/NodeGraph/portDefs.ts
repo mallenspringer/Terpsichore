@@ -15,9 +15,26 @@ export interface PortDef {
 }
 
 export const PORT_DEFS: Record<string, PortDef[]> = {
-  VideoFile:       [{ id: 'video_out', label: 'Video Out', direction: 'out', signalType: 'video', priority: 0 }, { id: 'audio_out', label: 'Audio Out', direction: 'out', signalType: 'audio' }],
-  VideoURL:        [{ id: 'video_out', label: 'Video Out', direction: 'out', signalType: 'video', priority: 0 }, { id: 'audio_out', label: 'Audio Out', direction: 'out', signalType: 'audio' }],
+  VideoFile: [
+    { id: 'video_out', label: 'Video Out', direction: 'out', signalType: 'video', priority: 0 },
+    { id: 'audio_out', label: 'Audio Out', direction: 'out', signalType: 'audio' },
+    { id: 'pause_in',  label: 'Pause',     direction: 'in',  signalType: 'trigger', enableLatch: true },
+    { id: 'reset_in',  label: 'Reset',     direction: 'in',  signalType: 'trigger' },
+  ],
+  VideoURL: [
+    { id: 'video_out', label: 'Video Out', direction: 'out', signalType: 'video', priority: 0 },
+    { id: 'audio_out', label: 'Audio Out', direction: 'out', signalType: 'audio' },
+    { id: 'pause_in',  label: 'Pause',     direction: 'in',  signalType: 'trigger', enableLatch: true },
+    { id: 'reset_in',  label: 'Reset',     direction: 'in',  signalType: 'trigger' },
+  ],
   WebcamCapture:   [{ id: 'video_out', label: 'Video Out', direction: 'out', signalType: 'video', priority: 0 }],
+  CanvasBackground: [
+    { id: 'video_out',  label: 'Video Out', direction: 'out', signalType: 'video', priority: 0 },
+    { id: 'luma_cv',    label: 'Luma CV',   direction: 'in',  signalType: 'modulation', priority: 1, bipolar: true },
+    { id: 'chroma_cv',  label: 'Chroma CV', direction: 'in',  signalType: 'modulation', priority: 2, bipolar: true },
+    { id: 'angle_cv',   label: 'Angle CV',  direction: 'in',  signalType: 'modulation', priority: 3, bipolar: true },
+    { id: 'spread_cv',  label: 'Spread CV', direction: 'in',  signalType: 'modulation', priority: 4, bipolar: true },
+  ],
   LFO: [
     { id: 'modulation_out', label: 'LFO Out',  direction: 'out', signalType: 'modulation', priority: 0, bipolar: true },
     { id: 'frequency_cv',   label: 'Freq CV',  direction: 'in',  signalType: 'modulation', priority: 1 },
@@ -148,6 +165,8 @@ export const PORT_DEFS: Record<string, PortDef[]> = {
   AudioFile: [
     { id: 'audio_out', label: 'Audio Out', direction: 'out', signalType: 'audio', priority: 0 },
     { id: 'peak_out',  label: 'Peak Out',  direction: 'out', signalType: 'modulation', priority: 1 },
+    { id: 'pause_in',  label: 'Pause',     direction: 'in',  signalType: 'trigger', enableLatch: true },
+    { id: 'reset_in',  label: 'Reset',     direction: 'in',  signalType: 'trigger' },
   ],
   SystemAudio: [
     { id: 'audio_out', label: 'Audio Out', direction: 'out', signalType: 'audio', priority: 0 },
@@ -390,7 +409,7 @@ export const PORT_DEFS: Record<string, PortDef[]> = {
   AlphaAdjust: [
     { id: 'video_in', label: 'Video In', direction: 'in', signalType: 'video' },
     { id: 'amount_cv', label: 'α CV', direction: 'in', signalType: 'modulation', enableInvert: true },
-    { id: 'bypass_trig', label: 'Bypass', direction: 'in', signalType: 'trigger' },
+    { id: 'bypass_trig', label: 'Bypass', direction: 'in', signalType: 'trigger', enableLatch: true },
     { id: 'video_out', label: 'Video Out', direction: 'out', signalType: 'video', priority: 0 },
   ],
   StepSequencer: [
@@ -481,6 +500,14 @@ const SHORT_LABELS: Record<string, string> = {
   mirror_trig_y: 'Mir Y',
   in_a: 'In A',
   in_b: 'In B',
+  pause_in: 'Pause',
+  reset_in: 'Reset',
+  luma_cv: 'Luma',
+  chroma_cv: 'Chroma',
+  angle_cv: 'Angle',
+  spread_cv: 'Spread',
+  amount_cv: 'Alpha',
+  bypass_trig: 'Bypass',
 };
 
 export function getShortLabel(portId: string, fullLabel: string): string {
@@ -488,6 +515,7 @@ export function getShortLabel(portId: string, fullLabel: string): string {
 }
 
 export const MODULE_DISPLAY_NAMES: Record<string, string> = {
+  CanvasBackground: 'Backdrop',
   ColorRGB: 'RGB',
   Placer: 'Placer',
   Transform2D: 'Transform',

@@ -23,6 +23,20 @@
   background-size: 20px 20px;
 }
 
+.graph-canvas.space-grab {
+  cursor: grab;
+}
+
+.graph-canvas.panning {
+  cursor: grabbing !important;
+  user-select: none;
+}
+
+.graph-canvas.panning * {
+  cursor: grabbing !important;
+  user-select: none !important;
+}
+
 .graph-canvas-inner {
   position: relative;
   width: 5000px;
@@ -2059,5 +2073,83 @@
   background: #2b1f3d;
   border-color: #5c3d75;
   color: #e2cfea;
+}
+
+/* ===== VIEWPORT NAVIGATION HUD ===== */
+.graph-zoom-hud {
+  position: absolute;
+  bottom: 12px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(18, 18, 18, 0.88);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 3px 6px;
+  z-index: 100;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+  user-select: none;
+}
+
+.zoom-step-btn,
+.zoom-reset-btn,
+.zoom-fit-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  color: #aaa;
+  font-family: inherit;
+  font-size: 11px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.zoom-step-btn {
+  font-size: 14px;
+  font-weight: bold;
+  width: 24px;
+  height: 22px;
+}
+
+.zoom-reset-btn {
+  font-size: 10px;
+  font-weight: 600;
+  min-width: 44px;
+  color: #ddd;
+}
+
+.zoom-fit-btn {
+  font-size: 10px;
+  gap: 4px;
+}
+
+.zoom-step-btn:hover,
+.zoom-reset-btn:hover,
+.zoom-fit-btn:hover {
+  background: #2a2a2a;
+  border-color: #444;
+  color: #fff;
+}
+
+.zoom-step-btn:active,
+.zoom-reset-btn:active,
+.zoom-fit-btn:active {
+  background: #333;
+  transform: scale(0.96);
+}
+
+.hud-sep {
+  width: 1px;
+  height: 14px;
+  background: #333;
+  margin: 0 2px;
 }
 

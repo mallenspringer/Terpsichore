@@ -5,7 +5,8 @@ import {
   KeyMixerEffect, VideoMathEffect, UVDisplaceEffect, AudioToCVEffect,
   PatternEffect, KaleidoscopeEffect, SignalMathEffect, SampleAndHoldEffect,
   AudioSourceEffect, OscilloscopeEffect, SpectralSplitterEffect, PixelProcessorEffect,
-  AudioTransformerEffect, AudioModulatorEffect
+  AudioTransformerEffect, AudioModulatorEffect, CanvasBackgroundEffect,
+  AlphaAdjustEffect
 } from '../../../state/types';
 import { AudioEngine } from '../../../state/AudioEngine';
 import { useEngineStore } from '../../../state/store';
@@ -527,6 +528,74 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
     }
   ],
 
+  AlphaAdjust: [
+    {
+      id: 'amount',
+      label: 'Alpha Amount',
+      render: ctx => {
+        const ef = eff<AlphaAdjustEffect>(ctx);
+        return (
+          <Slider
+            label="Alpha"
+            min={0}
+            max={1}
+            step={0.01}
+            resetValue={1.0}
+            value={ef.amount ?? 1.0}
+            onChange={v => upd(ctx)({ amount: v })}
+            paramId="amount_cv"
+            ctx={ctx}
+          />
+        );
+      }
+    },
+    {
+      id: 'options',
+      label: 'Options',
+      render: ctx => {
+        const ef = eff<AlphaAdjustEffect>(ctx);
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={ef.invertAmount ?? false}
+                onChange={e => upd(ctx)({ invertAmount: e.target.checked })}
+              />
+              Invert (1 - α)
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, cursor: 'pointer', marginLeft: 'auto' }}>
+              <input
+                type="checkbox"
+                checked={ef.bypass ?? false}
+                onChange={e => upd(ctx)({ bypass: e.target.checked })}
+              />
+              Bypass
+            </label>
+          </div>
+        );
+      }
+    },
+    {
+      id: 'bypassMode',
+      label: 'Trig Mode',
+      render: ctx => {
+        const ef = eff<AlphaAdjustEffect>(ctx);
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <span className="rack-row-label">Bypass Trig</span>
+            <select
+              value={ef.bypassMode ?? 'momentary'}
+              onChange={e => upd(ctx)({ bypassMode: e.target.value as any })}
+            >
+              <option value="momentary">Momentary</option>
+              <option value="latch">Latching</option>
+            </select>
+          </div>
+        );
+      }
+    }
+  ],
 
   Inverter: [
     { id: 'active', label: 'Active',
@@ -1209,6 +1278,252 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
               <input type="checkbox" checked={ef.bipolar ?? false} onChange={e => upd(ctx)({ bipolar: e.target.checked })} />
               ± Bipolar
             </label>
+          </div>
+        );
+      }
+    }
+  ],
+  CanvasBackground: [
+    {
+      id: 'mode',
+      label: 'Mode',
+      render: ctx => {
+        const ef = eff<CanvasBackgroundEffect>(ctx);
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <span className="rack-row-label">Mode</span>
+            <select
+              value={ef.mode}
+              onChange={e => upd(ctx)({ mode: e.target.value as any })}
+            >
+              <option value="solid">Solid Color</option>
+              <option value="linear">Linear Gradient</option>
+              <option value="radial">Radial Gradient</option>
+            </select>
+          </div>
+        );
+      }
+    },
+    {
+      id: 'colors',
+      label: 'Colors',
+      render: ctx => {
+        const ef = eff<CanvasBackgroundEffect>(ctx);
+        const clamp = (v: number) => Math.max(0, Math.min(1, v));
+        const toHex = (c: number) => Math.round(clamp(c) * 255).toString(16).padStart(2, '0');
+        const colorToHex = (rgba: [number, number, number, number]) => `#${toHex(rgba[0])}${toHex(rgba[1])}${toHex(rgba[2])}`;
+        const hexToRgba = (hex: string, alpha: number = 1): [number, number, number, number] => [
+          parseInt(hex.substring(1, 3), 16) / 255,
+          parseInt(hex.substring(3, 5), 16) / 255,
+          parseInt(hex.substring(5, 7), 16) / 255,
+          alpha
+        ];
+
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'column', gap: 4 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span className="rack-row-label">{ef.mode === 'solid' ? 'Color' : 'Stops'}</span>
+              <input
+                type="color"
+                title="Color A"
+                value={colorToHex(ef.colorA)}
+                onChange={e => upd(ctx)({ colorA: hexToRgba(e.target.value, ef.colorA[3]) })}
+                style={{ border: '1px solid #444', background: 'transparent', width: 26, height: 20, cursor: 'pointer', borderRadius: 2, padding: 0 }}
+              />
+              {ef.mode !== 'solid' && (
+                <>
+                  <input
+                    type="color"
+                    title="Color B"
+                    value={colorToHex(ef.colorB)}
+                    onChange={e => upd(ctx)({ colorB: hexToRgba(e.target.value, ef.colorB[3]) })}
+                    style={{ border: '1px solid #444', background: 'transparent', width: 26, height: 20, cursor: 'pointer', borderRadius: 2, padding: 0 }}
+                  />
+                  {ef.useThreeColors && (
+                    <input
+                      type="color"
+                      title="Color C"
+                      value={colorToHex(ef.colorC)}
+                      onChange={e => upd(ctx)({ colorC: hexToRgba(e.target.value, ef.colorC[3]) })}
+                      style={{ border: '1px solid #444', background: 'transparent', width: 26, height: 20, cursor: 'pointer', borderRadius: 2, padding: 0 }}
+                    />
+                  )}
+                  <button
+                    title="Swap A & B"
+                    onClick={() => upd(ctx)({ colorA: ef.colorB, colorB: ef.colorA })}
+                    style={{ fontSize: 10, padding: '1px 5px', background: '#222', color: '#aaa', border: '1px solid #444', borderRadius: 2, cursor: 'pointer' }}
+                  >
+                    ⇄
+                  </button>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 9, color: '#aaa', marginLeft: 'auto' }}>
+                    <input
+                      type="checkbox"
+                      checked={ef.useThreeColors}
+                      onChange={e => upd(ctx)({ useThreeColors: e.target.checked })}
+                    />
+                    3 Colors
+                  </label>
+                </>
+              )}
+            </div>
+          </div>
+        );
+      }
+    },
+    {
+      id: 'orientation',
+      label: 'Angle & Anchors',
+      render: ctx => {
+        const ef = eff<CanvasBackgroundEffect>(ctx);
+        if (ef.mode !== 'linear') return null;
+
+        const anchors = [
+          { label: '↖', angle: 315 },
+          { label: '↑', angle: 270 },
+          { label: '↗', angle: 225 },
+          { label: '←', angle: 180 },
+          { label: '·', angle: 0 },
+          { label: '→', angle: 0 },
+          { label: '↙', angle: 135 },
+          { label: '↓', angle: 90 },
+          { label: '↘', angle: 45 },
+        ];
+
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'column', gap: 4 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span className="rack-row-label">Anchors</span>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 18px)', gap: 2 }}>
+                {anchors.map((a, i) => (
+                  <button
+                    key={i}
+                    onClick={() => upd(ctx)({ angle: a.angle })}
+                    style={{
+                      width: 18,
+                      height: 16,
+                      fontSize: 9,
+                      padding: 0,
+                      background: Math.round(ef.angle) === a.angle ? '#88cc00' : '#222',
+                      color: Math.round(ef.angle) === a.angle ? '#000' : '#bbb',
+                      border: '1px solid #444',
+                      borderRadius: 2,
+                      cursor: 'pointer'
+                    }}
+                    title={`${a.label} (${a.angle}°)`}
+                  >
+                    {a.label}
+                  </button>
+                ))}
+              </div>
+              <div style={{ flex: 1 }}>
+                <Slider
+                  label="Angle"
+                  min={0}
+                  max={360}
+                  step={1}
+                  resetValue={45}
+                  value={ef.angle}
+                  onChange={v => upd(ctx)({ angle: v })}
+                  paramId="angle"
+                  ctx={ctx}
+                />
+              </div>
+            </div>
+          </div>
+        );
+      }
+    },
+    {
+      id: 'spread',
+      label: 'Spread',
+      render: ctx => {
+        const ef = eff<CanvasBackgroundEffect>(ctx);
+        if (ef.mode === 'solid') return null;
+        return (
+          <Slider
+            label="Spread / Bias"
+            min={0.05}
+            max={0.95}
+            step={0.01}
+            resetValue={0.5}
+            value={ef.spread}
+            onChange={v => upd(ctx)({ spread: v })}
+            paramId="spread"
+            ctx={ctx}
+          />
+        );
+      }
+    },
+    {
+      id: 'radialSettings',
+      label: 'Radial Center & Radius',
+      render: ctx => {
+        const ef = eff<CanvasBackgroundEffect>(ctx);
+        if (ef.mode !== 'radial') return null;
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'column', gap: 4 }}>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <Slider
+                label="Center X"
+                min={0}
+                max={1}
+                step={0.01}
+                resetValue={0.5}
+                value={ef.radialCenterX ?? 0.5}
+                onChange={v => upd(ctx)({ radialCenterX: v })}
+              />
+              <Slider
+                label="Center Y"
+                min={0}
+                max={1}
+                step={0.01}
+                resetValue={0.5}
+                value={ef.radialCenterY ?? 0.5}
+                onChange={v => upd(ctx)({ radialCenterY: v })}
+              />
+            </div>
+            <Slider
+              label="Radius"
+              min={0.1}
+              max={2.0}
+              step={0.01}
+              resetValue={0.7}
+              value={ef.radialRadius ?? 0.7}
+              onChange={v => upd(ctx)({ radialRadius: v })}
+            />
+          </div>
+        );
+      }
+    },
+    {
+      id: 'lumaChroma',
+      label: 'Luma & Chroma',
+      render: ctx => {
+        const ef = eff<CanvasBackgroundEffect>(ctx);
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ display: 'flex', gap: 6 }}>
+            <Slider
+              label="Luma"
+              min={-1}
+              max={1}
+              step={0.01}
+              resetValue={0}
+              value={ef.luma ?? 0}
+              onChange={v => upd(ctx)({ luma: v })}
+              paramId="luma"
+              ctx={ctx}
+            />
+            <Slider
+              label="Chroma"
+              min={-1}
+              max={1}
+              step={0.01}
+              resetValue={0}
+              value={ef.chroma ?? 0}
+              onChange={v => upd(ctx)({ chroma: v })}
+              paramId="chroma"
+              ctx={ctx}
+            />
           </div>
         );
       }

@@ -21,9 +21,9 @@ export function createDefaultSource(type: string): AnySource {
       };
 
     case 'VideoURL':
-      return { type: 'VideoURL', videoUrl: "https://vjs.zencdn.net/v/oceans.mp4", playbackSpeed: 1.0, loop: true, playState: 'pause', objectFit: 'cover', volume: 1.0, audioMuted: true };
+      return { type: 'VideoURL', videoUrl: "https://vjs.zencdn.net/v/oceans.mp4", playbackSpeed: 1.0, loop: true, playState: 'pause', objectFit: 'cover', volume: 1.0, audioMuted: true, resetTarget: 'start flag' };
     case 'VideoFile':
-      return { type: 'VideoFile', fileUrl: "", fileName: "No file selected", playbackSpeed: 1.0, loop: true, playState: 'pause', objectFit: 'cover', volume: 1.0, audioMuted: true };
+      return { type: 'VideoFile', fileUrl: "", fileName: "No file selected", playbackSpeed: 1.0, loop: true, playState: 'pause', objectFit: 'cover', volume: 1.0, audioMuted: true, resetTarget: 'start flag' };
     case 'WebcamCapture':
       return { type: 'WebcamCapture', deviceId: "", objectFit: 'cover' };
     case 'ImageFile':
@@ -31,7 +31,7 @@ export function createDefaultSource(type: string): AnySource {
     case 'AudioInput':
       return { type: 'AudioInput', deviceId: "", volume: 1.0, muted: false };
     case 'AudioFile':
-      return { type: 'AudioFile', fileUrl: "", fileName: "No file selected", volume: 1.0, muted: false, loop: true, playState: 'pause', playbackSpeed: 1.0 };
+      return { type: 'AudioFile', fileUrl: "", fileName: "No file selected", volume: 1.0, muted: false, loop: true, playState: 'pause', playbackSpeed: 1.0, resetTarget: 'start flag' };
     case 'SystemAudio':
       return { type: 'SystemAudio', volume: 1.0, muted: false };
     case 'NoiseSource':
@@ -216,6 +216,23 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
       return { id, ...createDefaultSource('AudioFile') } as any;
     case 'SystemAudio':
       return { id, ...createDefaultSource('SystemAudio') } as any;
+    case 'CanvasBackground':
+      return {
+        id,
+        type: 'CanvasBackground',
+        mode: 'linear',
+        colorA: [0.08, 0.08, 0.12, 1.0],
+        colorB: [0.2, 0.1, 0.3, 1.0],
+        colorC: [0.05, 0.15, 0.25, 1.0],
+        useThreeColors: false,
+        angle: 45,
+        spread: 0.5,
+        radialCenterX: 0.5,
+        radialCenterY: 0.5,
+        radialRadius: 0.7,
+        luma: 0,
+        chroma: 0,
+      };
 
     default:
       return { id, type: 'SimpleFeedback', feedbackAmount: 0.9, zoom: 0.95, angle: 0.05 } as any;

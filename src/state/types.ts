@@ -36,6 +36,7 @@ export interface VideoURLSource {
   audioMuted: boolean;
   loopStart?: number;
   loopEnd?: number;
+  resetTarget?: 'start flag' | 'start of file';
 }
 
 export interface VideoFileSource {
@@ -52,6 +53,7 @@ export interface VideoFileSource {
   audioMuted: boolean;
   loopStart?: number;
   loopEnd?: number;
+  resetTarget?: 'start flag' | 'start of file';
 }
 
 export interface WebcamCaptureSource {
@@ -98,6 +100,7 @@ export interface AudioFileSource {
   loopStart?: number;
   loopEnd?: number;
   playbackSpeed: number;
+  resetTarget?: 'start flag' | 'start of file';
 }
 
 export interface SystemAudioSource {
@@ -612,6 +615,23 @@ export interface PixelProcessorEffect {
 }
 
 
+export interface CanvasBackgroundEffect {
+  id: string;
+  type: 'CanvasBackground';
+  mode: 'solid' | 'linear' | 'radial';
+  colorA: [number, number, number, number];
+  colorB: [number, number, number, number];
+  colorC: [number, number, number, number];
+  useThreeColors: boolean;
+  angle: number; // in degrees 0..360
+  spread: number; // 0..1, default 0.5
+  radialCenterX: number; // 0..1, default 0.5
+  radialCenterY: number; // 0..1, default 0.5
+  radialRadius: number; // default 0.7
+  luma: number; // -1..1, default 0
+  chroma: number; // -1..1, default 0
+}
+
 export type AnyEffect = 
   | Transform2DEffect | ColorAdjustEffect | LumaKeyEffect | SimpleFeedbackEffect
   | InterLayerOutputEffect | InterLayerInputEffect | ColorRGBEffect | LumaSplitterEffect 
@@ -621,6 +641,7 @@ export type AnyEffect =
   | SignalMathEffect | SampleAndHoldEffect | StepSequencerEffect | PixelProcessorEffect
   | AudioSourceEffect | OscilloscopeEffect | SpectralSplitterEffect | AudioTransformerEffect | AudioModulatorEffect | AudioGateEffect | AudioToCVEffect
   | SpeechEnvelopeTrackerEffect | VocalPitchTrackerEffect | VowelFormantTrackerEffect | SpokenWordVisualizerEffect
+  | CanvasBackgroundEffect
   | ShapeGeneratorSource | VideoURLSource | VideoFileSource | WebcamCaptureSource | NoiseVideoSource | ColorNoiseSource
   | AudioInputSource | AudioFileSource | SystemAudioSource | ImageLoaderSource | ImageFileSource;
 
@@ -631,6 +652,7 @@ export type EffectType =
   | 'KeyMixer' | 'VideoMath' | 'UVDisplace'
   | 'LogicGate' | 'TriggeredGate' | 'Pattern' | 'Kaleidoscope' | 'SignalMath' | 'SampleAndHold' | 'StepSequencer' | 'AudioSource' | 'Oscilloscope' | 'SpectralSplitter' | 'PixelProcessor' | 'AudioTransformer' | 'AudioModulator' | 'AudioGate' | 'AudioToCV'
   | 'SpeechEnvelopeTracker' | 'VocalPitchTracker' | 'VowelFormantTracker' | 'SpokenWordVisualizer'
+  | 'CanvasBackground'
   | 'ShapeGenerator' | 'VideoURL' | 'VideoFile' | 'WebcamCapture' | 'NoiseSource' | 'ColorNoise' | 'AudioInput' | 'AudioFile' | 'SystemAudio' | 'ImageLoader' | 'ImageFile';
 
 export type GraphNode = AnyEffect;

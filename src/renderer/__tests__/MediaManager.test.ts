@@ -48,7 +48,7 @@ describe('MediaManager', () => {
     expect(mediaManager.getMediaProgress('layer_1')).toEqual({ currentTime: 12.5, duration: 60.0 });
   });
 
-  it('should reset media playback time to loopStart on handleReset', () => {
+  it('should reset media playback time respecting resetTarget on handleReset', () => {
     const mockVideo = { currentTime: 45.0 } as HTMLVideoElement;
     const mockAudio = { currentTime: 30.0 } as HTMLAudioElement;
 
@@ -56,13 +56,21 @@ describe('MediaManager', () => {
     mediaManager.audioElements['layer_a'] = mockAudio;
 
     const layers: any = {
-      layer_v: { source: { loopStart: 5.0 } },
-      layer_a: { source: { loopStart: 2.5 } },
+      layer_v: { source: { loopStart: 5.0, resetTarget: 'start flag' } },
+      layer_a: { source: { loopStart: 2.5, resetTarget: 'start of file' } },
     };
 
     mediaManager.handleReset(1, layers);
     expect(mockVideo.currentTime).toBe(5.0);
-    expect(mockAudio.currentTime).toBe(2.5);
+    expect(mockAudio.currentTime).toBe(0);
+  });
+
+  it('should allow direct seekMedia to any target time', () => {
+    const mockVideo = { currentTime: 10.0 } as HTMLVideoElement;
+    mediaManager.videoElements['layer_test'] = mockVideo;
+
+    mediaManager.seekMedia('layer_test', 3.5);
+    expect(mockVideo.currentTime).toBe(3.5);
   });
 
   it('should pause and resume all media elements on handlePause', () => {

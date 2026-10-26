@@ -200,6 +200,23 @@ export const SOURCE_ROWS: Record<string, ControlRowDef[]> = {
         );
       }
     },
+    { id: 'resetTarget', label: 'Reset Trigger',
+      render: ctx => {
+        const s = src<VideoURLSource>(ctx);
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} onDragStart={e => e.stopPropagation()}>
+            <span className="rack-row-label">Reset To</span>
+            <select 
+              value={s.resetTarget || 'start flag'} 
+              onChange={e => { e.stopPropagation(); chg(ctx)('resetTarget', e.target.value as any); }}
+            >
+              <option value="start flag">Start Flag</option>
+              <option value="start of file">Start of File</option>
+            </select>
+          </div>
+        );
+      }
+    },
     { id: 'playbackSpeed', label: 'Speed',
       render: ctx => <Slider label="Playback Speed" min={0.1} max={4} step={0.1}
         value={src<VideoURLSource>(ctx).playbackSpeed} onChange={v => chg(ctx)('playbackSpeed', v)} paramId="playbackSpeed" ctx={ctx} />
@@ -314,6 +331,23 @@ export const SOURCE_ROWS: Record<string, ControlRowDef[]> = {
                   style={{ width: 40, padding: 1, fontSize: 9, background: '#1a1a1a', color: '#aaa', border: '1px solid #333', borderRadius: 2 }} />s
               </label>
             </div>
+          </div>
+        );
+      }
+    },
+    { id: 'resetTarget', label: 'Reset Trigger',
+      render: ctx => {
+        const s = src<VideoFileSource>(ctx);
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} onDragStart={e => e.stopPropagation()}>
+            <span className="rack-row-label">Reset To</span>
+            <select 
+              value={s.resetTarget || 'start flag'} 
+              onChange={e => { e.stopPropagation(); chg(ctx)('resetTarget', e.target.value as any); }}
+            >
+              <option value="start flag">Start Flag</option>
+              <option value="start of file">Start of File</option>
+            </select>
           </div>
         );
       }
@@ -951,6 +985,23 @@ export const SOURCE_ROWS: Record<string, ControlRowDef[]> = {
                   style={{ width: 40, padding: 1, fontSize: 9, background: '#1a1a1a', color: '#aaa', border: '1px solid #333', borderRadius: 2 }} />s
               </label>
             </div>
+          </div>
+        );
+      }
+    },
+    { id: 'resetTarget', label: 'Reset Trigger',
+      render: ctx => {
+        const s = src<AudioFileSource>(ctx);
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} onDragStart={e => e.stopPropagation()}>
+            <span className="rack-row-label">Reset To</span>
+            <select 
+              value={s.resetTarget || 'start flag'} 
+              onChange={e => { e.stopPropagation(); chg(ctx)('resetTarget', e.target.value as any); }}
+            >
+              <option value="start flag">Start Flag</option>
+              <option value="start of file">Start of File</option>
+            </select>
           </div>
         );
       }

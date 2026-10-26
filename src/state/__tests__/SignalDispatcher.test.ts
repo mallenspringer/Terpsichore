@@ -3,6 +3,7 @@ import { SignalDispatcher } from '../SignalDispatcher';
 import { useEngineStore } from '../store';
 import { AnySource, AnyEffect } from '../types';
 import { MidiManager } from '../MidiManager';
+import { MediaManager } from '../../renderer/MediaManager';
 
 // Mock AudioEngine to avoid AudioContext issues in Node/jsdom
 vi.mock('../AudioEngine', () => ({
@@ -402,6 +403,110 @@ describe('SignalDispatcher', () => {
       expect(signals['spoken_1.formant_f1']).toBe(520);
       expect(signals['spoken_1.vowel_x']).toBe(0.45);
       expect(signals['spoken_1.video_out']).toBe(1.0);
+    });
+
+    it('should toggle playState on pause_in trigger for VideoFile source', () => {
+      const state = useEngineStore.getState();
+      const dispatcher = SignalDispatcher.getInstance();
+
+      state.updateLayer('layer_1', {
+        source: {
+          type: 'VideoFile',
+          fileUrl: 'test.mp4',
+          fileName: 'test.mp4',
+          playbackSpeed: 1.0,
+          loop: true,
+          playState: 'play',
+          objectFit: 'cover',
+          volume: 1.0,
+          audioMuted: false,
+          resetTarget: 'start flag'
+        } as any,
+        graph: {
+          edges: [
+            { id: 'edge_pause', fromNodeId: 'trig_1', fromPort: 'trigger_out', toNodeId: 'source', toPort: 'pause_in', signalType: 'trigger' }
+          ],
+          disconnectedPorts: []
+        },
+        modulators: {
+          'trig_1': { type: 'TriggerPad', mode: 'toggle', isPressed: false } as any
+        }
+      });
+
+      dispatcher.compileLayer(useEngineStore.getState().layers['layer_1']);
+
+      // 1. Trigger goes HIGH (1.0) -> Toggles from play to pause
+      const l1 = useEngineStore.getState().layers['layer_1'];
+      (l1.modulators!['trig_1'] as any).isPressed = true;
+      dispatcher.execute(true);
+      expect((useEngineStore.getState().layers['layer_1'].source as any).playState).toBe('pause');
+
+      // 2. Trigger stays HIGH -> Stays paused (latch only triggers on rising edge)
+      dispatcher.execute(true);
+      expect((useEngineStore.getState().layers['layer_1'].source as any).playState).toBe('pause');
+
+      // 3. Trigger goes LOW then HIGH again -> Toggles back to play
+      (useEngineStore.getState().layers['layer_1'].modulators!['trig_1'] as any).isPressed = false;
+      dispatcher.execute(true);
+      (useEngineStore.getState().layers['layer_1'].modulators!['trig_1'] as any).isPressed = true;
+      dispatcher.execute(true);
+      expect((useEngineStore.getState().layers['layer_1'].source as any).playState).toBe('play');
+    });
+
+    it('should seek to loopStart or 0 on reset_in trigger based on resetTarget', () => {
+      const state = useEngineStore.getState();
+      const dispatcher = SignalDispatcher.getInstance();
+      const mediaManager = new MediaManager();
+      const mockVid = { currentTime: 20.0 } as HTMLVideoElement;
+      mediaManager.videoElements['layer_1'] = mockVid;
+
+      state.updateLayer('layer_1', {
+        source: {
+          type: 'VideoFile',
+          fileUrl: 'test.mp4',
+          fileName: 'test.mp4',
+          playbackSpeed: 1.0,
+          loop: true,
+          playState: 'play',
+          objectFit: 'cover',
+          volume: 1.0,
+          audioMuted: false,
+          loopStart: 4.5,
+          resetTarget: 'start flag'
+        } as any,
+        graph: {
+          edges: [
+            { id: 'edge_reset', fromNodeId: 'trig_pad', fromPort: 'trigger_out', toNodeId: 'source', toPort: 'reset_in', signalType: 'trigger' }
+          ],
+          disconnectedPorts: []
+        },
+        modulators: {
+          'trig_pad': { type: 'TriggerPad', mode: 'momentary', isPressed: true } as any
+        }
+      });
+
+      dispatcher.compileLayer(useEngineStore.getState().layers['layer_1']);
+
+      // Pulse trigger -> seeks to loopStart (4.5) because default / resetTarget is 'start flag'
+      dispatcher.execute(true);
+      expect(mockVid.currentTime).toBe(4.5);
+
+      // Now change resetTarget to 'start of file'
+      mockVid.currentTime = 25.0;
+      state.updateLayer('layer_1', {
+        source: {
+          ...useEngineStore.getState().layers['layer_1'].source,
+          resetTarget: 'start of file'
+        } as any
+      });
+      // Lower trigger then raise again
+      (useEngineStore.getState().layers['layer_1'].modulators!['trig_pad'] as any).isPressed = false;
+      dispatcher.execute(true);
+      (useEngineStore.getState().layers['layer_1'].modulators!['trig_pad'] as any).isPressed = true;
+      dispatcher.execute(true);
+
+      // Must seek to 0.0
+      expect(mockVid.currentTime).toBe(0.0);
     });
   });
 });

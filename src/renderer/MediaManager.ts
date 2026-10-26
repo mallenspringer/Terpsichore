@@ -10,6 +10,12 @@ import {
 } from '../state/types';
 
 export class MediaManager {
+  private static instance: MediaManager | null = null;
+
+  public static getInstance(): MediaManager | null {
+    return MediaManager.instance;
+  }
+
   public videoElements: Record<string, HTMLVideoElement> = {};
   public audioElements: Record<string, HTMLAudioElement> = {};
   public activeStreams: Record<string, MediaStream> = {};
@@ -20,6 +26,18 @@ export class MediaManager {
 
   private wasPaused = false;
   private lastResetSignal = 0;
+
+  constructor() {
+    MediaManager.instance = this;
+  }
+
+  public seekMedia(key: string, targetTime: number) {
+    const el = this.getMediaElement(key);
+    if (el) {
+      el.currentTime = Math.max(0, targetTime);
+      (el as any).__lastTime = el.currentTime;
+    }
+  }
 
   public getMediaElement(key: string): HTMLVideoElement | HTMLAudioElement | null {
     return this.videoElements[key] || this.audioElements[key] || null;
@@ -296,15 +314,21 @@ export class MediaManager {
   public handleReset(globalResetSignal: number, layers: Record<string, LayerState>) {
     if (globalResetSignal !== this.lastResetSignal) {
       this.lastResetSignal = globalResetSignal;
-      Object.entries(this.videoElements).forEach(([layerId, v]) => {
-        const layer = layers[layerId];
-        const loopStart = (layer?.source as any)?.loopStart ?? 0;
-        v.currentTime = loopStart;
+      Object.entries(this.videoElements).forEach(([key, v]) => {
+        const layer = layers[key];
+        const src = layer ? layer.source : Object.values(layers).flatMap(l => l.effects).find(e => e.id === key);
+        const resetTarget = (src as any)?.resetTarget || 'start flag';
+        const targetTime = resetTarget === 'start of file' ? 0 : ((src as any)?.loopStart ?? 0);
+        v.currentTime = targetTime;
+        (v as any).__lastTime = targetTime;
       });
-      Object.entries(this.audioElements).forEach(([layerId, a]) => {
-        const layer = layers[layerId];
-        const loopStart = (layer?.source as any)?.loopStart ?? 0;
-        a.currentTime = loopStart;
+      Object.entries(this.audioElements).forEach(([key, a]) => {
+        const layer = layers[key];
+        const src = layer ? layer.source : Object.values(layers).flatMap(l => l.effects).find(e => e.id === key);
+        const resetTarget = (src as any)?.resetTarget || 'start flag';
+        const targetTime = resetTarget === 'start of file' ? 0 : ((src as any)?.loopStart ?? 0);
+        a.currentTime = targetTime;
+        (a as any).__lastTime = targetTime;
       });
     }
   }
@@ -421,5 +445,8 @@ export class MediaManager {
     this.imageElements = {};
     this.imageBitmaps = {};
     this.activeDeviceIds = {};
+    if (MediaManager.instance === this) {
+      MediaManager.instance = null;
+    }
   }
 }

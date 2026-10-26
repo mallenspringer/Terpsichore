@@ -93,6 +93,15 @@ export const ALL_MODULES: ModuleEntry[] = [
     moduleType: 'source:ColorNoise',
     tags: ['color', 'noise', 'chromatic', 'plasma', 'generator', 'gradient']
   },
+  {
+    id: 'CanvasBackground',
+    glyph: '🎨',
+    label: 'Backdrop',
+    tooltip: 'Canvas Background & Gradient (Solid, Linear, Radial)',
+    category: 'Sources',
+    moduleType: 'effect:CanvasBackground',
+    tags: ['background', 'backdrop', 'canvas', 'solid', 'color', 'gradient', 'linear', 'radial']
+  },
 
   // ─── UTILITY ─────────────────────────────────────────────────────────
   {
@@ -489,7 +498,7 @@ export type BankConfig = Record<CategoryType, CategoryBankConfig>;
 
 export const DEFAULT_BANK_CONFIG: BankConfig = {
   Sources: {
-    order: ['VideoFile', 'Webcam', 'ShapeGen', 'NoiseSource'],
+    order: ['VideoFile', 'Webcam', 'ShapeGen', 'NoiseSource', 'CanvasBackground'],
     sort: 'custom',
     collapsed: false
   },
