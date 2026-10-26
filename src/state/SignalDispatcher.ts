@@ -1046,12 +1046,12 @@ export class SignalDispatcher {
           
           if (edge.fromNodeId === 'source' && edge.fromPort === 'audio_out') {
             rawValue = ctx.audioEngine.getPeakVolume(ctx.layer.id);
-          } else if (edge.fromPort === 'luma_val') {
-             const renderer = (window as any).renderer;
-             if (renderer && renderer.latestLumaValues) {
-               const luma = renderer.latestLumaValues[`${edge.fromNodeId}.${edge.fromPort}`];
-               if (luma !== undefined) rawValue = luma;
-             }
+          } else {
+            const renderer = (window as any).renderer;
+            if (renderer && renderer.latestLumaValues) {
+              const luma = renderer.latestLumaValues[`${edge.fromNodeId}.${edge.fromPort}`];
+              if (luma !== undefined) rawValue = luma;
+            }
           }
 
           let processedValue = rawValue;

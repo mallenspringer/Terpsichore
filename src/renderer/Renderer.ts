@@ -869,7 +869,10 @@ export class Renderer {
           }
 
           const incomingEdges = layer.graph?.edges.filter(e => e.toNodeId === nodeId && (e.signalType === 'video' || e.toPort === 'sig_in')) || [];
-          let inputTex = (incomingEdges.length > 0) ? this.getTextureForNode(incomingEdges[0].fromNodeId, incomingEdges[0].fromPort) : this.nodeTextures.get('__dummy__');
+          const primaryEdge = incomingEdges.find(e => e.toPort === 'video_in' || e.toPort === 'sig_in') 
+            || incomingEdges.find(e => e.toPort !== 'uv_distort_in') 
+            || incomingEdges[0];
+          let inputTex = primaryEdge ? this.getTextureForNode(primaryEdge.fromNodeId, primaryEdge.fromPort) : this.nodeTextures.get('__dummy__');
 
           // Fallback to dummy if still null for any reason
           if (!inputTex) inputTex = this.nodeTextures.get('__dummy__')!;
@@ -1221,6 +1224,13 @@ export class Renderer {
               u32[14] = distortInput ? 1 : 0;
               f32[15] = 0.0;
 
+              const lastDistortConn = (this as any)[`_lastDistort_${nodeId}`];
+              const isConn = !!distortInput;
+              if (lastDistortConn !== isConn) {
+                (this as any)[`_lastDistort_${nodeId}`] = isConn;
+                console.log(`[Pattern ${nodeId}] UV Distort texture ${isConn ? 'CONNECTED' : 'DISCONNECTED'}. Distort amount:`, f32[13]);
+              }
+
               this.device.queue.writeBuffer(uniformBuffer, 0, buf);
               entries = [
                 { binding: 0, resource: { buffer: uniformBuffer } },
@@ -1501,9 +1511,9 @@ export class Renderer {
         const targetType = (edge.toNodeId === '__output__') ? '__OUTPUT__' : (targetEffect ? targetEffect.type : edge.toNodeId.split('_')[0]);
         const targetPortDef = (PORT_DEFS[targetType] || []).find(p => p.id === edge.toPort);
 
-        // Only perform GPU analysis if the source is a video signal and the target is a modulation input
+        // Perform GPU analysis if the source is a video signal and the target is a modulation input or UV distort
         const isVideoSrc = fromPortDef?.signalType === 'video' || fromPortDef?.signalType === 'red' || fromPortDef?.signalType === 'green' || fromPortDef?.signalType === 'blue';
-        const isModTarget = targetPortDef?.signalType === 'modulation';
+        const isModTarget = targetPortDef?.signalType === 'modulation' || targetPortDef?.id === 'uv_distort_in';
 
         return isVideoSrc && isModTarget;
       });

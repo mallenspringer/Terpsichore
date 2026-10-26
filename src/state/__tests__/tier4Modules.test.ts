@@ -90,7 +90,7 @@ describe('Tier 4 Modules', () => {
       expect(effect.radialSegments).toBe(8);
       expect(effect.tileRotation).toBe(0);
       expect(effect.jitter).toBe(0);
-      expect(effect.distortAmount).toBe(0);
+      expect(effect.distortAmount).toBe(0.5);
     });
 
     it('has UV distortion port and dynamic CV modulation ports in PORT_DEFS', () => {
