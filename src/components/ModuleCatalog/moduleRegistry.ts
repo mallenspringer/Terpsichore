@@ -102,8 +102,26 @@ export const ALL_MODULES: ModuleEntry[] = [
     moduleType: 'effect:CanvasBackground',
     tags: ['background', 'backdrop', 'canvas', 'solid', 'color', 'gradient', 'linear', 'radial']
   },
+  {
+    id: 'ParticleCloud',
+    glyph: '✨',
+    label: 'Particle Cloud',
+    tooltip: 'WebGPU Compute High-Density Particle Engine (10k-100k glowing particles)',
+    category: 'Sources',
+    moduleType: 'effect:ParticleCloud',
+    tags: ['particle', 'compute', 'gpu', 'cloud', 'curl', 'noise', 'sparks', 'glow', 'generator']
+  },
 
   // ─── UTILITY ─────────────────────────────────────────────────────────
+  {
+    id: 'ColorPalette',
+    glyph: '🎨',
+    label: 'Color Palette',
+    tooltip: 'Multi-Color Palette & Gradient Builder (Weighted Stops & Shuffle)',
+    category: 'Utility',
+    moduleType: 'effect:ColorPalette',
+    tags: ['color', 'palette', 'gradient', 'ramp', 'swatch', 'utility', 'shuffle']
+  },
   {
     id: 'LFO',
     glyph: '∿',
@@ -498,12 +516,12 @@ export type BankConfig = Record<CategoryType, CategoryBankConfig>;
 
 export const DEFAULT_BANK_CONFIG: BankConfig = {
   Sources: {
-    order: ['VideoFile', 'Webcam', 'ShapeGen', 'NoiseSource', 'CanvasBackground'],
+    order: ['VideoFile', 'Webcam', 'ShapeGen', 'NoiseSource', 'CanvasBackground', 'ParticleCloud'],
     sort: 'custom',
     collapsed: false
   },
   Utility: {
-    order: ['LFO', 'TriggerPad', 'VideoMixer', 'AudioToCV', 'Path'],
+    order: ['ColorPalette', 'LFO', 'TriggerPad', 'VideoMixer', 'AudioToCV', 'Path'],
     sort: 'custom',
     collapsed: false
   },

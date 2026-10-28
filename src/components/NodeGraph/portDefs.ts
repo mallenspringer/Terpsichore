@@ -1,4 +1,4 @@
-export type SignalType = 'video' | 'modulation' | 'trigger' | 'audio' | 'red' | 'green' | 'blue' | 'midi' | 'generic' | 'trajectory' | 'pitchHz';
+export type SignalType = 'video' | 'modulation' | 'trigger' | 'audio' | 'red' | 'green' | 'blue' | 'midi' | 'generic' | 'trajectory' | 'pitchHz' | 'palette';
 
 export interface PortDef {
   id: string;
@@ -30,10 +30,45 @@ export const PORT_DEFS: Record<string, PortDef[]> = {
   WebcamCapture:   [{ id: 'video_out', label: 'Video Out', direction: 'out', signalType: 'video', priority: 0 }],
   CanvasBackground: [
     { id: 'video_out',  label: 'Video Out', direction: 'out', signalType: 'video', priority: 0 },
-    { id: 'luma_cv',    label: 'Luma CV',   direction: 'in',  signalType: 'modulation', priority: 1, bipolar: true },
-    { id: 'chroma_cv',  label: 'Chroma CV', direction: 'in',  signalType: 'modulation', priority: 2, bipolar: true },
-    { id: 'angle_cv',   label: 'Angle CV',  direction: 'in',  signalType: 'modulation', priority: 3, bipolar: true },
-    { id: 'spread_cv',  label: 'Spread CV', direction: 'in',  signalType: 'modulation', priority: 4, bipolar: true },
+    { id: 'palette_in', label: 'Palette In',direction: 'in',  signalType: 'palette', priority: 1 },
+    { id: 'luma_cv',    label: 'Luma CV',   direction: 'in',  signalType: 'modulation', priority: 2, bipolar: true },
+    { id: 'chroma_cv',  label: 'Chroma CV', direction: 'in',  signalType: 'modulation', priority: 3, bipolar: true },
+    { id: 'angle_cv',   label: 'Angle CV',  direction: 'in',  signalType: 'modulation', priority: 4, bipolar: true },
+    { id: 'spread_cv',  label: 'Spread CV', direction: 'in',  signalType: 'modulation', priority: 5, bipolar: true },
+  ],
+  ParticleCloud: [
+    { id: 'video_out',      label: 'Video Out', direction: 'out', signalType: 'video', priority: 0 },
+    { id: 'trigger_in',     label: 'Burst Trig',direction: 'in',  signalType: 'trigger', priority: 1 },
+    { id: 'audio_in',       label: 'Audio In',  direction: 'in',  signalType: 'audio', priority: 2 },
+    { id: 'palette_in',     label: 'Palette In',direction: 'in',  signalType: 'palette', priority: 3 },
+    { id: 'speed_cv',       label: 'Speed CV',  direction: 'in',  signalType: 'modulation' },
+    { id: 'turbulence_cv',  label: 'Turb CV',   direction: 'in',  signalType: 'modulation' },
+    { id: 'size_cv',        label: 'Size CV',   direction: 'in',  signalType: 'modulation' },
+    { id: 'color_cv',       label: 'Color CV',  direction: 'in',  signalType: 'modulation' },
+    { id: 'gravity_cv',     label: 'Gravity CV',direction: 'in',  signalType: 'modulation' },
+    { id: 'reset_in',       label: 'Reset',     direction: 'in',  signalType: 'trigger' },
+  ],
+  ColorPalette: [
+    { id: 'palette_out',   label: 'Palette Out', direction: 'out', signalType: 'palette', priority: 0 },
+    { id: 'shuffle_trig',  label: 'Shuffle',     direction: 'in',  signalType: 'trigger', priority: 1 },
+    { id: 'cycle_cv',      label: 'Cycle CV',    direction: 'in',  signalType: 'modulation', bipolar: true, enableInvert: true },
+    { id: 'spread_cv',     label: 'Spread CV',   direction: 'in',  signalType: 'modulation', bipolar: true, enableInvert: true },
+    { id: 'col_1_out',     label: 'Col 1 Out',   direction: 'out', signalType: 'palette', priority: 2 },
+    { id: 'col_2_out',     label: 'Col 2 Out',   direction: 'out', signalType: 'palette', priority: 3 },
+    { id: 'col_3_out',     label: 'Col 3 Out',   direction: 'out', signalType: 'palette', priority: 4 },
+    { id: 'col_4_out',     label: 'Col 4 Out',   direction: 'out', signalType: 'palette', priority: 5 },
+    { id: 'col_5_out',     label: 'Col 5 Out',   direction: 'out', signalType: 'palette', priority: 6 },
+    { id: 'col_6_out',     label: 'Col 6 Out',   direction: 'out', signalType: 'palette', priority: 7 },
+    { id: 'col_7_out',     label: 'Col 7 Out',   direction: 'out', signalType: 'palette', priority: 8 },
+    { id: 'col_8_out',     label: 'Col 8 Out',   direction: 'out', signalType: 'palette', priority: 9 },
+    { id: 'col_1_cv',      label: 'Col 1 CV',    direction: 'in',  signalType: 'modulation', bipolar: true, enableInvert: true },
+    { id: 'col_2_cv',      label: 'Col 2 CV',    direction: 'in',  signalType: 'modulation', bipolar: true, enableInvert: true },
+    { id: 'col_3_cv',      label: 'Col 3 CV',    direction: 'in',  signalType: 'modulation', bipolar: true, enableInvert: true },
+    { id: 'col_4_cv',      label: 'Col 4 CV',    direction: 'in',  signalType: 'modulation', bipolar: true, enableInvert: true },
+    { id: 'col_5_cv',      label: 'Col 5 CV',    direction: 'in',  signalType: 'modulation', bipolar: true, enableInvert: true },
+    { id: 'col_6_cv',      label: 'Col 6 CV',    direction: 'in',  signalType: 'modulation', bipolar: true, enableInvert: true },
+    { id: 'col_7_cv',      label: 'Col 7 CV',    direction: 'in',  signalType: 'modulation', bipolar: true, enableInvert: true },
+    { id: 'col_8_cv',      label: 'Col 8 CV',    direction: 'in',  signalType: 'modulation', bipolar: true, enableInvert: true },
   ],
   LFO: [
     { id: 'modulation_out', label: 'LFO Out',  direction: 'out', signalType: 'modulation', priority: 0, bipolar: true },
@@ -73,6 +108,7 @@ export const PORT_DEFS: Record<string, PortDef[]> = {
   ],
   ColorNoise: [
     { id: 'video_out',      label: 'Video Out', direction: 'out', signalType: 'video', priority: 0 },
+    { id: 'palette_in',     label: 'Palette In',direction: 'in',  signalType: 'palette', priority: 1 },
     { id: 'scale_cv',       label: 'Scale CV',  direction: 'in',  signalType: 'modulation' },
     { id: 'evolution_cv',   label: 'Evol CV',   direction: 'in',  signalType: 'modulation' },
     { id: 'octaves_cv',     label: 'Oct CV',    direction: 'in',  signalType: 'modulation' },
@@ -83,6 +119,7 @@ export const PORT_DEFS: Record<string, PortDef[]> = {
   ],
   ShapeGenerator: [
     { id: 'video_out',   label: 'Video Out',   direction: 'out', signalType: 'video', priority: 0 },
+    { id: 'palette_in',  label: 'Palette In',  direction: 'in',  signalType: 'palette', priority: 1 },
     { id: 'sides',       label: 'Sides',       direction: 'in',  signalType: 'modulation' },
     { id: 'roundness',   label: 'Roundness',   direction: 'in',  signalType: 'modulation' },
     { id: 'convexity',   label: 'Convexity',   direction: 'in',  signalType: 'modulation' },
@@ -115,11 +152,14 @@ export const PORT_DEFS: Record<string, PortDef[]> = {
     { id: 'video_in',    label: 'Video In',    direction: 'in',  signalType: 'video', priority: 0 },
     { id: 'trigger_in',  label: 'Trigger',     direction: 'in',  signalType: 'trigger', priority: 1 },
     { id: 'reset_in',    label: 'Reset',       direction: 'in',  signalType: 'trigger', priority: 2 },
+    { id: 'path_in',     label: 'Path In',     direction: 'in',  signalType: 'trajectory', priority: 3 },
     { id: 'x',           label: 'X Pos',       direction: 'in',  signalType: 'modulation' },
     { id: 'y',           label: 'Y Pos',       direction: 'in',  signalType: 'modulation' },
     { id: 'scale',       label: 'Scale',       direction: 'in',  signalType: 'modulation' },
-    { id: 'rotation',    label: 'Rotation',    direction: 'in',  signalType: 'modulation' },
-    { id: 'path_in',     label: 'Path In',     direction: 'in',  signalType: 'trajectory', priority: 3 },
+    { id: 'speed_cv',    label: 'Speed CV',    direction: 'in',  signalType: 'modulation' },
+    { id: 'angle_cv',    label: 'Angle CV',    direction: 'in',  signalType: 'modulation' },
+    { id: 'rate_cv',     label: 'Rate CV',     direction: 'in',  signalType: 'modulation' },
+    { id: 'gravity_cv',  label: 'Gravity CV',  direction: 'in',  signalType: 'modulation' },
   ],
   PixelProcessor: [
     { id: 'video_in',        label: 'Video In',     direction: 'in',  signalType: 'video' },
@@ -437,6 +477,7 @@ export const SIGNAL_COLORS: Record<SignalType, string> = {
   blue:       '#4444ff',
   midi:       '#39ff14', // Workstation Green
   trajectory: '#18f58c', // Mint Green
+  palette:    '#f58c18', // Utility Orange (matches workspace utility color scheme)
   generic:    '#888888', // Gray
   pitchHz:    '#dc143c', // Crimson
 };
@@ -508,6 +549,10 @@ const SHORT_LABELS: Record<string, string> = {
   spread_cv: 'Spread',
   amount_cv: 'Alpha',
   bypass_trig: 'Bypass',
+  palette_out: 'Pal',
+  palette_in: 'Pal',
+  shuffle_trig: 'Shuf',
+  cycle_cv: 'Cycl',
 };
 
 export function getShortLabel(portId: string, fullLabel: string): string {
@@ -515,6 +560,9 @@ export function getShortLabel(portId: string, fullLabel: string): string {
 }
 
 export const MODULE_DISPLAY_NAMES: Record<string, string> = {
+  Spawn: 'Spawner',
+  ParticleCloud: 'Particle Cloud',
+  ColorPalette: 'Palette',
   CanvasBackground: 'Backdrop',
   ColorRGB: 'RGB',
   Placer: 'Placer',

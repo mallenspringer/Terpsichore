@@ -36,8 +36,14 @@ struct NoiseUniforms {
     time: f32,
     noiseType: u32,
     autoAnimate: u32,
-    _pad: u32,
+    usePalette: u32,
     aspectRatio: f32,
+    paletteCount: u32,
+    interpolation: u32,
+    pad0: f32,
+    pad1: f32,
+    colors: array<vec4<f32>, 8>,
+    positions: array<vec4<f32>, 2>,
 };
 
 @group(0) @binding(0) var<uniform> ui: NoiseUniforms;
@@ -232,18 +238,101 @@ fn fs_main(@builtin(position) fragCoord: vec4<f32>, @location(0) uv: vec2<f32>) 
 export const ColorNoiseFragmentWGSL = `
 ${NoiseCommonWGSL}
 
+fn getStopPos(idx: u32) -> f32 {
+    if (idx == 0u) { return ui.positions[0].x; }
+    if (idx == 1u) { return ui.positions[0].y; }
+    if (idx == 2u) { return ui.positions[0].z; }
+    if (idx == 3u) { return ui.positions[0].w; }
+    if (idx == 4u) { return ui.positions[1].x; }
+    if (idx == 5u) { return ui.positions[1].y; }
+    if (idx == 6u) { return ui.positions[1].z; }
+    return ui.positions[1].w;
+}
+
+fn sampleCustomPalette(tIn: f32) -> vec4<f32> {
+    let count = ui.paletteCount;
+    if (count <= 1u) {
+        return ui.colors[0];
+    }
+    let t = clamp(tIn, 0.0, 1.0);
+    let interp = ui.interpolation;
+
+    // 1. Stepped mode: discrete color slices where width equals weight percentage
+    if (interp == 1u) {
+        let p0 = getStopPos(0u);
+        if (t < p0) {
+            return ui.colors[count - 1u];
+        }
+        for (var i = 0u; i < count; i = i + 1u) {
+            let pLow = getStopPos(i);
+            var pHigh = 1.0;
+            if (i + 1u < count) {
+                pHigh = getStopPos(i + 1u);
+            }
+            if (t >= pLow && (t < pHigh || i == count - 1u)) {
+                return ui.colors[i];
+            }
+        }
+        return ui.colors[count - 1u];
+    }
+
+    // 2. Linear & Smooth modes: proportional spacing analog with midpoints
+    let p0 = getStopPos(0u);
+    let p1 = getStopPos(1u);
+    let mFirst = (p0 + p1) * 0.5;
+    let mLastLow = getStopPos(count - 1u);
+    let mLast = (mLastLow + 1.0) * 0.5;
+
+    if (t <= mFirst) {
+        return ui.colors[0];
+    }
+    if (t >= mLast) {
+        return ui.colors[count - 1u];
+    }
+
+    for (var i = 0u; i < count - 1u; i = i + 1u) {
+        let pi0 = getStopPos(i);
+        let pi1 = getStopPos(i + 1u);
+        var pi2 = 1.0;
+        if (i + 2u < count) {
+            pi2 = getStopPos(i + 2u);
+        }
+        let m0 = (pi0 + pi1) * 0.5;
+        let m1 = (pi1 + pi2) * 0.5;
+
+        if (t >= m0 && t <= m1) {
+            let span = max(0.0001, m1 - m0);
+            var segT = clamp((t - m0) / span, 0.0, 1.0);
+            if (interp == 2u) {
+                segT = smoothstep(0.0, 1.0, segT);
+            }
+            return mix(ui.colors[i], ui.colors[i + 1u], segT);
+        }
+    }
+
+    return ui.colors[count - 1u];
+}
+
 @fragment
 fn fs_main(@builtin(position) fragCoord: vec4<f32>, @location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
     var p = (uv * 2.0 - 1.0);
     p.x *= ui.aspectRatio;
     let noiseP = p * ui.scale + ui.seed;
     
-    let r = get_noise_unified(noiseP, fragCoord.xy, 0.0);
-    let g = get_noise_unified(noiseP, fragCoord.xy, 123.456);
-    let b = get_noise_unified(noiseP, fragCoord.xy, 789.012);
+    // When no external palette is connected (usePalette == 0u), preserve procedural RGB noise default
+    if (ui.usePalette == 0u) {
+        let r = get_noise_unified(noiseP, fragCoord.xy, 0.0);
+        let g = get_noise_unified(noiseP, fragCoord.xy, 123.456);
+        let b = get_noise_unified(noiseP, fragCoord.xy, 789.012);
+        
+        var color = vec3<f32>(r, g, b);
+        color = (color - 0.5) * ui.contrast + 0.5 + ui.brightness;
+        return vec4<f32>(clamp(color, vec3<f32>(0.0), vec3<f32>(1.0)), 1.0);
+    }
     
-    var color = vec3<f32>(r, g, b);
-    color = (color - 0.5) * ui.contrast + 0.5 + ui.brightness;
-    return vec4<f32>(clamp(color, vec3<f32>(0.0), vec3<f32>(1.0)), 1.0);
+    // When palette signal is connected, map noise through custom palette
+    var n = get_noise_unified(noiseP, fragCoord.xy, 0.0);
+    n = (n - 0.5) * ui.contrast + 0.5 + ui.brightness;
+    return sampleCustomPalette(clamp(n, 0.0, 1.0));
 }
 `;

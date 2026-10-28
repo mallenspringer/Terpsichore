@@ -117,7 +117,29 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
     case 'InterLayerInput': return { id, type: 'InterLayerInput', portCount: 1 };
     case 'ColorRGB': return { id, type: 'ColorRGB', r: 0.5, g: 0.5, b: 0.5, rMode: 'add', gMode: 'add', bMode: 'add', rInputMode: 'channel', gInputMode: 'channel', bInputMode: 'channel' };
     case 'LumaSplitter': return { id, type: 'LumaSplitter', threshold1: 0.33, threshold2: 0.66, softness: 0.1 };
-    case 'Spawn': return { id, type: 'Spawn', x: 0, y: 0, scale: 0.5, rotation: 0, maxCount: 20, lifetime: 2.0, fadeOut: true, randomPos: 0.0, randomScale: 0.0, coordinateMode: 'normalized' } as any;
+    case 'Spawn': return {
+      id,
+      type: 'Spawn',
+      emissionMode: 'rate',
+      emitRate: 3,
+      disseminationMode: 'cone',
+      maxCount: 16,
+      lifetime: 3.0,
+      speed: 0.3,
+      angle: 90,
+      coneSpread: 45,
+      gravity: 0.0,
+      drag: 0.05,
+      spin: 0.0,
+      x: 0,
+      y: 0,
+      scale: 0.4,
+      scaleEnd: 0.1,
+      fadeOut: true,
+      randomPos: 0.05,
+      randomScale: 0.1,
+      coordinateMode: 'normalized'
+    } as any;
     case 'Path': return { id, type: 'Path', mode: 'physics', speed: 1.0, strength: 1.0, frequency: 1.0, drift: 0.0 };
     case 'Inverter': return { id, type: 'Inverter', videoMode: 'rgb', cvMode: 'unipolar', triggerMode: 'latch', mix: 1.0, active: true };
     case 'LogicGate': return { id, type: 'LogicGate', mode: 'and', thresholdA: 0.5, thresholdB: 0.5 };
@@ -232,6 +254,44 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
         radialRadius: 0.7,
         luma: 0,
         chroma: 0,
+      };
+
+    case 'ParticleCloud':
+      return {
+        id,
+        type: 'ParticleCloud',
+        particleCount: 20000,
+        speed: 0.8,
+        spread: 0.5,
+        turbulence: 1.0,
+        noiseFreq: 1.2,
+        lifetime: 3.0,
+        pointSize: 4.0,
+        colorPalette: 'starlight',
+        blendMode: 'additive',
+        emitterShape: 'point',
+        emitterRadius: 0.1,
+        emitterX: 0.0,
+        emitterY: 0.0,
+        gravityX: 0.0,
+        gravityY: 0.0,
+        audioReactivity: true,
+        audioSensitivity: 1.0,
+      };
+
+    case 'ColorPalette':
+      return {
+        id,
+        type: 'ColorPalette',
+        colors: [
+          {
+            id: 'c_1',
+            color: [0.0, 0.95, 1.0, 1.0], // Default single vibrant color stop (Cyan)
+            weight: 1.0,
+            active: true
+          }
+        ],
+        interpolation: 'smooth'
       };
 
     default:

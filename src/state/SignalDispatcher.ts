@@ -4,7 +4,7 @@ import {
   SignalMathEffect, SampleAndHoldEffect, StepSequencerEffect, OscilloscopeEffect,
   SpectralSplitterEffect, AlphaAdjustEffect, AudioTransformerEffect, AudioModulatorEffect,
   AudioGateEffect, SpeechEnvelopeTrackerEffect, VocalPitchTrackerEffect, VowelFormantTrackerEffect,
-  SpokenWordVisualizerEffect, AudioToCVEffect
+  SpokenWordVisualizerEffect, AudioToCVEffect, ColorPaletteEffect
 } from './types';
 import { AudioEngine } from './AudioEngine';
 import { MidiManager } from './MidiManager';
@@ -1117,6 +1117,83 @@ export class SignalDispatcher {
                 const targetVal = (i === state.currentStep) ? getProcessedStepVal(i) : 0;
                 state.lastStepValues[i] += (targetVal - state.lastStepValues[i]) * Math.min(1.0, slewFactor);
                 ctx.signalValues[`${nodeId}.step_${i}_out`] = state.lastStepValues[i];
+              }
+            });
+          } else if (effect.type === 'ColorPalette') {
+            pipeline.push((ctx: DispatchContext) => {
+              const ef = ctx.layer.effects.find(e => e.id === nodeId) as ColorPaletteEffect;
+              if (!ef || !ef.colors) return;
+
+              // 1. Shuffle trigger detection (rising edge on shuffle_trig or manual button click)
+              const trig = ctx.signalValues[`${nodeId}.shuffle_trig`] ?? 0;
+              const lastTrigKey = `${ctx.layer.id}.${nodeId}.shuffle_trig`;
+              const lastTrig = this.lastTriggerVals.get(lastTrigKey) ?? 0;
+              const isRisingTrig = trig > 0.5 && lastTrig <= 0.5;
+              this.lastTriggerVals.set(lastTrigKey, trig);
+
+              const lastManualKey = `${ctx.layer.id}.${nodeId}.shuffleTriggerTime`;
+              const lastManual = this.lastTriggerVals.get(lastManualKey) ?? 0;
+              const isManualShuffle = !!(ef.shuffleTriggerTime && ef.shuffleTriggerTime !== lastManual);
+
+              if ((isRisingTrig || isManualShuffle) && ef.colors.length > 1) {
+                if (isManualShuffle && ef.shuffleTriggerTime) {
+                  this.lastTriggerVals.set(lastManualKey, ef.shuffleTriggerTime);
+                }
+                // Fisher-Yates shuffle of the visual order
+                const shuffled = [...ef.colors];
+                for (let i = shuffled.length - 1; i > 0; i--) {
+                  const j = Math.floor(Math.random() * (i + 1));
+                  [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+                }
+                useEngineStore.getState().updateEffect(ctx.layer.id, nodeId, { colors: shuffled } as any);
+              }
+
+              // 2. Palette and Discrete Color Outputs
+              ctx.signalValues[`${nodeId}.palette_out`] = 1.0;
+
+              // Static port binding: col_1_out to col_8_out output luminance of color slot c_1..c_8 (accounting for CV modulation)
+              for (let i = 1; i <= 8; i++) {
+                const stop = ef.colors.find(c => c.id === `c_${i}`) ?? ef.colors[i - 1];
+                if (stop && stop.active) {
+                  let [r, g, b] = stop.color;
+                  const cvVal = ctx.signalValues[`${nodeId}.col_${i}_cv`] ?? 0;
+                  if (cvVal !== 0) {
+                    const max = Math.max(r, g, b);
+                    const min = Math.min(r, g, b);
+                    let h = 0;
+                    let s = 0;
+                    const l = (max + min) / 2;
+                    if (max !== min) {
+                      const d = max - min;
+                      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+                      switch (max) {
+                        case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break;
+                        case g: h = ((b - r) / d + 2) / 6; break;
+                        case b: h = ((r - g) / d + 4) / 6; break;
+                      }
+                    }
+                    const effectiveS = s < 0.1 ? 0.85 : s;
+                    const newH = ((h + cvVal * 0.5) % 1.0 + 1.0) % 1.0;
+                    const hue2rgb = (p: number, q: number, t: number) => {
+                      let tN = t;
+                      if (tN < 0) tN += 1;
+                      if (tN > 1) tN -= 1;
+                      if (tN < 1 / 6) return p + (q - p) * 6 * tN;
+                      if (tN < 1 / 2) return q;
+                      if (tN < 2 / 3) return p + (q - p) * (2 / 3 - tN) * 6;
+                      return p;
+                    };
+                    const q = l < 0.5 ? l * (1 + effectiveS) : l + effectiveS - l * effectiveS;
+                    const p = 2 * l - q;
+                    r = hue2rgb(p, q, newH + 1 / 3);
+                    g = hue2rgb(p, q, newH);
+                    b = hue2rgb(p, q, newH - 1 / 3);
+                  }
+                  const luma = 0.299 * r + 0.587 * g + 0.114 * b;
+                  ctx.signalValues[`${nodeId}.col_${i}_out`] = luma;
+                } else {
+                  ctx.signalValues[`${nodeId}.col_${i}_out`] = 0.0;
+                }
               }
             });
           }

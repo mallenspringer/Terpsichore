@@ -27,6 +27,7 @@ import { VideoMathWGSL } from './shaders/VideoMath';
 import { UVDisplaceWGSL } from './shaders/UVDisplace';
 import { CanvasBackgroundWGSL } from './shaders/CanvasBackground';
 import { AlphaAdjustWGSL } from './shaders/AlphaAdjust';
+import { ParticleComputeWGSL, ParticleRenderWGSL } from './shaders/ParticleCloud';
 
 import { PORT_DEFS } from '../components/NodeGraph/portDefs';
 import { SignalDispatcher } from '../state/SignalDispatcher';
@@ -34,7 +35,7 @@ import {
   ShapeGeneratorSource, Transform2DEffect, ColorAdjustEffect, LumaKeyEffect,
   SimpleFeedbackEffect, ColorRGBEffect, LumaSplitterEffect, VideoMixerEffect,
   KeyMixerEffect, VideoMathEffect, UVDisplaceEffect, CanvasBackgroundEffect,
-  AlphaAdjustEffect,
+  AlphaAdjustEffect, ParticleCloudEffect, ColorPaletteEffect,
   NoiseVideoSource, ColorNoiseSource, InverterEffect, PixelProcessorEffect,
   PatternEffect, KaleidoscopeEffect, SampleAndHoldEffect, OscilloscopeEffect, SpectralSplitterEffect,
   SpokenWordVisualizerEffect,
@@ -87,6 +88,12 @@ export class Renderer {
   private uvDisplacePipeline!: GPURenderPipeline;
   private canvasBackgroundPipeline!: GPURenderPipeline;
   private alphaAdjustPipeline!: GPURenderPipeline;
+  private particleComputePipeline!: GPUComputePipeline;
+  private particleRenderAdditivePipeline!: GPURenderPipeline;
+  private particleRenderAlphaPipeline!: GPURenderPipeline;
+  private particlePingPong: Map<string, number> = new Map();
+  private particleInitDone: Set<string> = new Set();
+  private particleLastTime: Map<string, number> = new Map();
 
   // Isolated layouts to prevent 'Minimum Binding Size' collisions
   private effectLayouts: Map<string, GPUBindGroupLayout> = new Map();
@@ -260,7 +267,7 @@ export class Renderer {
         entries: [
           { binding: 0, resource: { buffer: storageBuffer } },
           { binding: 1, resource: { buffer: globalUniforms } },
-          { binding: 2, resource: inputTex.createView() },
+          { binding: 2, resource: (inputTex ?? this.blankTexture).createView() },
           { binding: 3, resource: this.sampler }
         ]
       });
@@ -614,6 +621,54 @@ export class Renderer {
       primitive
     });
     this.effectLayouts.set('AlphaAdjust', this.alphaAdjustPipeline.getBindGroupLayout(0));
+
+    this.particleComputePipeline = this.device.createComputePipeline({
+      layout: 'auto',
+      compute: {
+        module: this.device.createShaderModule({ code: ParticleComputeWGSL }),
+        entryPoint: 'cs_main'
+      }
+    });
+
+    this.particleRenderAdditivePipeline = this.device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: this.device.createShaderModule({ code: ParticleRenderWGSL }),
+        entryPoint: 'vs_main'
+      },
+      fragment: {
+        module: this.device.createShaderModule({ code: ParticleRenderWGSL }),
+        entryPoint: 'fs_main',
+        targets: [{
+          format: this.format,
+          blend: {
+            color: { operation: 'add', srcFactor: 'src-alpha', dstFactor: 'one' },
+            alpha: { operation: 'add', srcFactor: 'one', dstFactor: 'one' }
+          }
+        }]
+      },
+      primitive
+    });
+
+    this.particleRenderAlphaPipeline = this.device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: this.device.createShaderModule({ code: ParticleRenderWGSL }),
+        entryPoint: 'vs_main'
+      },
+      fragment: {
+        module: this.device.createShaderModule({ code: ParticleRenderWGSL }),
+        entryPoint: 'fs_main',
+        targets: [{
+          format: this.format,
+          blend: {
+            color: { operation: 'add', srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha' },
+            alpha: { operation: 'add', srcFactor: 'one', dstFactor: 'one-minus-src-alpha' }
+          }
+        }]
+      },
+      primitive
+    });
   }
 
   private getStorageBuffer(key: string, size: number): GPUBuffer {
@@ -935,10 +990,13 @@ export class Renderer {
           if (!effect) return;
 
           // Category A: Generators (Sources or Visualizers that don't REQUIRE an input texture)
-          if (['ShapeGenerator', 'VideoFile', 'VideoURL', 'WebcamCapture', 'NoiseSource', 'ColorNoise', 'SpectralSplitter', 'Oscilloscope', 'SpokenWordVisualizer'].includes(effect.type)) {
+          if (['ShapeGenerator', 'VideoFile', 'VideoURL', 'WebcamCapture', 'NoiseSource', 'ColorNoise', 'SpectralSplitter', 'Oscilloscope', 'SpokenWordVisualizer', 'ParticleCloud'].includes(effect.type)) {
             const genTarget = this.ensureTexture(nodeId, 'video_out');
             if (effect.type === 'ShapeGenerator') {
               this.renderShapeSource(layer, nodeId, genTarget, timeSec, commandEncoder);
+              return;
+            } else if (effect.type === 'ParticleCloud') {
+              this.renderParticleCloud(layer, nodeId, effect as ParticleCloudEffect, genTarget, timeSec, commandEncoder);
               return;
             } else if (effect.type === 'SpokenWordVisualizer') {
               this.renderSpokenWordVisualizer(layer, nodeId, genTarget, timeSec, commandEncoder);
@@ -1784,10 +1842,16 @@ export class Renderer {
     f32[2] = src.strokeThreshold ?? 0.1;
     f32[3] = Math.max(0, Math.min(1, this.getEffectiveParam(layer, nodeId, 'morph', src.morph ?? 0, timeSec)));
 
-    const fillR = Math.max(0, Math.min(1, this.getEffectiveParam(layer, nodeId, 'fill_r', src.fillColor[0], timeSec)));
-    const fillG = Math.max(0, Math.min(1, this.getEffectiveParam(layer, nodeId, 'fill_g', src.fillColor[1], timeSec)));
-    const fillB = Math.max(0, Math.min(1, this.getEffectiveParam(layer, nodeId, 'fill_b', src.fillColor[2], timeSec)));
-    const fillA = Math.max(0, Math.min(1, this.getEffectiveParam(layer, nodeId, 'fill_a', src.fillColor[3], timeSec)));
+    let baseColor = src.fillColor ?? [1, 1, 1, 1];
+    const pal = this.getConnectedPalette(layer, nodeId, 'palette_in');
+    if (pal && pal.colors.length > 0) {
+      baseColor = [pal.colors[0][0], pal.colors[0][1], pal.colors[0][2], pal.colors[0][3] ?? 1.0];
+    }
+
+    const fillR = Math.max(0, Math.min(1, this.getEffectiveParam(layer, nodeId, 'fill_r', baseColor[0], timeSec)));
+    const fillG = Math.max(0, Math.min(1, this.getEffectiveParam(layer, nodeId, 'fill_g', baseColor[1], timeSec)));
+    const fillB = Math.max(0, Math.min(1, this.getEffectiveParam(layer, nodeId, 'fill_b', baseColor[2], timeSec)));
+    const fillA = Math.max(0, Math.min(1, this.getEffectiveParam(layer, nodeId, 'fill_a', baseColor[3], timeSec)));
     f32.set([fillR, fillG, fillB, fillA], 4); // index 4..7
 
     f32[8] = this.getEffectiveParam(layer, nodeId, 'edgeSoftness', src.edgeSoftness, timeSec);
@@ -1886,14 +1950,148 @@ export class Renderer {
     pass.end();
   }
 
+  private rgbToHsl(r: number, g: number, b: number): [number, number, number] {
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    let h = 0;
+    let s = 0;
+    const l = (max + min) / 2;
+
+    if (max !== min) {
+      const d = max - min;
+      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+      switch (max) {
+        case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break;
+        case g: h = ((b - r) / d + 2) / 6; break;
+        case b: h = ((r - g) / d + 4) / 6; break;
+      }
+    }
+    return [h, s, l];
+  }
+
+  private hslToRgb(h: number, s: number, l: number): [number, number, number] {
+    if (s === 0) return [l, l, l];
+    const hue2rgb = (p: number, q: number, t: number) => {
+      let tNorm = t;
+      if (tNorm < 0) tNorm += 1;
+      if (tNorm > 1) tNorm -= 1;
+      if (tNorm < 1 / 6) return p + (q - p) * 6 * tNorm;
+      if (tNorm < 1 / 2) return q;
+      if (tNorm < 2 / 3) return p + (q - p) * (2 / 3 - tNorm) * 6;
+      return p;
+    };
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    return [hue2rgb(p, q, h + 1 / 3), hue2rgb(p, q, h), hue2rgb(p, q, h - 1 / 3)];
+  }
+
+  private getConnectedPalette(layer: LayerState, nodeId: string, portName: string = 'palette_in'): {
+    colors: number[][];
+    positions: number[];
+    count: number;
+    interpolation: number;
+  } | null {
+    const edge = layer.graph?.edges.find(e => e.toNodeId === nodeId && e.toPort === portName);
+    if (!edge) return null;
+    const paletteEffect = layer.effects.find(e => e.id === edge.fromNodeId) as ColorPaletteEffect | undefined;
+    if (!paletteEffect || paletteEffect.type !== 'ColorPalette' || !paletteEffect.colors || paletteEffect.colors.length === 0) {
+      return null;
+    }
+    const sigs = SignalDispatcher.getInstance().getLatestSignals(layer.id);
+
+    // 1. If connection comes from a discrete color channel port (e.g. col_1_out .. col_8_out), return only that single color
+    if (edge.fromPort && edge.fromPort.startsWith('col_')) {
+      const slotNum = edge.fromPort.replace('col_', '').replace('_out', '');
+      const singleStop = paletteEffect.colors.find(c => c.id === `c_${slotNum}`) ?? paletteEffect.colors[parseInt(slotNum, 10) - 1];
+      if (singleStop && singleStop.active) {
+        const col = [...singleStop.color];
+        const cvVal = sigs[`${paletteEffect.id}.col_${slotNum}_cv`] ?? 0;
+        if (cvVal !== 0) {
+          const [h, s, l] = this.rgbToHsl(col[0], col[1], col[2]);
+          const effectiveS = s < 0.1 ? 0.85 : s;
+          const newH = ((h + cvVal * 0.5) % 1.0 + 1.0) % 1.0;
+          const [modR, modG, modB] = this.hslToRgb(newH, effectiveS, l);
+          col[0] = modR;
+          col[1] = modG;
+          col[2] = modB;
+        }
+        const colors = [col, [0, 0, 0, 1], [0, 0, 0, 1], [0, 0, 0, 1], [0, 0, 0, 1], [0, 0, 0, 1], [0, 0, 0, 1], [0, 0, 0, 1]];
+        const positions = new Array(8).fill(0);
+        return {
+          colors,
+          positions,
+          count: 1, // Only this single color channel
+          interpolation: 0
+        };
+      }
+      return null;
+    }
+
+    // 2. Otherwise it's palette_out: return the full composite multi-stop gradient ramp
+    const activeStops = paletteEffect.colors.filter(c => c.active);
+    if (activeStops.length === 0) return null;
+
+    const count = Math.min(8, activeStops.length);
+    const colors: number[][] = [];
+
+    const cycleVal = sigs[`${paletteEffect.id}.cycle_cv`] ?? 0;
+    const spreadVal = sigs[`${paletteEffect.id}.spread_cv`] ?? 0;
+
+    for (let i = 0; i < 8; i++) {
+      if (i < count) {
+        const stop = activeStops[i];
+        const col = [...stop.color];
+        const slotNum = stop.id.replace('c_', '');
+        const cvVal = sigs[`${paletteEffect.id}.col_${slotNum}_cv`] ?? 0;
+        if (cvVal !== 0) {
+          const [h, s, l] = this.rgbToHsl(col[0], col[1], col[2]);
+          const effectiveS = s < 0.1 ? 0.85 : s; // ensure hue sweep visibility on achromatic colors
+          // cvVal swings hue across the spectrum while preserving luminance and saturation
+          const newH = ((h + cvVal * 0.5) % 1.0 + 1.0) % 1.0;
+          const [modR, modG, modB] = this.hslToRgb(newH, effectiveS, l);
+          col[0] = modR;
+          col[1] = modG;
+          col[2] = modB;
+        }
+        colors.push(col);
+      } else {
+        colors.push([0, 0, 0, 1]);
+      }
+    }
+
+    const positions = calculatePalettePositions(activeStops, spreadVal);
+
+    // Apply cycle rotation to positions
+    if (cycleVal !== 0) {
+      for (let i = 0; i < count; i++) {
+        positions[i] = ((positions[i] + cycleVal) % 1.0 + 1.0) % 1.0;
+      }
+      const paired = [];
+      for (let i = 0; i < count; i++) {
+        paired.push({ color: colors[i], pos: positions[i] });
+      }
+      paired.sort((a, b) => a.pos - b.pos);
+      for (let i = 0; i < count; i++) {
+        colors[i] = paired[i].color;
+        positions[i] = paired[i].pos;
+      }
+    }
+
+    const interpMap: Record<string, number> = { linear: 0, stepped: 1, smooth: 2 };
+    const interpolation = interpMap[paletteEffect.interpolation ?? 'linear'] ?? 0;
+
+    return { colors, positions, count, interpolation };
+  }
+
   private renderColorNoise(layer: LayerState, nodeId: string, target: GPUTexture, timeSec: number, commandEncoder: GPUCommandEncoder) {
     const source = (nodeId === 'source') ? layer.source as ColorNoiseSource : layer.effects.find(e => e.id === nodeId) as any as ColorNoiseSource;
     const pipeline = this.colorNoisePipeline;
-    const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 64);
+    const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 256);
 
     const noiseTypeMap: Record<string, number> = { white: 0, perlin: 1, simplex: 2, ridged: 3, billow: 4, worley: 5, voronoi: 6, warped: 7 };
 
-    const f32 = new Float32Array(16);
+    const pal = this.getConnectedPalette(layer, nodeId, 'palette_in');
+    const f32 = new Float32Array(64);
     f32[0] = this.getEffectiveParam(layer, nodeId, 'scale_cv', source.scale, timeSec);
     f32[1] = this.getEffectiveParam(layer, nodeId, 'evolution_cv', source.evolution, timeSec);
     f32[2] = this.getEffectiveParam(layer, nodeId, 'octaves_cv', source.octaves, timeSec);
@@ -1906,8 +2104,24 @@ export class Renderer {
     const u32 = new Uint32Array(f32.buffer);
     u32[8] = noiseTypeMap[source.noiseType] || 0;
     u32[9] = source.autoAnimate ? 1 : 0;
-    u32[10] = 0; // Padding
+    u32[10] = pal ? 1 : 0; // usePalette: 0 = default procedural RGB noise, 1 = custom palette
     f32[11] = this.canvas.width / this.canvas.height;
+    u32[12] = pal ? pal.count : 0;
+    u32[13] = pal ? pal.interpolation : 0;
+    f32[14] = 0;
+    f32[15] = 0;
+
+    if (pal) {
+      for (let i = 0; i < 8; i++) {
+        f32[16 + i * 4 + 0] = pal.colors[i][0];
+        f32[16 + i * 4 + 1] = pal.colors[i][1];
+        f32[16 + i * 4 + 2] = pal.colors[i][2];
+        f32[16 + i * 4 + 3] = pal.colors[i][3];
+      }
+      for (let i = 0; i < 8; i++) {
+        f32[48 + i] = pal.positions[i];
+      }
+    }
 
     this.device.queue.writeBuffer(uniformBuffer, 0, f32);
 
@@ -1944,8 +2158,8 @@ export class Renderer {
     _timeSec: number,
     commandEncoder: GPUCommandEncoder
   ) {
-    const uniformBuffer = this.getUniformBuffer(`${layer.id}.${nodeId}.bg_uniforms`, 96);
-    const buf = new ArrayBuffer(96);
+    const uniformBuffer = this.getUniformBuffer(`${layer.id}.${nodeId}.bg_uniforms`, 288);
+    const buf = new ArrayBuffer(288);
     const f32 = new Float32Array(buf);
     const u32 = new Uint32Array(buf);
 
@@ -1979,8 +2193,26 @@ export class Renderer {
     f32[20] = totalChroma;
 
     f32[21] = this.canvas.width / this.canvas.height;
-    f32[22] = 0;
-    f32[23] = 0;
+
+    const pal = this.getConnectedPalette(layer, nodeId, 'palette_in');
+    u32[22] = pal ? 1 : 0; // useCustomPalette
+    u32[23] = pal ? pal.count : 0;
+    u32[24] = pal ? pal.interpolation : 0;
+    f32[25] = 0;
+    f32[26] = 0;
+    f32[27] = 0;
+
+    if (pal) {
+      for (let i = 0; i < 8; i++) {
+        f32[28 + i * 4 + 0] = pal.colors[i][0];
+        f32[28 + i * 4 + 1] = pal.colors[i][1];
+        f32[28 + i * 4 + 2] = pal.colors[i][2];
+        f32[28 + i * 4 + 3] = pal.colors[i][3];
+      }
+      for (let i = 0; i < 8; i++) {
+        f32[60 + i] = pal.positions[i];
+      }
+    }
 
     this.device.queue.writeBuffer(uniformBuffer, 0, buf);
 
@@ -2054,5 +2286,228 @@ export class Renderer {
   private getFeedbackTexture(layerId: string): GPUTexture {
     return this.getPrevFrameFBO(layerId);
   }
+
+  private renderParticleCloud(
+    layer: LayerState,
+    nodeId: string,
+    ef: ParticleCloudEffect,
+    target: GPUTexture,
+    timeSec: number,
+    commandEncoder: GPUCommandEncoder
+  ) {
+    const count = Math.max(100, Math.min(100000, Math.floor(ef.particleCount || 20000)));
+    const bufferSize = count * 32; // 32 bytes per Particle struct (8 floats)
+    const bufKeyA = `${layer.id}.${nodeId}.particles_a`;
+    const bufKeyB = `${layer.id}.${nodeId}.particles_b`;
+
+    const bufferA = this.getStorageBuffer(bufKeyA, bufferSize);
+    const bufferB = this.getStorageBuffer(bufKeyB, bufferSize);
+
+    // Initialize particles on first run or if count changed
+    const initKey = `${layer.id}.${nodeId}.${count}`;
+    if (!this.particleInitDone.has(initKey)) {
+      const initialData = new Float32Array(count * 8);
+      const rad = ef.emitterRadius || 0.1;
+      for (let i = 0; i < count; i++) {
+        const base = i * 8;
+        const angle = Math.random() * Math.PI * 2;
+        const r = Math.sqrt(Math.random()) * rad;
+        initialData[base + 0] = (ef.emitterX || 0) + Math.cos(angle) * r;
+        initialData[base + 1] = (ef.emitterY || 0) + Math.sin(angle) * r;
+        const speed = (0.2 + Math.random() * 0.5) * (ef.speed || 0.8);
+        initialData[base + 2] = Math.cos(angle) * speed;
+        initialData[base + 3] = Math.sin(angle) * speed;
+        const maxL = Math.max(0.5, (ef.lifetime || 3.0) * (0.6 + 0.8 * Math.random()));
+        initialData[base + 4] = maxL * Math.random();
+        initialData[base + 5] = maxL;
+        initialData[base + 6] = 0.5 + Math.random() * 0.8;
+        initialData[base + 7] = Math.random();
+      }
+      this.device.queue.writeBuffer(bufferA, 0, initialData);
+      this.device.queue.writeBuffer(bufferB, 0, initialData);
+      this.particleInitDone.add(initKey);
+      this.particlePingPong.set(nodeId, 0);
+    }
+
+    // Ping-pong buffer selection
+    const curPing = this.particlePingPong.get(nodeId) ?? 0;
+    const inBuf = curPing === 0 ? bufferA : bufferB;
+    const outBuf = curPing === 0 ? bufferB : bufferA;
+    this.particlePingPong.set(nodeId, 1 - curPing);
+
+    // Timing
+    const prevTime = this.particleLastTime.get(nodeId) ?? timeSec;
+    const dt = Math.min(0.066, Math.max(0.001, timeSec - prevTime));
+    this.particleLastTime.set(nodeId, timeSec);
+
+    // Signals & Triggers
+    const latestSignals = SignalDispatcher.getInstance().getLatestSignals(layer.id);
+    const trigVal = latestSignals[`${nodeId}.trigger_in`] ?? 0;
+    const lastTrig = this.lastTriggerVals.get(`${nodeId}.trigger_in`) ?? 0;
+    const curManualBurst = ef.burstTriggerTime ?? 0;
+    const lastManualBurst = this.lastTriggerVals.get(`${nodeId}.manualBurst`) ?? 0;
+    const isBurstRising = (trigVal > 0.5 && lastTrig <= 0.5) || (curManualBurst > lastManualBurst);
+    this.lastTriggerVals.set(`${nodeId}.trigger_in`, trigVal);
+    this.lastTriggerVals.set(`${nodeId}.manualBurst`, curManualBurst);
+
+    const resetVal = latestSignals[`${nodeId}.reset_in`] ?? 0;
+    const curManualReset = ef.resetTriggerTime ?? 0;
+    const lastManualReset = this.lastTriggerVals.get(`${nodeId}.manualReset`) ?? 0;
+    const isResetRising = (resetVal > 0.5) || (curManualReset > lastManualReset);
+    this.lastTriggerVals.set(`${nodeId}.manualReset`, curManualReset);
+
+    if (isResetRising) {
+      this.particleInitDone.delete(initKey);
+    }
+
+    // Audio reactivity
+    let audioBass = 0.0;
+    if (ef.audioReactivity !== false) {
+      const edge = layer.graph?.edges.find(e => e.toNodeId === nodeId && e.toPort === 'audio_in');
+      let busId = 'master';
+      if (edge) {
+        const sourceEffect = layer.effects.find(e => e.id === edge.fromNodeId);
+        if (sourceEffect?.type === 'AudioSource') busId = (sourceEffect as any).busId || 'master';
+        else if (edge.fromNodeId === 'source' || sourceEffect?.type === 'VideoFile' || sourceEffect?.type === 'AudioFile' || sourceEffect?.type === 'AudioInput' || sourceEffect?.type === 'SystemAudio') {
+          busId = edge.fromNodeId === 'source' ? layer.id : edge.fromNodeId;
+        }
+      }
+      const busData = AudioEngine.getInstance().getBusData(busId);
+      if (busData) {
+        audioBass = (busData.bands?.bass || busData.peak || 0) * (ef.audioSensitivity ?? 1.0);
+      }
+    }
+
+    // Effective modulated params
+    const modSpeed = this.getEffectiveParam(layer, nodeId, 'speed_cv', ef.speed ?? 0.8, timeSec);
+    const modTurb = this.getEffectiveParam(layer, nodeId, 'turbulence_cv', ef.turbulence ?? 1.0, timeSec);
+    const modPointSize = this.getEffectiveParam(layer, nodeId, 'size_cv', ef.pointSize ?? 4.0, timeSec);
+    const modGrav = this.getEffectiveParam(layer, nodeId, 'gravity_cv', ef.gravityY ?? 0.0, timeSec);
+    const colorMod = this.getEffectiveParam(layer, nodeId, 'color_cv', 0, timeSec);
+
+    const emitterShapeMap: Record<string, number> = { point: 0, ring: 1, disc: 2, line: 3 };
+    const paletteMap: Record<string, number> = { neon: 0, fire: 1, aurora: 2, electric: 3, starlight: 4, spectrum: 5 };
+
+    const aspect = target.width / target.height;
+
+    // 1. Write Compute Uniforms
+    const computeUniformBuffer = this.getUniformBuffer(`${nodeId}.compute_uniforms`, 64);
+    this.device.queue.writeBuffer(computeUniformBuffer, 0, new Float32Array([
+      dt,
+      timeSec,
+      modSpeed,
+      ef.spread ?? 0.5,
+      modTurb,
+      ef.noiseFreq ?? 1.2,
+      count,
+      emitterShapeMap[ef.emitterShape ?? 'point'] ?? 0,
+      ef.emitterRadius ?? 0.1,
+      ef.emitterX ?? 0.0,
+      ef.emitterY ?? 0.0,
+      ef.gravityX ?? 0.0,
+      modGrav,
+      isBurstRising ? 1.0 : 0.0,
+      audioBass,
+      aspect
+    ]));
+
+    // 2. Compute Pass
+    const computeBindGroup = this.device.createBindGroup({
+      layout: this.particleComputePipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: computeUniformBuffer } },
+        { binding: 1, resource: { buffer: inBuf } },
+        { binding: 2, resource: { buffer: outBuf } }
+      ]
+    });
+
+    const computePass = commandEncoder.beginComputePass();
+    computePass.setPipeline(this.particleComputePipeline);
+    computePass.setBindGroup(0, computeBindGroup);
+    computePass.dispatchWorkgroups(Math.ceil(count / 64));
+    computePass.end();
+
+    // 3. Render Pass
+    const renderUniformBuffer = this.getUniformBuffer(`${nodeId}.render_uniforms`, 256);
+    const basePaletteIdx = paletteMap[ef.colorPalette ?? 'neon'] ?? 0;
+    const finalPaletteIdx = (basePaletteIdx + colorMod * 6.0 + 60.0) % 6.0;
+
+    const pal = this.getConnectedPalette(layer, nodeId, 'palette_in');
+    const renderF32 = new Float32Array(64);
+    renderF32[0] = aspect;
+    renderF32[1] = finalPaletteIdx;
+    renderF32[2] = modPointSize;
+    renderF32[3] = 1.0;
+    renderF32[4] = pal ? 1.0 : 0.0; // useCustomPalette
+    renderF32[5] = pal ? pal.count : 0.0;
+    renderF32[6] = pal ? pal.interpolation : 0.0;
+    renderF32[7] = 0.0;
+
+    if (pal) {
+      for (let i = 0; i < 8; i++) {
+        renderF32[8 + i * 4 + 0] = pal.colors[i][0];
+        renderF32[8 + i * 4 + 1] = pal.colors[i][1];
+        renderF32[8 + i * 4 + 2] = pal.colors[i][2];
+        renderF32[8 + i * 4 + 3] = pal.colors[i][3];
+      }
+      for (let i = 0; i < 8; i++) {
+        renderF32[40 + i] = pal.positions[i];
+      }
+    }
+
+    this.device.queue.writeBuffer(renderUniformBuffer, 0, renderF32);
+
+    const renderPipeline = ef.blendMode === 'alpha' ? this.particleRenderAlphaPipeline : this.particleRenderAdditivePipeline;
+
+    const renderBindGroup = this.device.createBindGroup({
+      layout: renderPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: renderUniformBuffer } },
+        { binding: 1, resource: { buffer: outBuf } }
+      ]
+    });
+
+    const pass = commandEncoder.beginRenderPass({
+      colorAttachments: [{
+        view: target.createView(),
+        clearValue: { r: 0, g: 0, b: 0, a: 0 },
+        loadOp: 'clear',
+        storeOp: 'store'
+      }]
+    });
+
+    pass.setPipeline(renderPipeline);
+    pass.setBindGroup(0, renderBindGroup);
+    pass.draw(6, count);
+    pass.end();
+  }
+}
+
+export function calculatePalettePositions(
+  activeStops: { weight?: number; active?: boolean }[],
+  spreadVal: number = 0
+): number[] {
+  const count = Math.min(8, activeStops.length);
+  const positions: number[] = new Array(8).fill(0);
+  if (count <= 1) {
+    positions[0] = 0.0;
+    return positions;
+  }
+  let totalWeightSpan = 0;
+  for (let i = 0; i < count; i++) {
+    totalWeightSpan += Math.max(0.01, activeStops[i].weight || 1.0);
+  }
+  positions[0] = 0.0;
+  let accumulated = 0;
+  const spreadMultiplier = Math.pow(2.0, spreadVal * 2.0);
+  for (let i = 0; i < count - 1; i++) {
+    accumulated += Math.max(0.01, activeStops[i].weight || 1.0);
+    let pos = accumulated / totalWeightSpan;
+    if (spreadVal !== 0) {
+      pos = Math.pow(pos, spreadMultiplier);
+    }
+    positions[i + 1] = pos;
+  }
+  return positions;
 }
 

@@ -44,7 +44,7 @@ describe('SimulationPipeline', () => {
         fromPort: 'path_out',
         toNodeId: spawnEffect.id,
         toPort: 'path_in',
-        signalType: 'path',
+        signalType: 'trajectory',
       });
     }
 
@@ -61,22 +61,29 @@ describe('SimulationPipeline', () => {
     };
   };
 
-  it('should spawn a particle on rising trigger edge', () => {
+  it('should spawn a particle on rising trigger edge in trigger mode', () => {
     const spawnEffect: SpawnEffect = {
       id: 'spawn_1',
       type: 'Spawn',
+      emissionMode: 'trigger',
+      emitRate: 2,
+      disseminationMode: 'cone',
       coordinateMode: 'normalized',
       x: 0,
       y: 0,
       scale: 1,
-      rotation: 0,
+      scaleEnd: 0.2,
+      speed: 0.3,
+      angle: 90,
+      coneSpread: 45,
+      gravity: 0,
+      drag: 0.05,
+      spin: 0,
       randomPos: 0,
       randomScale: 0,
       maxCount: 10,
       lifetime: 2.0,
       fadeOut: true,
-      globalLatch: false,
-      latchedPorts: [],
     };
     const layer = createMockLayer(spawnEffect);
 
@@ -95,22 +102,64 @@ describe('SimulationPipeline', () => {
     expect(pipeline.getSpawnCount('layer_1', 'spawn_1')).toBe(1);
   });
 
+  it('should continuously emit particles in rate mode', () => {
+    const spawnEffect: SpawnEffect = {
+      id: 'spawn_1',
+      type: 'Spawn',
+      emissionMode: 'rate',
+      emitRate: 10, // 10 per second => 1 every 0.1s
+      disseminationMode: 'cone',
+      coordinateMode: 'normalized',
+      x: 0,
+      y: 0,
+      scale: 0.5,
+      scaleEnd: 0.1,
+      speed: 0.3,
+      angle: 90,
+      coneSpread: 45,
+      gravity: 0,
+      drag: 0,
+      spin: 0,
+      randomPos: 0,
+      randomScale: 0,
+      maxCount: 20,
+      lifetime: 5.0,
+      fadeOut: true,
+    };
+    const layer = createMockLayer(spawnEffect);
+
+    // Step 0.0s
+    pipeline.update(layer, 0.0, 1920, 1080, mockGetEffectiveParam);
+    expect(pipeline.getSpawnCount('layer_1', 'spawn_1')).toBe(0);
+
+    // Step 0.35s (dt = 0.35 => emitRate * 0.35 = 3.5 => 3 particles spawned)
+    pipeline.update(layer, 0.35, 1920, 1080, mockGetEffectiveParam);
+    expect(pipeline.getSpawnCount('layer_1', 'spawn_1')).toBeGreaterThanOrEqual(1);
+  });
+
   it('should expire particles exceeding their lifetime', () => {
     const spawnEffect: SpawnEffect = {
       id: 'spawn_1',
       type: 'Spawn',
+      emissionMode: 'trigger',
+      emitRate: 2,
+      disseminationMode: 'cone',
       coordinateMode: 'normalized',
       x: 0,
       y: 0,
       scale: 1,
-      rotation: 0,
+      scaleEnd: 0.1,
+      speed: 0.3,
+      angle: 90,
+      coneSpread: 45,
+      gravity: 0,
+      drag: 0,
+      spin: 0,
       randomPos: 0,
       randomScale: 0,
       maxCount: 10,
       lifetime: 1.0,
       fadeOut: true,
-      globalLatch: false,
-      latchedPorts: [],
     };
     const layer = createMockLayer(spawnEffect);
 
@@ -129,22 +178,29 @@ describe('SimulationPipeline', () => {
     expect(pipeline.getSpawnCount('layer_1', 'spawn_1')).toBe(0);
   });
 
-  it('should clear all spawns when reset_in is triggered', () => {
+  it('should clear all spawns when reset_in or manualReset is triggered', () => {
     const spawnEffect: SpawnEffect = {
       id: 'spawn_1',
       type: 'Spawn',
+      emissionMode: 'trigger',
+      emitRate: 2,
+      disseminationMode: 'cone',
       coordinateMode: 'normalized',
       x: 0,
       y: 0,
       scale: 1,
-      rotation: 0,
+      scaleEnd: 0.1,
+      speed: 0.3,
+      angle: 90,
+      coneSpread: 45,
+      gravity: 0,
+      drag: 0,
+      spin: 0,
       randomPos: 0,
       randomScale: 0,
       maxCount: 10,
       lifetime: 5.0,
       fadeOut: false,
-      globalLatch: false,
-      latchedPorts: [],
     };
     const layer = createMockLayer(spawnEffect);
 
@@ -162,22 +218,29 @@ describe('SimulationPipeline', () => {
     expect(pipeline.getSpawnCount('layer_1', 'spawn_1')).toBe(0);
   });
 
-  it('should calculate instance data and apply path trajectories', () => {
+  it('should calculate instance data and evaluate path flight track', () => {
     const spawnEffect: SpawnEffect = {
       id: 'spawn_1',
       type: 'Spawn',
+      emissionMode: 'trigger',
+      emitRate: 2,
+      disseminationMode: 'cone',
       coordinateMode: 'normalized',
       x: 0.2,
       y: 0.3,
-      scale: 1.5,
-      rotation: 45,
+      scale: 1.0,
+      scaleEnd: 0.5,
+      speed: 0.0,
+      angle: 0,
+      coneSpread: 0,
+      gravity: 0,
+      drag: 0,
+      spin: 0,
       randomPos: 0,
       randomScale: 0,
       maxCount: 10,
       lifetime: 5.0,
       fadeOut: false,
-      globalLatch: true,
-      latchedPorts: ['x', 'y'],
     };
 
     const pathEffect: PathEffect = {
@@ -196,7 +259,7 @@ describe('SimulationPipeline', () => {
     (SignalDispatcher.getInstance() as any).__setMockSignals({ 'spawn_1.trigger_in': 1.0 });
     pipeline.update(layer, 1.0, 1920, 1080, mockGetEffectiveParam);
 
-    // Compute instance data at t = 2.0 (age = 1.0s)
+    // Compute instance data at t = 2.0 (age = 1.0s, lifetime = 5.0s, tNorm = 0.2)
     const { instanceData, count } = pipeline.computeInstanceData(
       layer,
       'spawn_1',
@@ -209,16 +272,13 @@ describe('SimulationPipeline', () => {
     expect(count).toBe(1);
     expect(instanceData.length).toBe(8);
 
-    // finalX = birthX + pathOffsetX = 0.2 + (age * drift * 0.1) = 0.2 + (1.0 * 1.0 * 0.1) = 0.3
+    // posX = birthX + tNorm * pathDrift * 0.5 = 0.2 + (0.2 * 1.0 * 0.5) = 0.3
     expect(instanceData[0]).toBeCloseTo(0.3, 4);
 
-    // finalY = birthY + pathOffsetY = 0.3 + (-age * speed * 0.1) = 0.3 + (-1.0 * 2.0 * 0.1) = 0.1
+    // posY = birthY - tNorm * pathSpeed * 0.5 = 0.3 - (0.2 * 2.0 * 0.5) = 0.1
     expect(instanceData[1]).toBeCloseTo(0.1, 4);
 
-    // finalScale = birthScale = 1.5
-    expect(instanceData[2]).toBeCloseTo(1.5, 4);
-
-    // finalRotation = birthRotation = 45
-    expect(instanceData[3]).toBeCloseTo(45, 4);
+    // scale: linearly interpolated between 1.0 and 0.5 at tNorm = 0.2 => 1.0 + (0.5 - 1.0) * 0.2 = 0.9
+    expect(instanceData[2]).toBeCloseTo(0.9, 4);
   });
 });

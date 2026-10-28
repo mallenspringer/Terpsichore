@@ -305,16 +305,27 @@ export interface LumaSplitterEffect {
 export interface SpawnEffect {
   id: string;
   type: 'Spawn';
-  x: number;
-  y: number;
-  scale: number;
-  rotation: number;
-  maxCount: number;
-  lifetime: number; // seconds
-  fadeOut: boolean;
-  randomPos: number;
-  randomScale: number;
+  emissionMode: 'trigger' | 'rate' | 'array';
+  emitRate: number; // clones per second (default 2)
+  disseminationMode: 'cone' | 'burst' | 'array';
+  maxCount: number; // 1 to 64, default 16
+  lifetime: number; // seconds, default 3.0
+  speed: number; // initial velocity 0 to 2, default 0.3
+  angle: number; // launch angle in degrees, 0 to 360, default 90 (upwards)
+  coneSpread: number; // cone angle in degrees, 0 to 180, default 45
+  gravity: number; // downward acceleration -2 to 2, default 0.0
+  drag: number; // air resistance 0 to 1, default 0.05
+  spin: number; // angular rotation speed -5 to 5, default 0
+  x: number; // spawn center x, -1 to 1, default 0
+  y: number; // spawn center y, -1 to 1, default 0
+  scale: number; // initial scale 0.05 to 2, default 0.5
+  scaleEnd: number; // end scale 0.0 to 2, default 0.1
+  fadeOut: boolean; // default true
+  randomPos: number; // random offset spread
+  randomScale: number; // random scale variance
   coordinateMode: 'normalized' | 'pixel';
+  manualTriggerTime?: number;
+  manualResetTime?: number;
   latchedPorts?: string[];
   globalLatch?: boolean;
 }
@@ -501,7 +512,7 @@ export interface SpokenWordVisualizerEffect {
   colorPalette: string;
 }
 
-export type SignalType = 'video' | 'audio' | 'modulation' | 'trigger' | 'midi' | 'generic' | 'trajectory';
+export type SignalType = 'video' | 'audio' | 'modulation' | 'trigger' | 'midi' | 'generic' | 'trajectory' | 'palette';
 
 export interface InterLayerEdge {
   id: string;
@@ -632,6 +643,45 @@ export interface CanvasBackgroundEffect {
   chroma: number; // -1..1, default 0
 }
 
+export interface ParticleCloudEffect {
+  id: string;
+  type: 'ParticleCloud';
+  particleCount: number;      // 1000 to 100000 (default: 20000)
+  speed: number;              // 0.1 to 3.0 (default: 0.8)
+  spread: number;             // 0.1 to 2.0 (default: 0.5)
+  turbulence: number;         // 0.0 to 3.0 (default: 1.0, curl noise scale)
+  noiseFreq: number;          // 0.1 to 5.0 (default: 1.2)
+  lifetime: number;           // 0.5 to 10.0 (default: 3.0)
+  pointSize: number;          // 1.0 to 20.0 (default: 4.0)
+  colorPalette: 'neon' | 'fire' | 'aurora' | 'electric' | 'starlight' | 'spectrum';
+  blendMode: 'additive' | 'alpha';
+  emitterShape: 'point' | 'ring' | 'disc' | 'line';
+  emitterRadius: number;      // 0.01 to 1.0 (default: 0.1)
+  emitterX: number;           // -1.0 to 1.0 (default: 0.0)
+  emitterY: number;           // -1.0 to 1.0 (default: 0.0)
+  gravityX: number;           // -2.0 to 2.0 (default: 0.0)
+  gravityY: number;           // -2.0 to 2.0 (default: 0.0)
+  burstTriggerTime?: number;
+  resetTriggerTime?: number;
+  audioReactivity: boolean;   // default: true
+  audioSensitivity: number;   // 0.1 to 3.0 (default: 1.0)
+}
+
+export interface ColorStop {
+  id: string;
+  color: [number, number, number, number]; // [r, g, b, a] in 0..1
+  weight: number;                          // 0.1 to 10.0 (default: 1.0)
+  active: boolean;                         // default true
+}
+
+export interface ColorPaletteEffect {
+  id: string;
+  type: 'ColorPalette';
+  colors: ColorStop[];                     // 1 to 8 color stops
+  interpolation: 'linear' | 'stepped' | 'smooth';
+  shuffleTriggerTime?: number;
+}
+
 export type AnyEffect = 
   | Transform2DEffect | ColorAdjustEffect | LumaKeyEffect | SimpleFeedbackEffect
   | InterLayerOutputEffect | InterLayerInputEffect | ColorRGBEffect | LumaSplitterEffect 
@@ -641,7 +691,7 @@ export type AnyEffect =
   | SignalMathEffect | SampleAndHoldEffect | StepSequencerEffect | PixelProcessorEffect
   | AudioSourceEffect | OscilloscopeEffect | SpectralSplitterEffect | AudioTransformerEffect | AudioModulatorEffect | AudioGateEffect | AudioToCVEffect
   | SpeechEnvelopeTrackerEffect | VocalPitchTrackerEffect | VowelFormantTrackerEffect | SpokenWordVisualizerEffect
-  | CanvasBackgroundEffect
+  | CanvasBackgroundEffect | ParticleCloudEffect | ColorPaletteEffect
   | ShapeGeneratorSource | VideoURLSource | VideoFileSource | WebcamCaptureSource | NoiseVideoSource | ColorNoiseSource
   | AudioInputSource | AudioFileSource | SystemAudioSource | ImageLoaderSource | ImageFileSource;
 
@@ -652,7 +702,7 @@ export type EffectType =
   | 'KeyMixer' | 'VideoMath' | 'UVDisplace'
   | 'LogicGate' | 'TriggeredGate' | 'Pattern' | 'Kaleidoscope' | 'SignalMath' | 'SampleAndHold' | 'StepSequencer' | 'AudioSource' | 'Oscilloscope' | 'SpectralSplitter' | 'PixelProcessor' | 'AudioTransformer' | 'AudioModulator' | 'AudioGate' | 'AudioToCV'
   | 'SpeechEnvelopeTracker' | 'VocalPitchTracker' | 'VowelFormantTracker' | 'SpokenWordVisualizer'
-  | 'CanvasBackground'
+  | 'CanvasBackground' | 'ParticleCloud' | 'ColorPalette'
   | 'ShapeGenerator' | 'VideoURL' | 'VideoFile' | 'WebcamCapture' | 'NoiseSource' | 'ColorNoise' | 'AudioInput' | 'AudioFile' | 'SystemAudio' | 'ImageLoader' | 'ImageFile';
 
 export type GraphNode = AnyEffect;

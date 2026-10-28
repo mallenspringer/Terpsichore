@@ -6,10 +6,11 @@ import {
   PatternEffect, KaleidoscopeEffect, SignalMathEffect, SampleAndHoldEffect,
   AudioSourceEffect, OscilloscopeEffect, SpectralSplitterEffect, PixelProcessorEffect,
   AudioTransformerEffect, AudioModulatorEffect, CanvasBackgroundEffect,
-  AlphaAdjustEffect
+  AlphaAdjustEffect, ParticleCloudEffect, ColorPaletteEffect, ColorStop
 } from '../../../state/types';
 import { AudioEngine } from '../../../state/AudioEngine';
 import { useEngineStore } from '../../../state/store';
+import { SignalDispatcher } from '../../../state/SignalDispatcher';
 import {
   ControlRowDef, EffectCtx,
   eff, upd,
@@ -18,64 +19,301 @@ import {
 
 export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
   Spawn: [
-    { id: 'coordinateMode', label: 'Unit',
-      render: ctx => (
-        <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <span className="rack-row-label">Units</span>
-          <select value={eff<SpawnEffect>(ctx).coordinateMode} onChange={e => upd(ctx)({ coordinateMode: e.target.value as any })}>
-            <option value="normalized">Normalized (-1..1)</option>
-            <option value="pixel">Pixels (Abs)</option>
-          </select>
-        </div>
-      )
-    },
-    { id: 'x', label: 'Spawn X',
+    {
+      id: 'emissionMode',
+      label: 'Emission Mode',
       render: ctx => {
         const ef = eff<SpawnEffect>(ctx);
-        return ef.coordinateMode === 'pixel' ? (
-          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()}>
-            <span className="rack-row-label">X Pixel</span>
-            <input type="number" value={ef.x} onChange={e => upd(ctx)({ x: parseFloat(e.target.value) || 0 })} className="rack-number-input" style={{ width: 80 }} />
+        const mode = ef.emissionMode || 'rate';
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'column', gap: 6 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span className="rack-row-label">Emission</span>
+              <select
+                value={mode}
+                onChange={e => upd(ctx)({ emissionMode: e.target.value as any })}
+                style={{ flex: 1, background: '#111', color: '#ccc', border: '1px solid #333', fontSize: 10, borderRadius: 2 }}
+              >
+                <option value="rate">Continuous (Rate / Sec)</option>
+                <option value="trigger">Trigger (Pulse Burst)</option>
+                <option value="array">Static / Dynamic Array</option>
+              </select>
+            </div>
+            {mode === 'rate' && (
+              <Slider
+                label="Rate (/s)"
+                min={0.1}
+                max={20}
+                step={0.1}
+                resetValue={3}
+                value={ef.emitRate ?? 3}
+                onChange={v => upd(ctx)({ emitRate: v })}
+                paramId="rate_cv"
+                ctx={ctx}
+              />
+            )}
+            {mode === 'trigger' && (
+              <div style={{ display: 'flex', gap: 4 }}>
+                <button
+                  className="rack-trigger-btn"
+                  style={{
+                    flex: 1,
+                    height: 24,
+                    background: '#1a1a1a',
+                    border: '1px solid #88cc00',
+                    color: '#88cc00',
+                    fontSize: 10,
+                    fontWeight: 'bold',
+                    cursor: 'pointer',
+                    borderRadius: 2
+                  }}
+                  onClick={() => upd(ctx)({ manualTriggerTime: Date.now() })}
+                >
+                  ⚡ SPAWN PULSE
+                </button>
+                <button
+                  style={{
+                    height: 24,
+                    padding: '0 8px',
+                    background: '#1a1a1a',
+                    border: '1px solid #555',
+                    color: '#aaa',
+                    fontSize: 10,
+                    cursor: 'pointer',
+                    borderRadius: 2
+                  }}
+                  onClick={() => upd(ctx)({ manualResetTime: Date.now() })}
+                  title="Clear all active clones"
+                >
+                  CLEAR
+                </button>
+              </div>
+            )}
           </div>
-        ) : <Slider label="Spawn X" min={-2} max={2} step={0.01} value={ef.x} onChange={v => upd(ctx)({ x: v })} />;
+        );
       }
     },
-    { id: 'y', label: 'Spawn Y',
+    {
+      id: 'dissemination',
+      label: 'Pattern & Angle',
       render: ctx => {
         const ef = eff<SpawnEffect>(ctx);
-        return ef.coordinateMode === 'pixel' ? (
-          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()}>
-            <span className="rack-row-label">Y Pixel</span>
-            <input type="number" value={ef.y} onChange={e => upd(ctx)({ y: parseFloat(e.target.value) || 0 })} className="rack-number-input" style={{ width: 80 }} />
+        const disMode = ef.disseminationMode || 'cone';
+        const anchors = [
+          { label: '↑', angle: 90 },
+          { label: '→', angle: 0 },
+          { label: '↓', angle: 270 },
+          { label: '←', angle: 180 },
+        ];
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'column', gap: 6 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span className="rack-row-label">Pattern</span>
+              <select
+                value={disMode}
+                onChange={e => upd(ctx)({ disseminationMode: e.target.value as any })}
+                style={{ flex: 1, background: '#111', color: '#ccc', border: '1px solid #333', fontSize: 10, borderRadius: 2 }}
+              >
+                <option value="cone">Cone / Fountain</option>
+                <option value="burst">Radial Burst (360°)</option>
+                <option value="array">Geometric Ring</option>
+              </select>
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <Slider
+                label="Speed"
+                min={0}
+                max={2}
+                step={0.01}
+                resetValue={0.3}
+                value={ef.speed ?? 0.3}
+                onChange={v => upd(ctx)({ speed: v })}
+                paramId="speed_cv"
+                ctx={ctx}
+              />
+              {disMode === 'cone' && (
+                <Slider
+                  label="Spread"
+                  min={0}
+                  max={180}
+                  step={1}
+                  resetValue={45}
+                  value={ef.coneSpread ?? 45}
+                  onChange={v => upd(ctx)({ coneSpread: v })}
+                />
+              )}
+            </div>
+            {disMode === 'cone' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span className="rack-row-label" style={{ minWidth: 40 }}>Direct</span>
+                <div style={{ display: 'flex', gap: 2 }}>
+                  {anchors.map(a => (
+                    <button
+                      key={a.label}
+                      onClick={() => upd(ctx)({ angle: a.angle })}
+                      style={{
+                        width: 18,
+                        height: 18,
+                        fontSize: 10,
+                        padding: 0,
+                        background: Math.round(ef.angle ?? 90) === a.angle ? '#88cc00' : '#222',
+                        color: Math.round(ef.angle ?? 90) === a.angle ? '#000' : '#ccc',
+                        border: '1px solid #444',
+                        borderRadius: 2,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {a.label}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <Slider
+                    label="Angle"
+                    min={0}
+                    max={360}
+                    step={1}
+                    resetValue={90}
+                    value={ef.angle ?? 90}
+                    onChange={v => upd(ctx)({ angle: v })}
+                    paramId="angle_cv"
+                    ctx={ctx}
+                  />
+                </div>
+              </div>
+            )}
           </div>
-        ) : <Slider label="Spawn Y" min={-2} max={2} step={0.01} value={ef.y} onChange={v => upd(ctx)({ y: v })} />;
+        );
       }
     },
-    { id: 'scale', label: 'Base Scale',
-      render: ctx => <Slider label="Base Scale" min={0} max={4} step={0.01} value={eff<SpawnEffect>(ctx).scale} onChange={v => upd(ctx)({ scale: v })} />
+    {
+      id: 'forces',
+      label: 'Forces & Spin',
+      render: ctx => {
+        const ef = eff<SpawnEffect>(ctx);
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'column', gap: 4 }}>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <Slider
+                label="Gravity"
+                min={-2}
+                max={2}
+                step={0.01}
+                resetValue={0}
+                value={ef.gravity ?? 0}
+                onChange={v => upd(ctx)({ gravity: v })}
+                paramId="gravity_cv"
+                ctx={ctx}
+              />
+              <Slider
+                label="Drag"
+                min={0}
+                max={0.5}
+                step={0.01}
+                resetValue={0.05}
+                value={ef.drag ?? 0.05}
+                onChange={v => upd(ctx)({ drag: v })}
+              />
+            </div>
+            <Slider
+              label="Spin"
+              min={-5}
+              max={5}
+              step={0.05}
+              resetValue={0}
+              value={ef.spin ?? 0}
+              onChange={v => upd(ctx)({ spin: v })}
+            />
+          </div>
+        );
+      }
     },
-    { id: 'rotation', label: 'Rotation',
-      render: ctx => <Slider label="Rotation" min={-Math.PI} max={Math.PI} step={0.01} value={eff<SpawnEffect>(ctx).rotation} onChange={v => upd(ctx)({ rotation: v })} />
-    },
-    { id: 'lifetime', label: 'Life',
-      render: ctx => <Slider label="Lifetime (s)" min={0.1} max={10} step={0.1} value={eff<SpawnEffect>(ctx).lifetime} onChange={v => upd(ctx)({ lifetime: v })} />
-    },
-    { id: 'maxCount', label: 'Max',
-      render: ctx => <Slider label="Max Count" min={1} max={50} step={1} value={eff<SpawnEffect>(ctx).maxCount} onChange={v => upd(ctx)({ maxCount: v })} />
-    },
-    { id: 'randomPos', label: 'Rnd Pos',
-      render: ctx => <Slider label="Random Pos" min={0} max={500} step={0.1} value={eff<SpawnEffect>(ctx).randomPos} onChange={v => upd(ctx)({ randomPos: v })} />
-    },
-    { id: 'randomScale', label: 'Rnd Scl',
-      render: ctx => <Slider label="Random Scale" min={0} max={1} step={0.01} value={eff<SpawnEffect>(ctx).randomScale} onChange={v => upd(ctx)({ randomScale: v })} />
-    },
-    { id: 'fadeOut', label: 'Fade',
-      render: ctx => (
-        <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} onDragStart={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <span className="rack-row-label">Fade Out</span>
-          <input type="checkbox" checked={eff<SpawnEffect>(ctx).fadeOut} onChange={e => upd(ctx)({ fadeOut: e.target.checked })} />
-        </div>
-      )
+    {
+      id: 'scaleDynamics',
+      label: 'Scale & Lifecycle',
+      render: ctx => {
+        const ef = eff<SpawnEffect>(ctx);
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'column', gap: 4 }}>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <Slider
+                label="Birth Scale"
+                min={0.05}
+                max={2.0}
+                step={0.01}
+                resetValue={0.4}
+                value={ef.scale ?? 0.4}
+                onChange={v => upd(ctx)({ scale: v })}
+                paramId="scale"
+                ctx={ctx}
+              />
+              <Slider
+                label="End Scale"
+                min={0.0}
+                max={2.0}
+                step={0.01}
+                resetValue={0.1}
+                value={ef.scaleEnd ?? 0.1}
+                onChange={v => upd(ctx)({ scaleEnd: v })}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <Slider
+                label="Max Count"
+                min={1}
+                max={64}
+                step={1}
+                resetValue={16}
+                value={ef.maxCount ?? 16}
+                onChange={v => upd(ctx)({ maxCount: v })}
+              />
+              <Slider
+                label="Life (s)"
+                min={0.2}
+                max={10.0}
+                step={0.1}
+                resetValue={3.0}
+                value={ef.lifetime ?? 3.0}
+                onChange={v => upd(ctx)({ lifetime: v })}
+              />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 2 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: '#ccc', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={ef.fadeOut ?? true}
+                  onChange={e => upd(ctx)({ fadeOut: e.target.checked })}
+                />
+                Fade Out
+              </label>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <Slider
+                  label="X"
+                  min={-1}
+                  max={1}
+                  step={0.01}
+                  resetValue={0}
+                  value={ef.x ?? 0}
+                  onChange={v => upd(ctx)({ x: v })}
+                  paramId="x"
+                  ctx={ctx}
+                />
+                <Slider
+                  label="Y"
+                  min={-1}
+                  max={1}
+                  step={0.01}
+                  resetValue={0}
+                  value={ef.y ?? 0}
+                  onChange={v => upd(ctx)({ y: v })}
+                  paramId="y"
+                  ctx={ctx}
+                />
+              </div>
+            </div>
+          </div>
+        );
+      }
     }
   ],
 
@@ -1533,5 +1771,660 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
   VocalPitchTracker: [],
   VowelFormantTracker: [],
   SpokenWordVisualizer: [],
+  ParticleCloud: [
+    {
+      id: 'densityAndPalette',
+      label: 'Density & Palette',
+      render: ctx => {
+        const ef = eff<ParticleCloudEffect>(ctx);
+        const presets = [5000, 10000, 25000, 50000, 100000];
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'column', gap: 6 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span className="rack-row-label">Palette</span>
+              <select
+                value={ef.colorPalette ?? 'neon'}
+                onChange={e => upd(ctx)({ colorPalette: e.target.value as any })}
+                style={{ flex: 1, background: '#111', color: '#ccc', border: '1px solid #333', fontSize: 10, borderRadius: 2 }}
+              >
+                <option value="neon">Neon Cyberpunk (Cyan/Magenta)</option>
+                <option value="fire">Solar Fire (Ruby/Gold)</option>
+                <option value="aurora">Aurora Borealis (Teal/Violet)</option>
+                <option value="electric">Electric Plasma (Cobalt/Cyan)</option>
+                <option value="starlight">Celestial Starlight (Ice/Lilac)</option>
+                <option value="spectrum">Spectrum Rainbow</option>
+              </select>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span className="rack-row-label">Count</span>
+              <div style={{ display: 'flex', gap: 2, flex: 1 }}>
+                {presets.map(p => (
+                  <button
+                    key={p}
+                    onClick={() => upd(ctx)({ particleCount: p })}
+                    style={{
+                      flex: 1,
+                      height: 18,
+                      fontSize: 9,
+                      padding: 0,
+                      background: (ef.particleCount || 20000) === p ? '#88cc00' : '#222',
+                      color: (ef.particleCount || 20000) === p ? '#000' : '#bbb',
+                      border: '1px solid #444',
+                      borderRadius: 2,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {p >= 1000 ? `${p / 1000}k` : p}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: '#ccc', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={ef.blendMode !== 'alpha'}
+                  onChange={e => upd(ctx)({ blendMode: e.target.checked ? 'additive' : 'alpha' })}
+                />
+                Additive Glow
+              </label>
+              <Slider
+                label="Point Size"
+                min={1}
+                max={20}
+                step={0.5}
+                resetValue={4}
+                value={ef.pointSize ?? 4}
+                onChange={v => upd(ctx)({ pointSize: v })}
+                paramId="size_cv"
+                ctx={ctx}
+              />
+            </div>
+          </div>
+        );
+      }
+    },
+    {
+      id: 'emitter',
+      label: 'Emitter & Shape',
+      render: ctx => {
+        const ef = eff<ParticleCloudEffect>(ctx);
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'column', gap: 6 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span className="rack-row-label">Shape</span>
+              <select
+                value={ef.emitterShape ?? 'point'}
+                onChange={e => upd(ctx)({ emitterShape: e.target.value as any })}
+                style={{ flex: 1, background: '#111', color: '#ccc', border: '1px solid #333', fontSize: 10, borderRadius: 2 }}
+              >
+                <option value="point">Point Source</option>
+                <option value="ring">Circular Ring</option>
+                <option value="disc">Solid Disc</option>
+                <option value="line">Horizontal Line</option>
+              </select>
+              <Slider
+                label="Radius"
+                min={0.01}
+                max={1.0}
+                step={0.01}
+                resetValue={0.1}
+                value={ef.emitterRadius ?? 0.1}
+                onChange={v => upd(ctx)({ emitterRadius: v })}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <Slider
+                label="Center X"
+                min={-1}
+                max={1}
+                step={0.01}
+                resetValue={0}
+                value={ef.emitterX ?? 0}
+                onChange={v => upd(ctx)({ emitterX: v })}
+              />
+              <Slider
+                label="Center Y"
+                min={-1}
+                max={1}
+                step={0.01}
+                resetValue={0}
+                value={ef.emitterY ?? 0}
+                onChange={v => upd(ctx)({ emitterY: v })}
+              />
+            </div>
+          </div>
+        );
+      }
+    },
+    {
+      id: 'flowAndPhysics',
+      label: 'Flow & Turbulence',
+      render: ctx => {
+        const ef = eff<ParticleCloudEffect>(ctx);
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'column', gap: 6 }}>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <Slider
+                label="Speed"
+                min={0.1}
+                max={3.0}
+                step={0.05}
+                resetValue={0.8}
+                value={ef.speed ?? 0.8}
+                onChange={v => upd(ctx)({ speed: v })}
+                paramId="speed_cv"
+                ctx={ctx}
+              />
+              <Slider
+                label="Spread"
+                min={0.1}
+                max={2.0}
+                step={0.05}
+                resetValue={0.5}
+                value={ef.spread ?? 0.5}
+                onChange={v => upd(ctx)({ spread: v })}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <Slider
+                label="Turbulence"
+                min={0}
+                max={3.0}
+                step={0.05}
+                resetValue={1.0}
+                value={ef.turbulence ?? 1.0}
+                onChange={v => upd(ctx)({ turbulence: v })}
+                paramId="turbulence_cv"
+                ctx={ctx}
+              />
+              <Slider
+                label="Noise Freq"
+                min={0.1}
+                max={5.0}
+                step={0.1}
+                resetValue={1.2}
+                value={ef.noiseFreq ?? 1.2}
+                onChange={v => upd(ctx)({ noiseFreq: v })}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <Slider
+                label="Gravity Y"
+                min={-2}
+                max={2}
+                step={0.05}
+                resetValue={0}
+                value={ef.gravityY ?? 0}
+                onChange={v => upd(ctx)({ gravityY: v })}
+                paramId="gravity_cv"
+                ctx={ctx}
+              />
+              <Slider
+                label="Life (s)"
+                min={0.5}
+                max={10.0}
+                step={0.1}
+                resetValue={3.0}
+                value={ef.lifetime ?? 3.0}
+                onChange={v => upd(ctx)({ lifetime: v })}
+              />
+            </div>
+          </div>
+        );
+      }
+    },
+    {
+      id: 'burstAndAudio',
+      label: 'Bursts & Audio React',
+      render: ctx => {
+        const ef = eff<ParticleCloudEffect>(ctx);
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'column', gap: 6 }}>
+            <div style={{ display: 'flex', gap: 4 }}>
+              <button
+                className="rack-trigger-btn"
+                style={{
+                  flex: 1,
+                  height: 24,
+                  background: '#1a1a1a',
+                  border: '1px solid #18e4f5',
+                  color: '#18e4f5',
+                  fontSize: 10,
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  borderRadius: 2
+                }}
+                onClick={() => upd(ctx)({ burstTriggerTime: Date.now() })}
+              >
+                ⚡ SPARK BURST
+              </button>
+              <button
+                style={{
+                  height: 24,
+                  padding: '0 8px',
+                  background: '#1a1a1a',
+                  border: '1px solid #555',
+                  color: '#aaa',
+                  fontSize: 10,
+                  cursor: 'pointer',
+                  borderRadius: 2
+                }}
+                onClick={() => upd(ctx)({ resetTriggerTime: Date.now() })}
+                title="Respawn all particles"
+              >
+                RESET
+              </button>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: '#ccc', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={ef.audioReactivity !== false}
+                  onChange={e => upd(ctx)({ audioReactivity: e.target.checked })}
+                />
+                Audio Kick
+              </label>
+              {ef.audioReactivity !== false && (
+                <Slider
+                  label="Audio Sens"
+                  min={0.1}
+                  max={3.0}
+                  step={0.1}
+                  resetValue={1.0}
+                  value={ef.audioSensitivity ?? 1.0}
+                  onChange={v => upd(ctx)({ audioSensitivity: v })}
+                />
+              )}
+            </div>
+          </div>
+        );
+      }
+    }
+  ],
+  ColorPalette: [
+    {
+      id: 'paletteOverview',
+      label: 'Palette Ramp',
+      render: ctx => {
+        const ef = eff<ColorPaletteEffect>(ctx);
+        const stops = ef.colors || [];
+
+        const rgbToHsl = (r: number, g: number, b: number): [number, number, number] => {
+          const max = Math.max(r, g, b);
+          const min = Math.min(r, g, b);
+          let h = 0;
+          let s = 0;
+          const l = (max + min) / 2;
+          if (max !== min) {
+            const d = max - min;
+            s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+            switch (max) {
+              case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break;
+              case g: h = ((b - r) / d + 2) / 6; break;
+              case b: h = ((r - g) / d + 4) / 6; break;
+            }
+          }
+          return [h, s, l];
+        };
+
+        const hslToRgb = (h: number, s: number, l: number): [number, number, number] => {
+          if (s === 0) return [l, l, l];
+          const hue2rgb = (p: number, q: number, t: number) => {
+            let tNorm = t;
+            if (tNorm < 0) tNorm += 1;
+            if (tNorm > 1) tNorm -= 1;
+            if (tNorm < 1 / 6) return p + (q - p) * 6 * tNorm;
+            if (tNorm < 1 / 2) return q;
+            if (tNorm < 2 / 3) return p + (q - p) * (2 / 3 - tNorm) * 6;
+            return p;
+          };
+          const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+          const p = 2 * l - q;
+          return [hue2rgb(p, q, h + 1 / 3), hue2rgb(p, q, h), hue2rgb(p, q, h - 1 / 3)];
+        };
+
+        const rgbaToHex = (c: [number, number, number, number]): string => {
+          const r = Math.round(Math.max(0, Math.min(1, c[0])) * 255).toString(16).padStart(2, '0');
+          const g = Math.round(Math.max(0, Math.min(1, c[1])) * 255).toString(16).padStart(2, '0');
+          const b = Math.round(Math.max(0, Math.min(1, c[2])) * 255).toString(16).padStart(2, '0');
+          return `#${r}${g}${b}`;
+        };
+
+        const hexToRgba = (hex: string, alpha: number = 1.0): [number, number, number, number] => {
+          const clean = hex.replace('#', '');
+          const r = parseInt(clean.substring(0, 2), 16) / 255;
+          const g = parseInt(clean.substring(2, 4), 16) / 255;
+          const b = parseInt(clean.substring(4, 6), 16) / 255;
+          return [r, g, b, alpha];
+        };
+
+        const sigs = SignalDispatcher.getInstance().getLatestSignals(ctx.layer.id);
+
+        const getEffectiveColor = (stop: ColorStop): [number, number, number, number] => {
+          const slotNum = stop.id.replace('c_', '');
+          const cvVal = sigs[`${ef.id}.col_${slotNum}_cv`] ?? 0;
+          if (cvVal !== 0) {
+            const [h, s, l] = rgbToHsl(stop.color[0], stop.color[1], stop.color[2]);
+            const effectiveS = s < 0.1 ? 0.85 : s;
+            const newH = ((h + cvVal * 0.5) % 1.0 + 1.0) % 1.0;
+            const [modR, modG, modB] = hslToRgb(newH, effectiveS, l);
+            return [modR, modG, modB, stop.color[3] ?? 1.0];
+          }
+          return stop.color;
+        };
+
+        const activeStops = stops.filter(s => s.active);
+        let gradientStyle = '#222';
+        if (activeStops.length === 1) {
+          gradientStyle = rgbaToHex(getEffectiveColor(activeStops[0]));
+        } else if (activeStops.length > 1) {
+          const totalWeight = activeStops.reduce((sum, s) => sum + Math.max(0.01, s.weight || 1.0), 0);
+          const bounds: number[] = [0];
+          let acc = 0;
+          for (let i = 0; i < activeStops.length - 1; i++) {
+            acc += Math.max(0.01, activeStops[i].weight || 1.0);
+            bounds.push(acc / totalWeight);
+          }
+          bounds.push(1.0);
+
+          const cssStops: string[] = [];
+          if (ef.interpolation === 'stepped') {
+            for (let i = 0; i < activeStops.length; i++) {
+              const hex = rgbaToHex(getEffectiveColor(activeStops[i]));
+              const p0 = Math.round(bounds[i] * 100);
+              const p1 = Math.round(bounds[i + 1] * 100);
+              cssStops.push(`${hex} ${p0}% ${p1}%`);
+            }
+          } else {
+            // Linear & Smooth: proportional midpoints with pure color plateaus
+            const mFirst = Math.round(((bounds[0] + bounds[1]) * 0.5) * 100);
+            const mLast = Math.round(((bounds[activeStops.length - 1] + 1.0) * 0.5) * 100);
+            const firstHex = rgbaToHex(getEffectiveColor(activeStops[0]));
+            const lastHex = rgbaToHex(getEffectiveColor(activeStops[activeStops.length - 1]));
+            cssStops.push(`${firstHex} 0%`);
+            cssStops.push(`${firstHex} ${mFirst}%`);
+            for (let i = 1; i < activeStops.length - 1; i++) {
+              const hex = rgbaToHex(getEffectiveColor(activeStops[i]));
+              const mid = Math.round(((bounds[i] + bounds[i + 1]) * 0.5) * 100);
+              cssStops.push(`${hex} ${mid}%`);
+            }
+            cssStops.push(`${lastHex} ${mLast}%`);
+            cssStops.push(`${lastHex} 100%`);
+          }
+          gradientStyle = `linear-gradient(to right, ${cssStops.join(', ')})`;
+        }
+
+        const addColorStop = () => {
+          if (stops.length >= 8) return;
+          const existingIds = new Set(stops.map(s => s.id));
+          let nextSlot = 1;
+          while (nextSlot <= 8 && existingIds.has(`c_${nextSlot}`)) {
+            nextSlot++;
+          }
+          const vibrantList: [number, number, number, number][] = [
+            [1.0, 0.08, 0.58, 1.0], // Neon Pink
+            [1.0, 0.84, 0.0, 1.0],  // Electric Gold
+            [0.4, 0.1, 1.0, 1.0],   // Violet
+            [1.0, 0.35, 0.0, 1.0],  // Radiant Coral
+            [0.1, 1.0, 0.5, 1.0],   // Mint Aqua
+            [0.0, 0.6, 1.0, 1.0],   // Azure
+            [1.0, 0.1, 0.1, 1.0],   // Crimson
+            [0.8, 1.0, 0.1, 1.0],   // Lime
+          ];
+          const chosenColor = vibrantList[(stops.length - 1) % vibrantList.length];
+          const newStop: ColorStop = {
+            id: `c_${nextSlot <= 8 ? nextSlot : stops.length + 1}`,
+            color: chosenColor,
+            weight: 1.0,
+            active: true
+          };
+          upd(ctx)({ colors: [...stops, newStop] });
+        };
+
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'column', gap: 8, width: '100%' }}>
+            {/* Live Gradient Preview Strip */}
+            <div style={{
+              width: '100%',
+              height: 18,
+              borderRadius: 3,
+              background: gradientStyle,
+              border: '1px solid #444',
+              boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.6)'
+            }} />
+
+            {/* Actions Bar */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span className="rack-row-label" style={{ fontSize: 9 }}>Interp:</span>
+                <select
+                  value={ef.interpolation || 'smooth'}
+                  onChange={e => upd(ctx)({ interpolation: e.target.value as any })}
+                  style={{ background: '#111', color: '#ccc', border: '1px solid #333', fontSize: 10, borderRadius: 2, padding: '2px 4px' }}
+                >
+                  <option value="smooth">Smooth</option>
+                  <option value="linear">Linear</option>
+                  <option value="stepped">Stepped</option>
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <button
+                  type="button"
+                  style={{
+                    background: '#222',
+                    border: '1px solid #f58c18',
+                    color: '#f58c18',
+                    fontSize: 9,
+                    fontWeight: 'bold',
+                    padding: '2px 8px',
+                    borderRadius: 2,
+                    cursor: 'pointer'
+                  }}
+                  onClick={() => upd(ctx)({ shuffleTriggerTime: Date.now() })}
+                  title="Shuffle visual color order without altering weights or parameters"
+                >
+                  🎲 SHUFFLE
+                </button>
+
+                <button
+                  type="button"
+                  disabled={stops.length >= 8}
+                  style={{
+                    background: stops.length >= 8 ? '#1a1a1a' : '#884400',
+                    border: '1px solid #f58c18',
+                    color: stops.length >= 8 ? '#666' : '#fff',
+                    fontSize: 9,
+                    fontWeight: 'bold',
+                    padding: '2px 8px',
+                    borderRadius: 2,
+                    cursor: stops.length >= 8 ? 'not-allowed' : 'pointer'
+                  }}
+                  onClick={addColorStop}
+                  title="Add new color channel (up to 8)"
+                >
+                  + Add Color
+                </button>
+              </div>
+            </div>
+
+            {/* Color Channels List */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, width: '100%', marginTop: 2 }}>
+              {stops.map((stop, idx) => {
+                const slotNum = stop.id.replace('c_', '');
+                const cvVal = sigs[`${ef.id}.col_${slotNum}_cv`] ?? 0;
+                const effectiveCol = getEffectiveColor(stop);
+                const isModulated = Math.abs(cvVal) > 0.001;
+
+                return (
+                  <div
+                    key={stop.id}
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 4,
+                      background: '#161616',
+                      border: isModulated ? '1px solid #f58c18' : '1px solid #282828',
+                      borderRadius: 3,
+                      padding: '4px 6px'
+                    }}
+                  >
+                    {/* Header line for this color stop */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontSize: 10, fontWeight: 'bold', color: '#888' }}>
+                          #{idx + 1}
+                        </span>
+                        <span style={{ fontSize: 9, color: '#f58c18', background: 'rgba(245, 140, 24, 0.15)', padding: '1px 4px', borderRadius: 2, fontWeight: 'bold' }}>
+                          Col {slotNum} Jack
+                        </span>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 9, color: '#aaa', cursor: 'pointer' }}>
+                          <input
+                            type="checkbox"
+                            checked={stop.active}
+                            onChange={e => {
+                              const newStops = stops.map((s, i) => i === idx ? { ...s, active: e.target.checked } : s);
+                              upd(ctx)({ colors: newStops });
+                            }}
+                          />
+                          Active
+                        </label>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        {/* Native Color Picker (Base Color) */}
+                        <input
+                          type="color"
+                          value={rgbaToHex(stop.color)}
+                          onChange={e => {
+                            const newRgba = hexToRgba(e.target.value, stop.color[3] ?? 1.0);
+                            const newStops = stops.map((s, i) => i === idx ? { ...s, color: newRgba } : s);
+                            upd(ctx)({ colors: newStops });
+                          }}
+                          style={{
+                            width: 20,
+                            height: 18,
+                            padding: 0,
+                            border: '1px solid #444',
+                            borderRadius: 2,
+                            background: 'transparent',
+                            cursor: 'pointer'
+                          }}
+                          title="Pick base color"
+                        />
+
+                        {/* Modulated Color Feedback Swatch */}
+                        {isModulated && (
+                          <div
+                            style={{
+                              width: 14,
+                              height: 14,
+                              borderRadius: 2,
+                              background: rgbaToHex(effectiveCol),
+                              border: '1px solid #f58c18',
+                              boxShadow: '0 0 4px rgba(245, 140, 24, 0.6)'
+                            }}
+                            title={`Modulated by CV: ${cvVal.toFixed(2)}`}
+                          />
+                        )}
+
+                        {/* Move Up Button */}
+                        <button
+                          type="button"
+                          disabled={idx === 0}
+                          onClick={() => {
+                            if (idx === 0) return;
+                            const newStops = [...stops];
+                            [newStops[idx - 1], newStops[idx]] = [newStops[idx], newStops[idx - 1]];
+                            upd(ctx)({ colors: newStops });
+                          }}
+                          style={{
+                            background: '#222',
+                            border: '1px solid #333',
+                            color: idx === 0 ? '#444' : '#aaa',
+                            fontSize: 8,
+                            padding: '1px 4px',
+                            cursor: idx === 0 ? 'default' : 'pointer',
+                            borderRadius: 2
+                          }}
+                          title="Move up in gradient ramp"
+                        >
+                          ▲
+                        </button>
+
+                        {/* Move Down Button */}
+                        <button
+                          type="button"
+                          disabled={idx === stops.length - 1}
+                          onClick={() => {
+                            if (idx === stops.length - 1) return;
+                            const newStops = [...stops];
+                            [newStops[idx], newStops[idx + 1]] = [newStops[idx + 1], newStops[idx]];
+                            upd(ctx)({ colors: newStops });
+                          }}
+                          style={{
+                            background: '#222',
+                            border: '1px solid #333',
+                            color: idx === stops.length - 1 ? '#444' : '#aaa',
+                            fontSize: 8,
+                            padding: '1px 4px',
+                            cursor: idx === stops.length - 1 ? 'default' : 'pointer',
+                            borderRadius: 2
+                          }}
+                          title="Move down in gradient ramp"
+                        >
+                          ▼
+                        </button>
+
+                        {/* Delete Button */}
+                        {stops.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const newStops = stops.filter((_, i) => i !== idx);
+                              upd(ctx)({ colors: newStops });
+                            }}
+                            style={{
+                              background: '#331111',
+                              border: '1px solid #662222',
+                              color: '#ff6666',
+                              fontSize: 9,
+                              padding: '1px 5px',
+                              cursor: 'pointer',
+                              borderRadius: 2
+                            }}
+                            title="Remove color channel"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Weight Slider */}
+                    <div style={{ marginTop: 2 }}>
+                      <Slider
+                        label="Weight"
+                        min={0.1}
+                        max={10.0}
+                        step={0.1}
+                        resetValue={1.0}
+                        value={stop.weight || 1.0}
+                        onChange={v => {
+                          const newStops = stops.map((s, i) => i === idx ? { ...s, weight: v } : s);
+                          upd(ctx)({ colors: newStops });
+                        }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      }
+    }
+  ]
 };
 
