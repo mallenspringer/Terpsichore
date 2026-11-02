@@ -4,9 +4,10 @@ import {
   SpawnEffect, PathEffect, LogicGateEffect, TriggeredGateEffect, InverterEffect, VideoMixerEffect,
   KeyMixerEffect, VideoMathEffect, UVDisplaceEffect, AudioToCVEffect,
   PatternEffect, KaleidoscopeEffect, SignalMathEffect, SampleAndHoldEffect,
-  AudioSourceEffect, OscilloscopeEffect, SpectralSplitterEffect, PixelProcessorEffect,
+  AudioSourceEffect, OscilloscopeEffect, SpectralSplitterEffect, WaterfallSpectrogramEffect, PixelProcessorEffect,
   AudioTransformerEffect, AudioModulatorEffect, CanvasBackgroundEffect,
-  AlphaAdjustEffect, ParticleCloudEffect, ColorPaletteEffect, ColorStop
+  AlphaAdjustEffect, ParticleCloudEffect, ColorPaletteEffect, ColorStop,
+  GrassFieldEffect, TuftStyle
 } from '../../../state/types';
 import { AudioEngine } from '../../../state/AudioEngine';
 import { useEngineStore } from '../../../state/store';
@@ -16,6 +17,21 @@ import {
   eff, upd,
   KeyMappingRow, Slider
 } from './controlHelpers';
+
+function rgbaToHex(c: [number, number, number, number]): string {
+  const r = Math.round(Math.max(0, Math.min(1, c[0])) * 255).toString(16).padStart(2, '0');
+  const g = Math.round(Math.max(0, Math.min(1, c[1])) * 255).toString(16).padStart(2, '0');
+  const b = Math.round(Math.max(0, Math.min(1, c[2])) * 255).toString(16).padStart(2, '0');
+  return `#${r}${g}${b}`;
+}
+
+function hexToRgba(hex: string, alpha: number = 1.0): [number, number, number, number] {
+  const clean = hex.replace('#', '');
+  const r = parseInt(clean.substring(0, 2), 16) / 255;
+  const g = parseInt(clean.substring(2, 4), 16) / 255;
+  const b = parseInt(clean.substring(4, 6), 16) / 255;
+  return [r, g, b, alpha];
+}
 
 export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
   Spawn: [
@@ -1219,13 +1235,97 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
     { id: 'timeScale', label: 'Zoom',
       render: ctx => <Slider label="Time Scale" min={0.1} max={4} step={0.1} value={eff<OscilloscopeEffect>(ctx).timeScale} resetValue={1.0} onChange={v => upd(ctx)({ timeScale: v })} />
     },
-    { id: 'isFrozen', label: 'Freeze',
-      render: ctx => (
-        <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <span className="rack-row-label">Freeze</span>
-          <input type="checkbox" checked={eff<OscilloscopeEffect>(ctx).isFrozen} onChange={e => upd(ctx)({ isFrozen: e.target.checked })} />
-        </div>
-      )
+    { id: 'gain', label: 'Vert Gain',
+      render: ctx => <Slider label="Vert Gain" min={0.1} max={10} step={0.1} value={eff<OscilloscopeEffect>(ctx).gain ?? 2.0} resetValue={2.0} onChange={v => upd(ctx)({ gain: v })} />
+    },
+    { id: 'colorMode', label: 'Color Mode',
+      render: ctx => {
+        const ef = eff<OscilloscopeEffect>(ctx);
+        const mode = ef.colorMode || 'amplitude';
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <span className="rack-row-label">Color Map</span>
+            <select
+              value={mode}
+              onChange={e => upd(ctx)({ colorMode: e.target.value as any })}
+              style={{ flex: 1, background: '#111', color: '#ccc', border: '1px solid #333', fontSize: 10, borderRadius: 2 }}
+            >
+              <option value="amplitude">Level (Amplitude)</option>
+              <option value="span">Wave Span (X Trace)</option>
+              <option value="frequency">Slew (Transient / Freq)</option>
+            </select>
+          </div>
+        );
+      }
+    },
+    { id: 'traceColor', label: 'Trace Color',
+      render: ctx => {
+        const ef = eff<OscilloscopeEffect>(ctx);
+        const curColor = ef.traceColor || [0.0, 1.0, 0.25, 1.0];
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <span className="rack-row-label">Trace Color</span>
+            <input
+              type="color"
+              value={rgbaToHex(curColor)}
+              onChange={e => {
+                const newRgba = hexToRgba(e.target.value, curColor[3] ?? 1.0);
+                upd(ctx)({ traceColor: newRgba });
+              }}
+              style={{
+                width: 24,
+                height: 20,
+                padding: 0,
+                border: '1px solid #444',
+                borderRadius: 2,
+                cursor: 'pointer',
+                background: 'none'
+              }}
+              title="Default Trace Color (when no palette is connected)"
+            />
+            <button
+              onClick={() => upd(ctx)({ traceColor: [0.0, 1.0, 0.25, 1.0] })}
+              style={{
+                padding: '2px 6px',
+                fontSize: 9,
+                background: '#222',
+                border: '1px solid #333',
+                color: '#00ff41',
+                borderRadius: 2,
+                cursor: 'pointer'
+              }}
+              title="Reset to Analog Phosphor Green"
+            >
+              CRT Green
+            </button>
+          </div>
+        );
+      }
+    },
+    { id: 'options', label: 'Options',
+      render: ctx => {
+        const ef = eff<OscilloscopeEffect>(ctx);
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10, cursor: 'pointer', color: '#bbb' }}>
+              <input
+                type="checkbox"
+                checked={ef.showScaffold ?? false}
+                onChange={e => upd(ctx)({ showScaffold: e.target.checked })}
+              />
+              Scaffold / Grid
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10, cursor: 'pointer', color: '#bbb' }}>
+              <input
+                type="checkbox"
+                checked={ef.isFrozen}
+                onChange={e => upd(ctx)({ isFrozen: e.target.checked })}
+              />
+              Freeze
+            </label>
+          </div>
+        );
+      }
     },
   ],
   SpectralSplitter: [
@@ -1257,6 +1357,283 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
     },
     { id: 'sensitivity', label: 'Sensitivity',
       render: ctx => <Slider label="Sensitivity" min={0.1} max={10} step={0.1} value={eff<SpectralSplitterEffect>(ctx).sensitivity} resetValue={1.0} onChange={v => upd(ctx)({ sensitivity: v })} />
+    },
+    { id: 'gain', label: 'Vert Gain',
+      render: ctx => <Slider label="Vert Gain" min={0.1} max={10} step={0.1} value={eff<SpectralSplitterEffect>(ctx).gain ?? 2.0} resetValue={2.0} onChange={v => upd(ctx)({ gain: v })} />
+    },
+    { id: 'colorMode', label: 'Color Map',
+      render: ctx => {
+        const ef = eff<SpectralSplitterEffect>(ctx);
+        const mode = ef.colorMode || 'frequency';
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <span className="rack-row-label">Color Map</span>
+            <select
+              value={mode}
+              onChange={e => upd(ctx)({ colorMode: e.target.value as any })}
+              style={{ flex: 1, background: '#111', color: '#ccc', border: '1px solid #333', fontSize: 10, borderRadius: 2 }}
+            >
+              <option value="frequency">Frequency (Low to High)</option>
+              <option value="amplitude">Level (Bar Height)</option>
+            </select>
+          </div>
+        );
+      }
+    },
+    { id: 'barColor', label: 'Default Color',
+      render: ctx => {
+        const ef = eff<SpectralSplitterEffect>(ctx);
+        const curColor = ef.barColor || [0.1, 0.7, 0.8, 1.0];
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <span className="rack-row-label">Bar Color</span>
+            <input
+              type="color"
+              value={rgbaToHex(curColor)}
+              onChange={e => {
+                const newRgba = hexToRgba(e.target.value, curColor[3] ?? 1.0);
+                upd(ctx)({ barColor: newRgba });
+              }}
+              style={{
+                width: 24,
+                height: 20,
+                padding: 0,
+                border: '1px solid #444',
+                borderRadius: 2,
+                cursor: 'pointer',
+                background: 'none'
+              }}
+              title="Default Bar Color (when no palette is connected)"
+            />
+            <button
+              onClick={() => upd(ctx)({ barColor: [0.1, 0.7, 0.8, 1.0] })}
+              style={{
+                padding: '2px 6px',
+                fontSize: 9,
+                background: '#222',
+                border: '1px solid #333',
+                color: '#18e4f5',
+                borderRadius: 2,
+                cursor: 'pointer'
+              }}
+              title="Reset to Cyan Accent"
+            >
+              Reset
+            </button>
+          </div>
+        );
+      }
+    },
+    { id: 'scaffold', label: 'Options',
+      render: ctx => {
+        const ef = eff<SpectralSplitterEffect>(ctx);
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10, cursor: 'pointer', color: '#bbb' }}>
+              <input
+                type="checkbox"
+                checked={ef.showScaffold ?? false}
+                onChange={e => upd(ctx)({ showScaffold: e.target.checked })}
+              />
+              Scaffold / Ghost FFT
+            </label>
+          </div>
+        );
+      }
+    },
+  ],
+
+  WaterfallSpectrogram: [
+    { id: 'busId', label: 'Source Bus',
+      render: ctx => {
+        const ef = eff<WaterfallSpectrogramEffect>(ctx);
+        const buses = AudioEngine.getInstance().getAllBuses();
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()}>
+            <span className="rack-row-label">Bus</span>
+            <select value={ef.busId} onChange={e => upd(ctx)({ busId: e.target.value })} className="mode-select" style={{ flex: 1 }}>
+              {buses.map((b: any) => {
+                const layerOrder = useEngineStore.getState().layerOrder;
+                const layerIdx = layerOrder.indexOf(b.id);
+                const label = b.id === 'master' ? 'Master Bus' : 
+                            layerIdx !== -1 ? `Layer ${layerIdx + 1}` : 
+                            b.name;
+                return (
+                  <option key={b.id} value={b.id}>{label}</option>
+                );
+              })}
+            </select>
+          </div>
+        );
+      }
+    },
+    { id: 'renderStyle', label: 'Render Style',
+      render: ctx => {
+        const ef = eff<WaterfallSpectrogramEffect>(ctx);
+        const style = ef.renderStyle || 'surface';
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <span className="rack-row-label">Style</span>
+            <select
+              value={style}
+              onChange={e => upd(ctx)({ renderStyle: e.target.value as any })}
+              style={{ flex: 1, background: '#111', color: '#ccc', border: '1px solid #333', fontSize: 10, borderRadius: 2 }}
+            >
+              <option value="surface">Surface (3D Shaded Terrain)</option>
+              <option value="lines">Ridge Lines (Joy Division)</option>
+            </select>
+          </div>
+        );
+      }
+    },
+    { id: 'colorMode', label: 'Color Map',
+      render: ctx => {
+        const ef = eff<WaterfallSpectrogramEffect>(ctx);
+        const mode = ef.colorMode || 'topographic';
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <span className="rack-row-label">Color Map</span>
+            <select
+              value={mode}
+              onChange={e => upd(ctx)({ colorMode: e.target.value as any })}
+              style={{ flex: 1, background: '#111', color: '#ccc', border: '1px solid #333', fontSize: 10, borderRadius: 2 }}
+            >
+              <option value="topographic">Topographic (Elevation)</option>
+              <option value="decay">Time Decay (Age)</option>
+              <option value="transient">Transient Crest (Slope)</option>
+              <option value="frequency">Frequency (Low to High)</option>
+            </select>
+          </div>
+        );
+      }
+    },
+    { id: 'flowDirection', label: 'Direction',
+      render: ctx => {
+        const ef = eff<WaterfallSpectrogramEffect>(ctx);
+        const dir = ef.flowDirection || 'front-to-back';
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <span className="rack-row-label">Direction</span>
+            <select
+              value={dir}
+              onChange={e => upd(ctx)({ flowDirection: e.target.value as any })}
+              style={{ flex: 1, background: '#111', color: '#ccc', border: '1px solid #333', fontSize: 10, borderRadius: 2 }}
+            >
+              <option value="front-to-back">Front to Back (Receding)</option>
+              <option value="back-to-front">Back to Front (Advancing)</option>
+            </select>
+          </div>
+        );
+      }
+    },
+    { id: 'tilt', label: 'Tilt',
+      render: ctx => <Slider label="Tilt (Angle)" min={0} max={1} step={0.01} value={eff<WaterfallSpectrogramEffect>(ctx).tilt ?? 0.5} resetValue={0.5} onChange={v => upd(ctx)({ tilt: v })} />
+    },
+    { id: 'gain', label: 'Vert Gain',
+      render: ctx => <Slider label="Vert Gain" min={0.1} max={10} step={0.1} value={eff<WaterfallSpectrogramEffect>(ctx).gain ?? 2.0} resetValue={2.0} onChange={v => upd(ctx)({ gain: v })} />
+    },
+    { id: 'speed', label: 'Speed',
+      render: ctx => <Slider label="Speed" min={0.1} max={5} step={0.1} value={eff<WaterfallSpectrogramEffect>(ctx).speed ?? 1.0} resetValue={1.0} onChange={v => upd(ctx)({ speed: v })} />
+    },
+    { id: 'linkScale', label: 'Link Scale X/Y',
+      render: ctx => {
+        const eCtx = ctx as EffectCtx;
+        const ef = eff<WaterfallSpectrogramEffect>(ctx);
+        const isLinked = ef.linkScale ?? (eCtx.linkedScales?.[ef.id] ?? true);
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} onDragStart={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <span className="rack-row-label">Link Scale X/Y</span>
+            <input type="checkbox" checked={isLinked}
+              onChange={e => {
+                e.stopPropagation();
+                const checked = e.target.checked;
+                upd(ctx)({ linkScale: checked });
+                eCtx.setLinkedScales?.({ ...eCtx.linkedScales, [ef.id]: checked });
+              }} />
+          </div>
+        );
+      }
+    },
+    { id: 'scaleX', label: 'Scale X',
+      render: ctx => {
+        const eCtx = ctx as EffectCtx;
+        const ef = eff<WaterfallSpectrogramEffect>(ctx);
+        const isLinked = ef.linkScale ?? (eCtx.linkedScales?.[ef.id] ?? true);
+        return <Slider label="Scale X" min={0.1} max={4} step={0.01} value={ef.scaleX ?? 1.0}
+          resetValue={1.0}
+          onChange={v => upd(ctx)(isLinked ? { scaleX: v, scaleY: v } : { scaleX: v })} />;
+      }
+    },
+    { id: 'scaleY', label: 'Scale Y',
+      render: ctx => {
+        const eCtx = ctx as EffectCtx;
+        const ef = eff<WaterfallSpectrogramEffect>(ctx);
+        const isLinked = ef.linkScale ?? (eCtx.linkedScales?.[ef.id] ?? true);
+        return <Slider label="Scale Y" min={0.1} max={4} step={0.01} value={ef.scaleY ?? 1.0}
+          resetValue={1.0}
+          onChange={v => upd(ctx)(isLinked ? { scaleX: v, scaleY: v } : { scaleY: v })} />;
+      }
+    },
+    { id: 'lineColor', label: 'Default Color',
+      render: ctx => {
+        const ef = eff<WaterfallSpectrogramEffect>(ctx);
+        const curColor = ef.lineColor || [0.0, 1.0, 0.4, 1.0];
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <span className="rack-row-label">Base Color</span>
+            <input
+              type="color"
+              value={rgbaToHex(curColor)}
+              onChange={e => {
+                const newRgba = hexToRgba(e.target.value, curColor[3] ?? 1.0);
+                upd(ctx)({ lineColor: newRgba });
+              }}
+              style={{
+                width: 24,
+                height: 20,
+                padding: 0,
+                border: '1px solid #444',
+                borderRadius: 2,
+                cursor: 'pointer',
+                background: 'none'
+              }}
+              title="Default Base Color (when no palette is connected)"
+            />
+            <button
+              onClick={() => upd(ctx)({ lineColor: [0.0, 1.0, 0.4, 1.0] })}
+              style={{
+                padding: '2px 6px',
+                fontSize: 9,
+                background: '#222',
+                border: '1px solid #333',
+                color: '#00ff41',
+                borderRadius: 2,
+                cursor: 'pointer'
+              }}
+              title="Reset to Emerald Accent"
+            >
+              Reset
+            </button>
+          </div>
+        );
+      }
+    },
+    { id: 'scaffold', label: 'Options',
+      render: ctx => {
+        const ef = eff<WaterfallSpectrogramEffect>(ctx);
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10, cursor: 'pointer', color: '#bbb' }}>
+              <input
+                type="checkbox"
+                checked={ef.showScaffold ?? false}
+                onChange={e => upd(ctx)({ showScaffold: e.target.checked })}
+              />
+              Scaffold / Floor Grid
+            </label>
+          </div>
+        );
+      }
     },
   ],
 
@@ -2420,6 +2797,433 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
                   </div>
                 );
               })}
+            </div>
+          </div>
+        );
+      }
+    }
+  ],
+  GrassField: [
+    {
+      id: 'perspective',
+      label: '3D Perspective & Camera',
+      render: ctx => {
+        const ef = eff<GrassFieldEffect>(ctx);
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'column', gap: 6 }}>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <Slider
+                label="Tilt Pitch"
+                min={0.0}
+                max={1.0}
+                step={0.01}
+                resetValue={0.5}
+                value={ef.tilt ?? 0.5}
+                onChange={v => upd(ctx)({ tilt: v })}
+                paramId="tilt_cv"
+                ctx={ctx}
+              />
+              <Slider
+                label="Zoom"
+                min={0.2}
+                max={3.0}
+                step={0.05}
+                resetValue={1.0}
+                value={ef.zoom ?? 1.0}
+                onChange={v => upd(ctx)({ zoom: v })}
+              />
+              <Slider
+                label="Horizon Y"
+                min={-1.0}
+                max={1.0}
+                step={0.05}
+                resetValue={0.0}
+                value={ef.horizonY ?? 0.0}
+                onChange={v => upd(ctx)({ horizonY: v })}
+              />
+            </div>
+          </div>
+        );
+      }
+    },
+    {
+      id: 'growthAndAnatomy',
+      label: 'Growth & Blade Anatomy',
+      render: ctx => {
+        const ef = eff<GrassFieldEffect>(ctx);
+        const audioMode = ef.growthAudioMode ?? 'accumulate';
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'column', gap: 6 }}>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <Slider
+                label="Growth Height"
+                min={0.0}
+                max={1.0}
+                step={0.01}
+                resetValue={0.0}
+                value={ef.growth ?? 0.0}
+                onChange={v => upd(ctx)({ growth: v })}
+                paramId="growth_cv"
+                ctx={ctx}
+              />
+              <Slider
+                label="Growth Rate"
+                min={0.01}
+                max={3.0}
+                step={0.01}
+                resetValue={1.0}
+                value={ef.growthRate ?? 1.0}
+                onChange={v => upd(ctx)({ growthRate: v })}
+              />
+              <Slider
+                label="Density"
+                min={0.1}
+                max={1.0}
+                step={0.02}
+                resetValue={0.6}
+                value={ef.density ?? 0.6}
+                onChange={v => upd(ctx)({ density: v })}
+                paramId="density_cv"
+                ctx={ctx}
+              />
+            </div>
+
+            {/* Growth Audio Fallback Mode Toggle */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#111', padding: '3px 6px', borderRadius: 3 }}>
+              <span style={{ fontSize: 9, color: '#aaa', textTransform: 'uppercase' }}>Growth Audio Mode:</span>
+              <div style={{ display: 'flex', gap: 4 }}>
+                <button
+                  style={{
+                    fontSize: 9,
+                    padding: '2px 6px',
+                    borderRadius: 2,
+                    cursor: 'pointer',
+                    background: audioMode === 'accumulate' ? '#18e4f5' : '#222',
+                    color: audioMode === 'accumulate' ? '#000' : '#888',
+                    border: 'none',
+                    fontWeight: audioMode === 'accumulate' ? 'bold' : 'normal'
+                  }}
+                  onClick={() => upd(ctx)({ growthAudioMode: 'accumulate' })}
+                  title="Accumulated sound energy charges growth upward over bars"
+                >
+                  Accumulate
+                </button>
+                <button
+                  style={{
+                    fontSize: 9,
+                    padding: '2px 6px',
+                    borderRadius: 2,
+                    cursor: 'pointer',
+                    background: audioMode === 'pitch' ? '#18e4f5' : '#222',
+                    color: audioMode === 'pitch' ? '#000' : '#888',
+                    border: 'none',
+                    fontWeight: audioMode === 'pitch' ? 'bold' : 'normal'
+                  }}
+                  onClick={() => upd(ctx)({ growthAudioMode: 'pitch' })}
+                  title="Melodic pitch height directly sets blade height"
+                >
+                  Pitch
+                </button>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 6 }}>
+              <Slider
+                label="Curvature Bend"
+                min={-1.0}
+                max={1.0}
+                step={0.02}
+                resetValue={0.2}
+                value={ef.bend ?? 0.2}
+                onChange={v => upd(ctx)({ bend: v })}
+                paramId="bend_cv"
+                ctx={ctx}
+              />
+              <Slider
+                label="Blade Fatness"
+                min={0.2}
+                max={3.0}
+                step={0.05}
+                resetValue={1.0}
+                value={ef.fatness ?? 1.0}
+                onChange={v => upd(ctx)({ fatness: v })}
+                paramId="fatness_cv"
+                ctx={ctx}
+              />
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: '#ccc', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={ef.invertCurvature === true}
+                  onChange={e => upd(ctx)({ invertCurvature: e.target.checked })}
+                />
+                Invert Curvature (Dark Curls / Bright Stiff)
+              </label>
+            </div>
+          </div>
+        );
+      }
+    },
+    {
+      id: 'windAndDynamics',
+      label: 'Wind & Dynamics',
+      render: ctx => {
+        const ef = eff<GrassFieldEffect>(ctx);
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'column', gap: 6 }}>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <Slider
+                label="Wind Speed"
+                min={0.0}
+                max={5.0}
+                step={0.1}
+                resetValue={1.5}
+                value={ef.windSpeed ?? 1.5}
+                onChange={v => upd(ctx)({ windSpeed: v })}
+              />
+              <Slider
+                label="Wind Strength"
+                min={0.0}
+                max={3.0}
+                step={0.05}
+                resetValue={1.0}
+                value={ef.windStrength ?? 1.0}
+                onChange={v => upd(ctx)({ windStrength: v })}
+                paramId="wind_cv"
+                ctx={ctx}
+              />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: '#ccc', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={ef.bassCoupling !== false}
+                  onChange={e => upd(ctx)({ bassCoupling: e.target.checked })}
+                />
+                Sub-bass Wind Gusts
+              </label>
+            </div>
+          </div>
+        );
+      }
+    },
+    {
+      id: 'tuftsAndFlora',
+      label: 'Wildflowers & Tufts',
+      render: ctx => {
+        const ef = eff<GrassFieldEffect>(ctx);
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'column', gap: 6 }}>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <label style={{ fontSize: 10, color: '#aaa', minWidth: 60 }}>Tuft Style:</label>
+              <select
+                style={{
+                  flex: 1,
+                  height: 22,
+                  background: '#222',
+                  border: '1px solid #444',
+                  color: '#fff',
+                  fontSize: 10,
+                  borderRadius: 2,
+                  padding: '0 4px'
+                }}
+                value={ef.tuftStyle ?? 'wildflowers'}
+                onChange={e => upd(ctx)({ tuftStyle: e.target.value as TuftStyle })}
+              >
+                <option value="wildflowers">Meadow Wildflowers</option>
+                <option value="poppies">Red Poppies</option>
+                <option value="dandelions">Dandelion Spores</option>
+                <option value="kelp">Seaweed Kelp Bulbs</option>
+                <option value="wheat">Golden Wheat Spikes</option>
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', gap: 6 }}>
+              <Slider
+                label="Spawn Chance"
+                min={0.0}
+                max={1.0}
+                step={0.01}
+                resetValue={0.05}
+                value={ef.tuftChance ?? 0.05}
+                onChange={v => upd(ctx)({ tuftChance: v })}
+              />
+              <Slider
+                label="Burst Count"
+                min={5}
+                max={100}
+                step={1}
+                resetValue={25}
+                value={ef.tuftBurstAmount ?? 25}
+                onChange={v => upd(ctx)({ tuftBurstAmount: v })}
+              />
+              <Slider
+                label="Trig Threshold"
+                min={0.1}
+                max={1.0}
+                step={0.02}
+                resetValue={0.6}
+                value={ef.tuftThreshold ?? 0.6}
+                onChange={v => upd(ctx)({ tuftThreshold: v })}
+              />
+            </div>
+
+            <button
+              className="rack-trigger-btn"
+              style={{
+                height: 24,
+                background: '#1a1a1a',
+                border: '1px solid #f58ce4',
+                color: '#f58ce4',
+                fontSize: 10,
+                fontWeight: 'bold',
+                cursor: 'pointer',
+                borderRadius: 2
+              }}
+              onClick={() => upd(ctx)({ tuftTriggerTime: Date.now() })}
+            >
+              🌸 SPAWN TUFTS BURST
+            </button>
+          </div>
+        );
+      }
+    },
+    {
+      id: 'removalAndPruning',
+      label: 'Removal & Pruning (Dual Mode)',
+      render: ctx => {
+        const ef = eff<GrassFieldEffect>(ctx);
+        const pruneMode = ef.pruneAudioMode ?? 'transient_cut';
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'column', gap: 8 }}>
+            {/* Mode 1: Timer-based continuous decay */}
+            <div style={{ background: '#141414', padding: '4px 6px', borderRadius: 3, border: '1px solid #282828' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: '#ddd', cursor: 'pointer', fontWeight: 'bold' }}>
+                  <input
+                    type="checkbox"
+                    checked={ef.timerDecayEnabled !== false}
+                    onChange={e => upd(ctx)({ timerDecayEnabled: e.target.checked })}
+                  />
+                  Timer Continuous Decay
+                </label>
+              </div>
+              {ef.timerDecayEnabled !== false && (
+                <Slider
+                  label="Lifespan Duration (s)"
+                  min={1.0}
+                  max={30.0}
+                  step={0.5}
+                  resetValue={10.0}
+                  value={ef.lifetimeDuration ?? 10.0}
+                  onChange={v => upd(ctx)({ lifetimeDuration: v })}
+                />
+              )}
+            </div>
+
+            {/* Mode 2: Gated Prune Input */}
+            <div style={{ background: '#141414', padding: '4px 6px', borderRadius: 3, border: '1px solid #282828' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: '#ddd', cursor: 'pointer', fontWeight: 'bold' }}>
+                  <input
+                    type="checkbox"
+                    checked={ef.gatedPruneEnabled === true}
+                    onChange={e => upd(ctx)({ gatedPruneEnabled: e.target.checked })}
+                  />
+                  Gated Pruning (CV / Audio Cut)
+                </label>
+              </div>
+
+              {ef.gatedPruneEnabled && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <Slider
+                    label="Gate Threshold"
+                    min={0.1}
+                    max={1.0}
+                    step={0.02}
+                    resetValue={0.7}
+                    value={ef.pruneThreshold ?? 0.7}
+                    onChange={v => upd(ctx)({ pruneThreshold: v })}
+                  />
+
+                  {/* Audio Prune Mode Selector */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#0a0a0a', padding: '3px 4px', borderRadius: 2 }}>
+                    <span style={{ fontSize: 9, color: '#aaa' }}>Audio Cut Style:</span>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      <button
+                        style={{
+                          fontSize: 9,
+                          padding: '2px 5px',
+                          borderRadius: 2,
+                          cursor: 'pointer',
+                          background: pruneMode === 'transient_cut' ? '#f58c18' : '#222',
+                          color: pruneMode === 'transient_cut' ? '#000' : '#888',
+                          border: 'none',
+                          fontWeight: pruneMode === 'transient_cut' ? 'bold' : 'normal'
+                        }}
+                        onClick={() => upd(ctx)({ pruneAudioMode: 'transient_cut' })}
+                        title="Sudden instant scythe cut on drum/transient peaks"
+                      >
+                        Transient Cut
+                      </button>
+                      <button
+                        style={{
+                          fontSize: 9,
+                          padding: '2px 5px',
+                          borderRadius: 2,
+                          cursor: 'pointer',
+                          background: pruneMode === 'silence_dissolve' ? '#f58c18' : '#222',
+                          color: pruneMode === 'silence_dissolve' ? '#000' : '#888',
+                          border: 'none',
+                          fontWeight: pruneMode === 'silence_dissolve' ? 'bold' : 'normal'
+                        }}
+                        onClick={() => upd(ctx)({ pruneAudioMode: 'silence_dissolve' })}
+                        title="Gradient diagonal dust wipe on silence / music drops"
+                      >
+                        Dust Dissolve
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      }
+    },
+    {
+      id: 'paletteAndStyle',
+      label: 'Palette & Color Styling',
+      render: ctx => {
+        const ef = eff<GrassFieldEffect>(ctx);
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'column', gap: 6 }}>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <label style={{ fontSize: 10, color: '#aaa', minWidth: 60 }}>Preset:</label>
+              <select
+                style={{
+                  flex: 1,
+                  height: 22,
+                  background: '#222',
+                  border: '1px solid #444',
+                  color: '#fff',
+                  fontSize: 10,
+                  borderRadius: 2,
+                  padding: '0 4px'
+                }}
+                value={ef.colorPreset ?? 'meadow'}
+                onChange={e => upd(ctx)({ colorPreset: e.target.value as any })}
+              >
+                <option value="meadow">Spring Meadow (Lush Green)</option>
+                <option value="bioluminescent">Bioluminescent Deep Flora</option>
+                <option value="golden">Golden Wheat Harvest</option>
+                <option value="neon">Cyber Neon Lawn</option>
+              </select>
+            </div>
+            <div style={{ fontSize: 9, color: '#666', fontStyle: 'italic' }}>
+              Tip: Patch a ColorPalette into [palette_in] for dynamic live gradient mapping.
             </div>
           </div>
         );

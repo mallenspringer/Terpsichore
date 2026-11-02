@@ -126,6 +126,11 @@ export class SignalDispatcher {
         pipeline.push((ctx) => {
           ctx.signalValues['source.video_out'] = 1.0;
           const srcType = ctx.layer.source.type;
+          if (srcType === 'AudioInput' || srcType === 'AudioFile' || srcType === 'SystemAudio') {
+            const peak = ctx.audioEngine.getPeakVolume(ctx.layer.id);
+            ctx.signalValues['source.peak_out'] = peak;
+            ctx.signalValues['source.audio_out'] = peak;
+          }
           if (srcType === 'VideoFile' || srcType === 'VideoURL' || srcType === 'AudioFile') {
             this.handlePlayerTriggers(ctx, 'source', ctx.layer.source as any, true);
           }
@@ -270,7 +275,7 @@ export class SignalDispatcher {
               const bus = ctx.audioEngine.getBusData(busId);
               if (bus) {
                 ctx.signalValues[`${nodeId}.peak_out`] = bus.peak;
-                ctx.signalValues[`${nodeId}.audio_out`] = 1.0;
+                ctx.signalValues[`${nodeId}.audio_out`] = bus.peak;
               }
               if (effect.type === 'AudioFile') {
                 const ef = ctx.layer.effects.find(e => e.id === nodeId);
@@ -550,12 +555,13 @@ export class SignalDispatcher {
 
               const smoothing = ef.smoothing ?? 0.8;
               const sensitivity = ef.sensitivity ?? 1.0;
+              const gain = ef.gain ?? 2.0;
               const stateKey = `${ctx.layer.id}.${nodeId}`;
               
               let state = this.spectralStates.get(stateKey) || { low: 0, lowMid: 0, mid: 0, highMid: 0, high: 0 };
 
               const updateBand = (prev: number, instant: number) => {
-                const val = instant * sensitivity;
+                const val = instant * sensitivity * gain;
                 return prev * smoothing + val * (1.0 - smoothing);
               };
 
@@ -572,6 +578,10 @@ export class SignalDispatcher {
               ctx.signalValues[`${nodeId}.mid_out`] = state.mid;
               ctx.signalValues[`${nodeId}.high_mid_out`] = state.highMid;
               ctx.signalValues[`${nodeId}.high_out`] = state.high;
+              ctx.signalValues[`${nodeId}.video_out`] = 1.0;
+            });
+          } else if (effect.type === 'WaterfallSpectrogram' || effect.type === 'GrassField') {
+            pipeline.push((ctx: DispatchContext) => {
               ctx.signalValues[`${nodeId}.video_out`] = 1.0;
             });
           } else if (effect.type === 'AudioTransformer') {
@@ -1205,8 +1215,9 @@ export class SignalDispatcher {
         pipeline.push((ctx: DispatchContext) => {
           let rawValue = ctx.signalValues[`${edge.fromNodeId}.${edge.fromPort}`] ?? 0;
           
-          if (edge.fromNodeId === 'source' && edge.fromPort === 'audio_out') {
-            rawValue = ctx.audioEngine.getPeakVolume(ctx.layer.id);
+          if (edge.signalType === 'audio' || edge.fromPort === 'audio_out' || edge.fromPort === 'peak_out') {
+            const busId = edge.fromNodeId === 'source' ? ctx.layer.id : edge.fromNodeId;
+            rawValue = ctx.audioEngine.getPeakVolume(busId);
           } else if (edge.signalType === 'video' || edge.toPort === 'map_in' || edge.toPort === 'video_in') {
             // Video connections carry active video streams without expensive CPU readbacks
             rawValue = 1.0;

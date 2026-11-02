@@ -33,6 +33,8 @@ const MODULE_PARAMS: Record<string, string[]> = {
   Noise: ['frequency', 'amplitude', 'offset', 'bipolar'],
   AudioSource: ['gain'],
   SpectralSplitter: ['gain'],
+  WaterfallSpectrogram: ['tilt', 'gain', 'speed', 'scaleX', 'scaleY'],
+  GrassField: ['tilt', 'zoom', 'growth', 'density', 'bend', 'fatness', 'windSpeed', 'windStrength', 'tuftChance', 'pruneThreshold'],
   AudioTransformer: ['frequency', 'q', 'gain', 'threshold', 'ratio', 'attack', 'release'],
   AudioModulator: ['wet', 'rate'],
   AudioGate: ['threshold', 'attack', 'release', 'hold'],

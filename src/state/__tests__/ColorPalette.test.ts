@@ -61,7 +61,7 @@ describe('ColorPalette (Artist\'s Palette Module)', () => {
   });
 
   it('ensures recipient modules expose palette_in port of type palette', () => {
-    const recipients = ['ParticleCloud', 'CanvasBackground', 'ColorNoise', 'ShapeGenerator'];
+    const recipients = ['ParticleCloud', 'CanvasBackground', 'ColorNoise', 'ShapeGenerator', 'Oscilloscope', 'SpectralSplitter', 'WaterfallSpectrogram'];
     for (const mod of recipients) {
       const ports = PORT_DEFS[mod];
       expect(ports, `Ports for ${mod} should be defined`).toBeDefined();
@@ -166,6 +166,55 @@ describe('ColorPalette (Artist\'s Palette Module)', () => {
     const posActive = calculatePalettePositions(activeOnly);
     expect(posActive[0]).toBe(0.0);
     expect(posActive[1]).toBeCloseTo(0.8, 4);
+  });
+
+  it('configures Oscilloscope with phosphor green default, scaffold toggle, and colorMode', () => {
+    const scope = createDefaultEffect('Oscilloscope', 'scope_1') as any;
+    expect(scope).toBeDefined();
+    expect(scope.type).toBe('Oscilloscope');
+    expect(scope.traceColor).toEqual([0.0, 1.0, 0.25, 1.0]); // Analog phosphor green
+    expect(scope.showScaffold).toBe(false);
+    expect(scope.colorMode).toBe('amplitude');
+    expect(scope.gain).toBe(2.0);
+  });
+
+  it('configures SpectralSplitter with scaffold toggle, colorMode, barColor, and gain', () => {
+    const spec = createDefaultEffect('SpectralSplitter', 'spec_1') as any;
+    expect(spec).toBeDefined();
+    expect(spec.type).toBe('SpectralSplitter');
+    expect(spec.showScaffold).toBe(false);
+    expect(spec.colorMode).toBe('frequency');
+    expect(spec.barColor).toEqual([0.1, 0.7, 0.8, 1.0]);
+    expect(spec.gain).toBe(2.0);
+
+    const ports = PORT_DEFS.SpectralSplitter;
+    expect(ports.find(p => p.id === 'palette_in')).toBeDefined();
+    expect(ports.find(p => p.id === 'gain_cv')).toBeDefined();
+  });
+
+  it('configures WaterfallSpectrogram with defaults and palette integration', () => {
+    const wf = createDefaultEffect('WaterfallSpectrogram', 'wf_1') as any;
+    expect(wf).toBeDefined();
+    expect(wf.type).toBe('WaterfallSpectrogram');
+    expect(wf.colorMode).toBe('topographic');
+    expect(wf.flowDirection).toBe('front-to-back');
+    expect(wf.renderStyle).toBe('surface');
+    expect(wf.tilt).toBe(0.5);
+    expect(wf.gain).toBe(2.0);
+    expect(wf.speed).toBe(1.0);
+    expect(wf.showScaffold).toBe(false);
+
+    expect(wf.scaleX).toBe(1.0);
+    expect(wf.scaleY).toBe(1.0);
+    expect(wf.linkScale).toBe(true);
+
+    const ports = PORT_DEFS.WaterfallSpectrogram;
+    expect(ports.find(p => p.id === 'palette_in')).toBeDefined();
+    expect(ports.find(p => p.id === 'tilt_cv')).toBeDefined();
+    expect(ports.find(p => p.id === 'gain_cv')).toBeDefined();
+    expect(ports.find(p => p.id === 'speed_cv')).toBeDefined();
+    expect(ports.find(p => p.id === 'scale_x_cv')).toBeDefined();
+    expect(ports.find(p => p.id === 'scale_y_cv')).toBeDefined();
   });
 });
 

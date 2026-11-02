@@ -99,6 +99,10 @@ export class AudioEngine {
     }
   }
 
+  public getSampleRate(): number {
+    return this.context?.sampleRate ?? 44100;
+  }
+
   /**
    * Initializes or resets an audio bus with necessary buffers
    */
@@ -238,6 +242,13 @@ export class AudioEngine {
     const gain = this.moduleGains.get(id);
     if (gain) {
       gain.gain.setTargetAtTime(muted ? 0 : 1, this.context.currentTime, 0.01);
+    }
+  }
+
+  public setModuleVolume(id: string, volume: number) {
+    const gain = this.moduleGains.get(id);
+    if (gain) {
+      gain.gain.setTargetAtTime(Math.max(0, volume), this.context.currentTime, 0.01);
     }
   }
 

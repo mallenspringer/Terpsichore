@@ -20,6 +20,7 @@ import { PatternWGSL } from './shaders/Pattern';
 import { KaleidoscopeWGSL } from './shaders/Kaleidoscope';
 import { OscilloscopeWGSL } from './shaders/Oscilloscope';
 import { SpectralSplitterWGSL } from './shaders/SpectralSplitter';
+import { WaterfallSpectrogramWGSL } from './shaders/WaterfallSpectrogram';
 import { PixelProcessorFragmentWGSL } from './shaders/PixelProcessor';
 import { SpokenWordVisualizerWGSL } from './shaders/SpokenWordVisualizer';
 import { KeyMixerWGSL } from './shaders/KeyMixer';
@@ -28,6 +29,7 @@ import { UVDisplaceWGSL } from './shaders/UVDisplace';
 import { CanvasBackgroundWGSL } from './shaders/CanvasBackground';
 import { AlphaAdjustWGSL } from './shaders/AlphaAdjust';
 import { ParticleComputeWGSL, ParticleRenderWGSL } from './shaders/ParticleCloud';
+import { GrassComputeWGSL, GrassRenderWGSL } from './shaders/GrassField';
 
 import { PORT_DEFS } from '../components/NodeGraph/portDefs';
 import { SignalDispatcher } from '../state/SignalDispatcher';
@@ -35,9 +37,9 @@ import {
   ShapeGeneratorSource, Transform2DEffect, ColorAdjustEffect, LumaKeyEffect,
   SimpleFeedbackEffect, ColorRGBEffect, LumaSplitterEffect, VideoMixerEffect,
   KeyMixerEffect, VideoMathEffect, UVDisplaceEffect, CanvasBackgroundEffect,
-  AlphaAdjustEffect, ParticleCloudEffect, ColorPaletteEffect,
+  AlphaAdjustEffect, ParticleCloudEffect, ColorPaletteEffect, GrassFieldEffect,
   NoiseVideoSource, ColorNoiseSource, InverterEffect, PixelProcessorEffect,
-  PatternEffect, KaleidoscopeEffect, SampleAndHoldEffect, OscilloscopeEffect, SpectralSplitterEffect,
+  PatternEffect, KaleidoscopeEffect, SampleAndHoldEffect, OscilloscopeEffect, SpectralSplitterEffect, WaterfallSpectrogramEffect,
   SpokenWordVisualizerEffect,
   LayerState, AnySource
 } from '../state/types';
@@ -80,6 +82,9 @@ export class Renderer {
   private kaleidoscopePipeline!: GPURenderPipeline;
   private oscilloscopePipeline!: GPURenderPipeline;
   private spectralSplitterPipeline!: GPURenderPipeline;
+  private waterfallPipeline!: GPURenderPipeline;
+  private waterfallHistory: Map<string, { texture: GPUTexture; head: number; stepAccumulator: number }> = new Map();
+  private repeatSampler!: GPUSampler;
   private pixelProcessorPipeline!: GPURenderPipeline;
   private colorNoisePipeline!: GPURenderPipeline;
   private spokenWordPipeline!: GPURenderPipeline;
@@ -94,6 +99,11 @@ export class Renderer {
   private particlePingPong: Map<string, number> = new Map();
   private particleInitDone: Set<string> = new Set();
   private particleLastTime: Map<string, number> = new Map();
+  private grassComputePipeline!: GPUComputePipeline;
+  private grassRenderPipeline!: GPURenderPipeline;
+  private grassPingPong: Map<string, number> = new Map();
+  private grassGrowthAccum: Map<string, number> = new Map();
+  private grassLastTime: Map<string, number> = new Map();
 
   // Isolated layouts to prevent 'Minimum Binding Size' collisions
   private effectLayouts: Map<string, GPUBindGroupLayout> = new Map();
@@ -174,6 +184,12 @@ export class Renderer {
     });
 
     this.sampler = this.device.createSampler({ magFilter: 'linear', minFilter: 'linear' });
+    this.repeatSampler = this.device.createSampler({
+      magFilter: 'linear',
+      minFilter: 'linear',
+      addressModeU: 'clamp-to-edge',
+      addressModeV: 'repeat'
+    });
 
     this.blankTexture = this.device.createTexture({
       size: [1, 1],
@@ -539,6 +555,18 @@ export class Renderer {
     });
     this.effectLayouts.set('SpectralSplitter', this.spectralSplitterPipeline.getBindGroupLayout(0));
 
+    this.waterfallPipeline = this.device.createRenderPipeline({
+      layout: 'auto',
+      vertex,
+      fragment: {
+        module: this.device.createShaderModule({ code: WaterfallSpectrogramWGSL }),
+        entryPoint: 'fs_main',
+        targets: [{ format: this.format }]
+      },
+      primitive
+    });
+    this.effectLayouts.set('WaterfallSpectrogram', this.waterfallPipeline.getBindGroupLayout(0));
+
     this.colorNoisePipeline = this.device.createRenderPipeline({
       layout: 'auto',
       vertex: { module: this.device.createShaderModule({ code: NoiseSourceVertexWGSL }), entryPoint: 'vs_main' },
@@ -669,6 +697,37 @@ export class Renderer {
       },
       primitive
     });
+
+    this.grassComputePipeline = this.device.createComputePipeline({
+      layout: 'auto',
+      compute: {
+        module: this.device.createShaderModule({ code: GrassComputeWGSL }),
+        entryPoint: 'cs_main'
+      }
+    });
+
+    this.grassRenderPipeline = this.device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: this.device.createShaderModule({ code: GrassRenderWGSL }),
+        entryPoint: 'vs_main'
+      },
+      fragment: {
+        module: this.device.createShaderModule({ code: GrassRenderWGSL }),
+        entryPoint: 'fs_main',
+        targets: [{
+          format: this.format,
+          blend: {
+            color: { operation: 'add', srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha' },
+            alpha: { operation: 'add', srcFactor: 'one', dstFactor: 'one-minus-src-alpha' }
+          }
+        }]
+      },
+      primitive: {
+        topology: 'triangle-list',
+        cullMode: 'none'
+      }
+    });
   }
 
   private getStorageBuffer(key: string, size: number): GPUBuffer {
@@ -699,7 +758,12 @@ export class Renderer {
   private getEffectiveParam(layer: LayerState, nodeId: string, paramId: string, baseValue: number, _timeSec: number): number {
     let base = baseValue;
 
-    const midiOverride = SignalDispatcher.getInstance().getMidiOverride(layer.id, nodeId, paramId);
+    let midiOverride = SignalDispatcher.getInstance().getMidiOverride(layer.id, nodeId, paramId);
+    if (midiOverride === null && paramId.endsWith('_cv')) {
+      const bare = paramId === 'scale_x_cv' ? 'scaleX' : (paramId === 'scale_y_cv' ? 'scaleY' : paramId.replace(/_cv$/, ''));
+      midiOverride = SignalDispatcher.getInstance().getMidiOverride(layer.id, nodeId, bare);
+    }
+
     if (midiOverride !== null) {
       base = midiOverride;
     } else if (paramId === 'scaleY') {
@@ -707,6 +771,14 @@ export class Renderer {
       const effect = layer.effects.find(e => e.id === nodeId);
       if (effect?.type === 'Transform2D' && isLinked) {
         const xOverride = SignalDispatcher.getInstance().getMidiOverride(layer.id, nodeId, 'scaleX');
+        if (xOverride !== null) base = xOverride;
+      }
+    } else if (paramId === 'scale_y_cv') {
+      const effect = layer.effects.find(e => e.id === nodeId) as any;
+      const isLinked = effect?.linkScale ?? (layer.linkedScales?.[nodeId] ?? true);
+      if (effect?.type === 'WaterfallSpectrogram' && isLinked) {
+        const xOverride = SignalDispatcher.getInstance().getMidiOverride(layer.id, nodeId, 'scale_x_cv') ??
+                          SignalDispatcher.getInstance().getMidiOverride(layer.id, nodeId, 'scaleX');
         if (xOverride !== null) base = xOverride;
       }
     }
@@ -723,6 +795,14 @@ export class Renderer {
       const effect = layer.effects.find(e => e.id === nodeId);
       if (effect?.type === 'Transform2D' && isLinked) {
         foundEdge = edges.find(e => e.toNodeId === nodeId && e.toPort === 'scaleX');
+      }
+    }
+    // Special Case: Linked Scales for WaterfallSpectrogram
+    if (paramId === 'scale_y_cv' && !foundEdge) {
+      const effect = layer.effects.find(e => e.id === nodeId) as any;
+      const isLinked = effect?.linkScale ?? (layer.linkedScales?.[nodeId] ?? true);
+      if (effect?.type === 'WaterfallSpectrogram' && isLinked) {
+        foundEdge = edges.find(e => e.toNodeId === nodeId && e.toPort === 'scale_x_cv');
       }
     }
 
@@ -990,13 +1070,16 @@ export class Renderer {
           if (!effect) return;
 
           // Category A: Generators (Sources or Visualizers that don't REQUIRE an input texture)
-          if (['ShapeGenerator', 'VideoFile', 'VideoURL', 'WebcamCapture', 'NoiseSource', 'ColorNoise', 'SpectralSplitter', 'Oscilloscope', 'SpokenWordVisualizer', 'ParticleCloud'].includes(effect.type)) {
+          if (['ShapeGenerator', 'VideoFile', 'VideoURL', 'WebcamCapture', 'NoiseSource', 'ColorNoise', 'SpectralSplitter', 'Oscilloscope', 'WaterfallSpectrogram', 'SpokenWordVisualizer', 'ParticleCloud', 'GrassField'].includes(effect.type)) {
             const genTarget = this.ensureTexture(nodeId, 'video_out');
             if (effect.type === 'ShapeGenerator') {
               this.renderShapeSource(layer, nodeId, genTarget, timeSec, commandEncoder);
               return;
             } else if (effect.type === 'ParticleCloud') {
               this.renderParticleCloud(layer, nodeId, effect as ParticleCloudEffect, genTarget, timeSec, commandEncoder);
+              return;
+            } else if (effect.type === 'GrassField') {
+              this.renderGrassField(layer, nodeId, effect as GrassFieldEffect, genTarget, timeSec, commandEncoder);
               return;
             } else if (effect.type === 'SpokenWordVisualizer') {
               this.renderSpokenWordVisualizer(layer, nodeId, genTarget, timeSec, commandEncoder);
@@ -1007,7 +1090,7 @@ export class Renderer {
             } else if (effect.type === 'ColorNoise') {
               this.renderColorNoise(layer, nodeId, genTarget, timeSec, commandEncoder);
               return;
-            } else if (effect.type === 'SpectralSplitter' || effect.type === 'Oscilloscope') {
+            } else if (effect.type === 'SpectralSplitter' || effect.type === 'Oscilloscope' || effect.type === 'WaterfallSpectrogram') {
               // Fall through to the specialized render blocks below
             } else {
               this.renderVideoEffect(layer, nodeId, effect as any, genTarget, commandEncoder);
@@ -1025,7 +1108,7 @@ export class Renderer {
           if (!inputTex) inputTex = this.nodeTextures.get('__dummy__')!;
 
           // Only skip if we are NOT an audio visualizer AND we have no valid input (redundant now but safe)
-          if (!inputTex && effect.type !== 'SpectralSplitter' && effect.type !== 'Oscilloscope') return;
+          if (!inputTex && effect.type !== 'SpectralSplitter' && effect.type !== 'Oscilloscope' && effect.type !== 'WaterfallSpectrogram') return;
 
           const tex = inputTex!; // Local non-null reference for TS safety
 
@@ -1121,14 +1204,42 @@ export class Renderer {
             const storageBuffer = this.getStorageBuffer(`${nodeId}.waveform`, waveform.byteLength);
             this.device.queue.writeBuffer(storageBuffer, 0, waveform as any);
 
-            // 3. Upload uniforms
-            const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 16);
-            this.device.queue.writeBuffer(uniformBuffer, 0, new Float32Array([
-              this.getEffectiveParam(layer, ef.id, 'triggerLevel', ef.triggerLevel, timeSec),
-              this.getEffectiveParam(layer, ef.id, 'timeScale', ef.timeScale, timeSec),
-              this.canvas.width / this.canvas.height,
-              ef.isFrozen ? 1.0 : 0.0
-            ]) as any);
+            // 3. Upload uniforms & palette
+            const pal = this.getConnectedPalette(layer, nodeId, 'palette_in');
+            const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 256);
+            const f32 = new Float32Array(64);
+            f32[0] = this.getEffectiveParam(layer, ef.id, 'triggerLevel', ef.triggerLevel, timeSec);
+            f32[1] = this.getEffectiveParam(layer, ef.id, 'timeScale', ef.timeScale, timeSec);
+            f32[2] = this.canvas.width / this.canvas.height;
+            f32[3] = ef.isFrozen ? 1.0 : 0.0;
+            f32[4] = (ef.showScaffold ?? false) ? 1.0 : 0.0;
+            f32[5] = ef.colorMode === 'span' ? 1.0 : (ef.colorMode === 'frequency' ? 2.0 : 0.0);
+            f32[6] = this.getEffectiveParam(layer, ef.id, 'gain_cv', ef.gain ?? 2.0, timeSec);
+            f32[7] = pal ? 1.0 : 0.0;
+            f32[8] = pal ? pal.count : 0.0;
+            f32[9] = pal ? pal.interpolation : 0.0;
+            f32[10] = 0;
+            f32[11] = 0;
+
+            const tc = ef.traceColor || [0.0, 1.0, 0.25, 1.0];
+            f32[12] = tc[0];
+            f32[13] = tc[1];
+            f32[14] = tc[2];
+            f32[15] = tc[3] ?? 1.0;
+
+            if (pal) {
+              for (let i = 0; i < 8; i++) {
+                f32[16 + i * 4 + 0] = pal.colors[i][0];
+                f32[16 + i * 4 + 1] = pal.colors[i][1];
+                f32[16 + i * 4 + 2] = pal.colors[i][2];
+                f32[16 + i * 4 + 3] = pal.colors[i][3];
+              }
+              for (let i = 0; i < 8; i++) {
+                f32[48 + i] = pal.positions[i];
+              }
+            }
+
+            this.device.queue.writeBuffer(uniformBuffer, 0, f32);
 
             entries = [
               { binding: 0, resource: { buffer: uniformBuffer } },
@@ -1167,27 +1278,190 @@ export class Renderer {
             const storageBuffer = this.getStorageBuffer(`${nodeId}.fft`, fft.byteLength);
             this.device.queue.writeBuffer(storageBuffer, 0, fft as any);
 
-            const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 64);
-            this.device.queue.writeBuffer(uniformBuffer, 0, new Float32Array([
-              this.getEffectiveParam(layer, ef.id, 'sensitivity', ef.sensitivity, timeSec),
-              this.getEffectiveParam(layer, ef.id, 'smoothing', ef.smoothing, timeSec),
-              this.canvas.width / this.canvas.height,
-              timeSec,
+            const pal = this.getConnectedPalette(layer, nodeId, 'palette_in');
+            const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 256);
+            const f32 = new Float32Array(64);
+            f32[0] = this.getEffectiveParam(layer, ef.id, 'sensitivity', ef.sensitivity, timeSec);
+            f32[1] = this.getEffectiveParam(layer, ef.id, 'smoothing', ef.smoothing, timeSec);
+            f32[2] = this.canvas.width / this.canvas.height;
+            f32[3] = timeSec;
 
-              // bands_1 (vec4) - Safe access with double optional chaining
-              busData?.bands?.low ?? 0,
-              busData?.bands?.lowMid ?? 0,
-              busData?.bands?.midGranular ?? 0,
-              busData?.bands?.highMid ?? 0,
+            // bands_1 (vec4)
+            f32[4] = busData?.bands?.low ?? 0;
+            f32[5] = busData?.bands?.lowMid ?? 0;
+            f32[6] = busData?.bands?.midGranular ?? 0;
+            f32[7] = busData?.bands?.highMid ?? 0;
 
-              // bands_2 (vec4)
-              busData?.bands?.highGranular ?? 0,
-              0, 0, 0 // Padding
-            ]) as any);
+            // bands_2 (vec4)
+            f32[8] = busData?.bands?.highGranular ?? 0;
+            f32[9] = 0;
+            f32[10] = 0;
+            f32[11] = 0;
+
+            // flags & settings
+            f32[12] = (ef.showScaffold ?? false) ? 1.0 : 0.0;
+            f32[13] = ef.colorMode === 'amplitude' ? 1.0 : 0.0;
+            f32[14] = this.getEffectiveParam(layer, ef.id, 'gain_cv', ef.gain ?? 2.0, timeSec);
+            f32[15] = pal ? 1.0 : 0.0;
+
+            f32[16] = pal ? pal.count : 0.0;
+            f32[17] = pal ? pal.interpolation : 0.0;
+            f32[18] = 0;
+            f32[19] = 0;
+
+            const bc = ef.barColor || [0.1, 0.7, 0.8, 1.0];
+            f32[20] = bc[0];
+            f32[21] = bc[1];
+            f32[22] = bc[2];
+            f32[23] = bc[3] ?? 1.0;
+
+            if (pal) {
+              for (let i = 0; i < 8; i++) {
+                f32[24 + i * 4 + 0] = pal.colors[i][0];
+                f32[24 + i * 4 + 1] = pal.colors[i][1];
+                f32[24 + i * 4 + 2] = pal.colors[i][2];
+                f32[24 + i * 4 + 3] = pal.colors[i][3];
+              }
+              for (let i = 0; i < 8; i++) {
+                f32[56 + i] = pal.positions[i];
+              }
+            }
+
+            this.device.queue.writeBuffer(uniformBuffer, 0, f32);
 
             entries = [
               { binding: 0, resource: { buffer: uniformBuffer } },
               { binding: 1, resource: { buffer: storageBuffer } }
+            ];
+
+            const pass = commandEncoder.beginRenderPass({
+              colorAttachments: [{ view: target.createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' }]
+            });
+            const layout = this.effectLayouts.get(effect.type) || pipeline.getBindGroupLayout(0);
+            const bg = this.device.createBindGroup({ layout, entries });
+            pass.setPipeline(pipeline); pass.setBindGroup(0, bg); pass.draw(3); pass.end();
+            pipeline = null;
+          } else if (effect.type === 'WaterfallSpectrogram') {
+            pipeline = this.waterfallPipeline;
+            const ef = effect as WaterfallSpectrogramEffect;
+            const edge = layer?.graph?.edges.find(e => e.toNodeId === nodeId && e.toPort === 'audio_in');
+            let busId = ef.busId || 'master';
+
+            if (edge) {
+              const sourceEffect = layer?.effects.find(e => e.id === edge.fromNodeId);
+              if (sourceEffect?.type === 'AudioSource') busId = (sourceEffect as any).busId;
+              else if (edge.fromNodeId === 'source' || sourceEffect?.type === 'VideoFile' || sourceEffect?.type === 'VideoURL' || sourceEffect?.type === 'AudioFile' || sourceEffect?.type === 'AudioInput' || sourceEffect?.type === 'SystemAudio' || sourceEffect?.type === 'AudioTransformer' || sourceEffect?.type === 'AudioToCV') {
+                busId = edge.fromNodeId === 'source' ? layer.id : edge.fromNodeId;
+              }
+            }
+
+            let busData = AudioEngine.getInstance().getBusData(busId);
+            if (!busData) {
+              busData = AudioEngine.getInstance().getBusData(ef.busId || 'master');
+            }
+
+            const speed = Math.max(0.05, this.getEffectiveParam(layer, ef.id, 'speed_cv', ef.speed ?? 1.0, timeSec));
+
+            // Ensure history texture (256x128 rgba8unorm ring buffer)
+            let hist = this.waterfallHistory.get(nodeId);
+            if (!hist) {
+              const tex = this.device.createTexture({
+                size: { width: 256, height: 128 },
+                format: 'rgba8unorm',
+                usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST
+              });
+              hist = { texture: tex, head: 0, stepAccumulator: 0 };
+              this.waterfallHistory.set(nodeId, hist);
+            }
+
+            hist.stepAccumulator = (hist.stepAccumulator ?? 0) + speed;
+            const steps = Math.min(8, Math.floor(hist.stepAccumulator));
+            hist.stepAccumulator -= steps;
+
+            if (steps > 0) {
+              // Write latest FFT slice to ring buffer
+              const fft = busData ? busData.fft : null;
+              const rowData = new Uint8Array(256 * 4);
+              if (fft && fft.length > 0) {
+                const sampleRate = AudioEngine.getInstance().getSampleRate();
+                const nyquist = sampleRate / 2;
+                const minFreq = 30; // 30 Hz (sub bass)
+                const maxFreq = 16000; // 16 kHz (sparkle / highs)
+                for (let i = 0; i < 256; i++) {
+                  const t = i / 255;
+                  const targetFreq = minFreq * Math.pow(maxFreq / minFreq, t);
+                  const fftIdx = Math.max(0, Math.min(fft.length - 1, Math.floor((targetFreq / nyquist) * fft.length)));
+                  const db = fft[fftIdx] ?? -100;
+                  const norm = Math.max(0, Math.min(1, (db + 75) / 75));
+                  const b = Math.round(norm * 255);
+                  rowData[i * 4 + 0] = b;
+                  rowData[i * 4 + 1] = b;
+                  rowData[i * 4 + 2] = b;
+                  rowData[i * 4 + 3] = 255;
+                }
+              }
+              for (let s = 0; s < steps; s++) {
+                this.device.queue.writeTexture(
+                  { texture: hist.texture, origin: { x: 0, y: hist.head, z: 0 } },
+                  rowData,
+                  { bytesPerRow: 256 * 4 },
+                  { width: 256, height: 1 }
+                );
+                hist.head = (hist.head + 1) % 128;
+              }
+            }
+
+            const currentHeadNorm = (hist.head + hist.stepAccumulator) / 128.0;
+
+            const pal = this.getConnectedPalette(layer, nodeId, 'palette_in');
+            const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 256);
+            const f32 = new Float32Array(64);
+            f32[0] = this.getEffectiveParam(layer, ef.id, 'tilt_cv', ef.tilt ?? 0.5, timeSec);
+            f32[1] = this.getEffectiveParam(layer, ef.id, 'gain_cv', ef.gain ?? 2.0, timeSec);
+            f32[2] = speed;
+            f32[3] = currentHeadNorm;
+
+            // colorMode: 0 = topographic, 1 = decay, 2 = transient, 3 = frequency
+            const cmMap = { topographic: 0, decay: 1, transient: 2, frequency: 3 };
+            f32[4] = cmMap[ef.colorMode || 'topographic'] ?? 0;
+            f32[5] = ef.flowDirection === 'back-to-front' ? 1.0 : 0.0;
+            f32[6] = ef.renderStyle === 'lines' ? 1.0 : 0.0;
+            f32[7] = (ef.showScaffold ?? false) ? 1.0 : 0.0;
+
+            f32[8] = this.canvas.width / this.canvas.height;
+            f32[9] = timeSec;
+            f32[10] = pal ? 1.0 : 0.0;
+            f32[11] = pal ? pal.count : 0.0;
+
+            f32[12] = pal ? pal.interpolation : 0.0;
+            f32[13] = Math.max(0.05, this.getEffectiveParam(layer, ef.id, 'scale_x_cv', ef.scaleX ?? 1.0, timeSec));
+            f32[14] = Math.max(0.05, this.getEffectiveParam(layer, ef.id, 'scale_y_cv', ef.scaleY ?? 1.0, timeSec));
+            f32[15] = 0;
+
+            const lc = ef.lineColor || [0.0, 1.0, 0.4, 1.0];
+            f32[16] = lc[0];
+            f32[17] = lc[1];
+            f32[18] = lc[2];
+            f32[19] = lc[3] ?? 1.0;
+
+            if (pal) {
+              for (let i = 0; i < 8; i++) {
+                f32[20 + i * 4 + 0] = pal.colors[i][0];
+                f32[20 + i * 4 + 1] = pal.colors[i][1];
+                f32[20 + i * 4 + 2] = pal.colors[i][2];
+                f32[20 + i * 4 + 3] = pal.colors[i][3];
+              }
+              for (let i = 0; i < 8; i++) {
+                f32[52 + i] = pal.positions[i];
+              }
+            }
+
+            this.device.queue.writeBuffer(uniformBuffer, 0, f32);
+
+            entries = [
+              { binding: 0, resource: { buffer: uniformBuffer } },
+              { binding: 1, resource: hist.texture.createView() },
+              { binding: 2, resource: this.repeatSampler }
             ];
 
             const pass = commandEncoder.beginRenderPass({
@@ -1820,6 +2094,8 @@ export class Renderer {
     this.analysisReadbackBuffers.forEach(buf => buf.destroy());
     this.analysisReadbackBuffers.clear();
     this.analysisWeightBuffers.clear();
+    this.waterfallHistory.forEach(h => h.texture.destroy());
+    this.waterfallHistory.clear();
   }
 
   private renderShapeSource(layer: LayerState, nodeId: string, target: GPUTexture, timeSec: number, commandEncoder: GPUCommandEncoder) {
@@ -2479,6 +2755,306 @@ export class Renderer {
     pass.setPipeline(renderPipeline);
     pass.setBindGroup(0, renderBindGroup);
     pass.draw(6, count);
+    pass.end();
+  }
+
+  private renderGrassField(
+    layer: LayerState,
+    nodeId: string,
+    ef: GrassFieldEffect,
+    target: GPUTexture,
+    timeSec: number,
+    commandEncoder: GPUCommandEncoder
+  ) {
+    const prevTime = this.grassLastTime.get(nodeId) ?? timeSec;
+    const dt = Math.min(0.1, Math.max(0.001, timeSec - prevTime));
+    this.grassLastTime.set(nodeId, timeSec);
+
+    const totalBlades = 16384;
+    const bladeByteSize = 64;
+    const bufferSize = totalBlades * bladeByteSize;
+
+    const ping = this.grassPingPong.get(nodeId) ?? 0;
+    const inBufKey = `${nodeId}.grass_buf_${ping}`;
+    const outBufKey = `${nodeId}.grass_buf_${1 - ping}`;
+    const inBuf = this.getStorageBuffer(inBufKey, bufferSize);
+    const outBuf = this.getStorageBuffer(outBufKey, bufferSize);
+    this.grassPingPong.set(nodeId, 1 - ping);
+
+    // 1. Audio Connection & DSP Extraction
+    const audioEdge = layer.graph?.edges.find(e => e.toNodeId === nodeId && e.toPort === 'audio_in');
+    const isAudioConnected = !!audioEdge;
+    let busData: any = undefined;
+    let busId = 'master';
+    if (isAudioConnected) {
+      const sourceEffect = layer.effects.find(e => e.id === audioEdge.fromNodeId);
+      if (sourceEffect?.type === 'AudioSource') {
+        busId = (sourceEffect as any).busId || 'master';
+      } else if (audioEdge.fromNodeId === 'source' || sourceEffect?.type === 'VideoFile' || sourceEffect?.type === 'VideoURL' || sourceEffect?.type === 'AudioFile' || sourceEffect?.type === 'AudioInput' || sourceEffect?.type === 'SystemAudio' || sourceEffect?.type === 'AudioTransformer' || sourceEffect?.type === 'AudioToCV') {
+        busId = audioEdge.fromNodeId === 'source' ? layer.id : audioEdge.fromNodeId;
+      } else {
+        busId = audioEdge.fromNodeId;
+      }
+      busData = AudioEngine.getInstance().getBusData(busId) || AudioEngine.getInstance().getBusData(layer.id) || AudioEngine.getInstance().getBusData('master');
+    }
+
+    const audioRms = busData?.rms ?? 0;
+    const audioPeak = busData?.peak ?? 0;
+    const audioBass = busData?.bands?.bass ?? 0;
+    const audioOnset = busData?.onset ?? false;
+
+    // Leaky Energy Accumulator for Growth Mode B
+    // Zero audio or below gate threshold = 0.0 growth (empty bare dirt)
+    // Sound above gate = accumulates energy, driving slow organic meadow growth
+    let accum = this.grassGrowthAccum.get(nodeId) ?? 0.0;
+    const growthRate = Math.max(0.01, ef.growthRate ?? 1.0);
+    const audioGateThreshold = 0.025;
+    const rawAudioEnergy = Math.max(audioRms * 2.8, audioPeak * 1.5);
+    const isAudioActive = isAudioConnected && (rawAudioEnergy > audioGateThreshold);
+
+    if (isAudioConnected) {
+      if (isAudioActive) {
+        // Active sound above gate: charge energy steadily scaled by growthRate
+        const normalizedEnergy = Math.min(1.0, (rawAudioEnergy - audioGateThreshold) / 0.35);
+        const chargeSpeed = 0.45 * growthRate;
+        accum = Math.min(1.0, accum + (0.25 + 0.75 * normalizedEnergy) * chargeSpeed * dt);
+      } else {
+        // Silent / below gate: steady natural decay back to 0.0 over ~1.8s
+        const decaySpeed = 0.55;
+        accum = Math.max(0.0, accum - decaySpeed * dt);
+      }
+      this.grassGrowthAccum.set(nodeId, accum);
+    }
+
+    // Pitch for Growth Mode C
+    let pitchVal = 0.5;
+    if (isAudioConnected && busData) {
+      const pitchFeat = AudioEngine.getInstance().getPitchFeatures(busId, 40, 2000, 'music');
+      if (pitchFeat && pitchFeat.confidence > 0.35) {
+        pitchVal = pitchFeat.midi;
+      }
+    }
+
+    // Curvature Normal (Spectral Centroid / Brightness)
+    let centroidNorm = 0.4;
+    if (isAudioConnected && busData) {
+      const speechFeat = AudioEngine.getInstance().getSpeechFeatures(busId, 20, 80);
+      centroidNorm = speechFeat?.timbral?.centroid ?? 0.4;
+    }
+    if (ef.invertCurvature) {
+      centroidNorm = 1.0 - centroidNorm;
+    }
+
+    // Prune Normal (Transient Spike vs Silence Drop)
+    let audioPruneTrigger = false;
+    if (isAudioConnected && busData && ef.gatedPruneEnabled) {
+      if (ef.pruneAudioMode === 'transient_cut') {
+        const crestFactor = audioPeak / Math.max(0.001, audioRms);
+        audioPruneTrigger = (audioOnset && (crestFactor > 2.5 || audioPeak > (ef.pruneThreshold ?? 0.7)));
+      } else {
+        audioPruneTrigger = audioRms < 0.02 && (ef.pruneThreshold ?? 0.7) > 0.5;
+      }
+    }
+
+    // Tuft Normal
+    const audioTuftTrigger = isAudioConnected && busData ? ((audioPeak > (ef.tuftThreshold ?? 0.35)) || audioOnset) : false;
+
+    // 2. Normalling Break-Jacks (CV Overrides)
+    const baseGrowth = ef.growth ?? 0.0;
+    let targetGrowth = 0.0;
+
+    const growthEdge = layer.graph?.edges.find(e => e.toNodeId === nodeId && e.toPort === 'growth_cv');
+    if (growthEdge) {
+      // 1. CV Jack has priority override
+      targetGrowth = this.getEffectiveParam(layer, nodeId, 'growth_cv', baseGrowth, timeSec);
+    } else if (isAudioConnected) {
+      // 2. Audio Jack normalled modulation: Audio accumulates from 0.0 to 1.0
+      if (ef.growthAudioMode === 'pitch') {
+        targetGrowth = isAudioActive ? (0.2 + Math.min(1.0, pitchVal) * 0.8) : 0.0;
+      } else {
+        // Growth Mode B (Accumulate): Driven directly by accumulated audio energy (0.0 on silence)
+        targetGrowth = accum;
+      }
+    } else {
+      // 3. Fallback manual slider control (0.0 by default)
+      targetGrowth = baseGrowth;
+    }
+
+    const modGrowth = Math.max(0.0, Math.min(1.0, targetGrowth));
+
+    const modTilt = Math.max(0.0, Math.min(1.0, this.getEffectiveParam(layer, nodeId, 'tilt_cv', ef.tilt ?? 0.5, timeSec)));
+
+    const windEdge = layer.graph?.edges.find(e => e.toNodeId === nodeId && e.toPort === 'wind_cv');
+    const modWind = windEdge
+      ? this.getEffectiveParam(layer, nodeId, 'wind_cv', ef.windStrength ?? 1.0, timeSec)
+      : (isAudioConnected && ef.bassCoupling ? (ef.windStrength ?? 1.0) * (1.0 + Math.min(2.5, audioBass * 4.0)) : (ef.windStrength ?? 1.0));
+
+    const modDensity = Math.max(0.1, Math.min(1.0, this.getEffectiveParam(layer, nodeId, 'density_cv', ef.density ?? 0.6, timeSec)));
+
+    const bendEdge = layer.graph?.edges.find(e => e.toNodeId === nodeId && e.toPort === 'bend_cv');
+    const bendAudioDelta = (centroidNorm - 0.4) * 0.8;
+    const modBend = bendEdge
+      ? this.getEffectiveParam(layer, nodeId, 'bend_cv', ef.bend ?? 0.2, timeSec)
+      : (isAudioConnected ? Math.max(-1.0, Math.min(1.0, (ef.bend ?? 0.2) + bendAudioDelta)) : (ef.bend ?? 0.2));
+
+    const modFatness = Math.max(0.2, Math.min(3.0, this.getEffectiveParam(layer, nodeId, 'fatness_cv', ef.fatness ?? 1.0, timeSec)));
+
+    // Prune Resolution & Accumulator Reset
+    const pruneEdge = layer.graph?.edges.find(e => e.toNodeId === nodeId && e.toPort === 'prune_in');
+    let pruneActive = false;
+    let pruneCutRatio = 0.4;
+    if (pruneEdge) {
+      const latestSignals = SignalDispatcher.getInstance().getLatestSignals(layer.id);
+      const sig = latestSignals[`${nodeId}.prune_in`] ?? 0;
+      if (sig > (ef.pruneThreshold ?? 0.7)) {
+        pruneActive = true;
+        pruneCutRatio = Math.min(1.0, (sig - (ef.pruneThreshold ?? 0.7)) / Math.max(0.01, 1.0 - (ef.pruneThreshold ?? 0.7)));
+      }
+    } else if (isAudioConnected && ef.gatedPruneEnabled && audioPruneTrigger) {
+      pruneActive = true;
+      pruneCutRatio = 0.5;
+    }
+
+    if (pruneActive) {
+      // Reset audio growth accumulator on prune so field must accumulate new sound to regrow
+      this.grassGrowthAccum.set(nodeId, 0.05);
+    }
+
+    // Tuft Trigger Resolution with 200ms burst hold window
+    const tuftEdge = layer.graph?.edges.find(e => e.toNodeId === nodeId && e.toPort === 'tuft_trig');
+    const latestSignals = SignalDispatcher.getInstance().getLatestSignals(layer.id);
+    const trigVal = latestSignals[`${nodeId}.tuft_trig`] ?? 0;
+    const lastTrig = this.lastTriggerVals.get(`${nodeId}.tuft_trig`) ?? 0;
+    const curManualTuft = ef.tuftTriggerTime ?? 0;
+    const lastManualTuft = this.lastTriggerVals.get(`${nodeId}.manualTuft`) ?? 0;
+    const isTuftRising = (tuftEdge ? (trigVal > 0.5 && lastTrig <= 0.5) : false) || (curManualTuft > lastManualTuft);
+    this.lastTriggerVals.set(`${nodeId}.tuft_trig`, trigVal);
+    this.lastTriggerVals.set(`${nodeId}.manualTuft`, curManualTuft);
+
+    let tuftHoldUntil = this.lastTriggerVals.get(`${nodeId}.tuftHoldUntil`) ?? 0;
+    if (isTuftRising || (isAudioConnected && audioTuftTrigger)) {
+      tuftHoldUntil = timeSec + 0.20; // 200ms burst window
+      this.lastTriggerVals.set(`${nodeId}.tuftHoldUntil`, tuftHoldUntil);
+    }
+    const tuftTriggerActive = timeSec < tuftHoldUntil;
+
+    const tuftStyleMap: Record<string, number> = {
+      wildflowers: 1,
+      poppies: 2,
+      dandelions: 3,
+      kelp: 4,
+      wheat: 5
+    };
+
+    // 3. Dispatch Compute Pass
+    const computeUniformBuffer = this.getUniformBuffer(`${nodeId}.grass_compute_uniforms`, 80);
+    this.device.queue.writeBuffer(computeUniformBuffer, 0, new Float32Array([
+      dt,
+      timeSec,
+      modGrowth,
+      modDensity,
+      modBend,
+      modFatness,
+      ef.windSpeed ?? 1.5,
+      modWind,
+      ef.timerDecayEnabled !== false ? 1.0 : 0.0,
+      ef.lifetimeDuration ?? 10.0,
+      pruneActive ? 1.0 : 0.0,
+      pruneCutRatio,
+      ef.pruneAudioMode === 'silence_dissolve' ? 1.0 : 0.0,
+      tuftTriggerActive ? 1.0 : 0.0,
+      tuftStyleMap[ef.tuftStyle ?? 'wildflowers'] ?? 1,
+      ef.tuftChance ?? 0.05,
+      ef.tuftBurstAmount ?? 25,
+      totalBlades,
+      growthRate,
+      0.0
+    ]));
+
+    const computeBindGroup = this.device.createBindGroup({
+      layout: this.grassComputePipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: computeUniformBuffer } },
+        { binding: 1, resource: { buffer: inBuf } },
+        { binding: 2, resource: { buffer: outBuf } }
+      ]
+    });
+
+    const computePass = commandEncoder.beginComputePass();
+    computePass.setPipeline(this.grassComputePipeline);
+    computePass.setBindGroup(0, computeBindGroup);
+    computePass.dispatchWorkgroups(Math.ceil(totalBlades / 64));
+    computePass.end();
+
+    // 4. Dispatch 3D Render Pass
+    const renderUniformBuffer = this.getUniformBuffer(`${nodeId}.grass_render_uniforms`, 256);
+    const presetMap: Record<string, number> = {
+      meadow: 0,
+      bioluminescent: 1,
+      golden: 2,
+      neon: 3
+    };
+
+    const pal = this.getConnectedPalette(layer, nodeId, 'palette_in');
+    const aspect = target.width / target.height;
+    const renderF32 = new Float32Array(64);
+    renderF32[0] = aspect;
+    renderF32[1] = timeSec;
+    renderF32[2] = modTilt;
+    renderF32[3] = ef.zoom ?? 1.0;
+    renderF32[4] = ef.horizonY ?? 0.0;
+    renderF32[5] = ef.windSpeed ?? 1.5;
+    renderF32[6] = modWind;
+    renderF32[7] = presetMap[ef.colorPreset ?? 'meadow'] ?? 0;
+    renderF32[8] = pal ? 1.0 : 0.0; // useCustomPalette
+    renderF32[9] = pal ? pal.count : 0.0;
+    renderF32[10] = pal ? pal.interpolation : 0.0;
+    renderF32[11] = 0.0;
+
+    if (pal) {
+      for (let i = 0; i < 8; i++) {
+        renderF32[12 + i * 4 + 0] = pal.colors[i][0];
+        renderF32[12 + i * 4 + 1] = pal.colors[i][1];
+        renderF32[12 + i * 4 + 2] = pal.colors[i][2];
+        renderF32[12 + i * 4 + 3] = pal.colors[i][3];
+      }
+      for (let i = 0; i < 8; i++) {
+        renderF32[44 + i] = pal.positions[i];
+      }
+    }
+
+    this.device.queue.writeBuffer(renderUniformBuffer, 0, renderF32);
+
+    const renderBindGroup = this.device.createBindGroup({
+      layout: this.grassRenderPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: renderUniformBuffer } },
+        { binding: 1, resource: { buffer: outBuf } }
+      ]
+    });
+
+    const preset = ef.colorPreset ?? 'meadow';
+    let clearColor = { r: 0.05, g: 0.10, b: 0.16, a: 1.0 }; // Twilight sky
+    if (preset === 'bioluminescent') {
+      clearColor = { r: 0.02, g: 0.04, b: 0.09, a: 1.0 };
+    } else if (preset === 'golden') {
+      clearColor = { r: 0.18, g: 0.12, b: 0.08, a: 1.0 };
+    } else if (preset === 'neon') {
+      clearColor = { r: 0.10, g: 0.02, b: 0.16, a: 1.0 };
+    }
+
+    const pass = commandEncoder.beginRenderPass({
+      colorAttachments: [{
+        view: target.createView(),
+        clearValue: clearColor,
+        loadOp: 'clear',
+        storeOp: 'store'
+      }]
+    });
+
+    pass.setPipeline(this.grassRenderPipeline);
+    pass.setBindGroup(0, renderBindGroup);
+    pass.draw(6, totalBlades);
     pass.end();
   }
 }

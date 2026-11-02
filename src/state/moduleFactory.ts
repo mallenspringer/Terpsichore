@@ -51,8 +51,44 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
     case 'ColorAdjust': return { id, type: 'ColorAdjust', hue: 0, saturation: 1, contrast: 1, brightness: 0, invert: false };
     case 'LumaKey': return { id, type: 'LumaKey', threshold: 0.5, tolerance: 0.1, invertKey: false };
     case 'AudioSource': return { id, type: 'AudioSource', busId: 'master' };
-    case 'Oscilloscope': return { id, type: 'Oscilloscope', isFrozen: false, triggerLevel: 0.5, timeScale: 1.0 };
-    case 'SpectralSplitter': return { id, type: 'SpectralSplitter', busId: 'master', smoothing: 0.8, sensitivity: 1.0 };
+    case 'Oscilloscope': return { 
+      id, 
+      type: 'Oscilloscope', 
+      isFrozen: false, 
+      triggerLevel: 0.5, 
+      timeScale: 1.0,
+      traceColor: [0.0, 1.0, 0.25, 1.0], // Classic analog CRT phosphor green
+      showScaffold: false,
+      colorMode: 'amplitude',
+      gain: 2.0
+    };
+    case 'SpectralSplitter': return { 
+      id, 
+      type: 'SpectralSplitter', 
+      busId: 'master', 
+      smoothing: 0.8, 
+      sensitivity: 1.0,
+      showScaffold: false,
+      colorMode: 'frequency',
+      barColor: [0.1, 0.7, 0.8, 1.0],
+      gain: 2.0
+    };
+    case 'WaterfallSpectrogram': return {
+      id,
+      type: 'WaterfallSpectrogram',
+      busId: 'master',
+      tilt: 0.5,
+      gain: 2.0,
+      speed: 1.0,
+      scaleX: 1.0,
+      scaleY: 1.0,
+      linkScale: true,
+      colorMode: 'topographic',
+      flowDirection: 'front-to-back',
+      renderStyle: 'surface',
+      showScaffold: false,
+      lineColor: [0.0, 1.0, 0.4, 1.0]
+    };
     case 'AudioTransformer': return { 
       id, type: 'AudioTransformer', 
       filterType: 'lowpass', filterFreq: 1000, filterResonance: 0.5, 
@@ -292,6 +328,35 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
           }
         ],
         interpolation: 'smooth'
+      };
+
+    case 'GrassField':
+      return {
+        id,
+        type: 'GrassField',
+        tilt: 0.5,
+        zoom: 1.0,
+        horizonY: 0.0,
+        growth: 0.0,
+        growthRate: 1.0,
+        growthAudioMode: 'accumulate',
+        density: 0.6,
+        bend: 0.2,
+        invertCurvature: false,
+        fatness: 1.0,
+        windSpeed: 1.5,
+        windStrength: 1.0,
+        bassCoupling: true,
+        tuftStyle: 'wildflowers',
+        tuftChance: 0.05,
+        tuftBurstAmount: 25,
+        tuftThreshold: 0.6,
+        timerDecayEnabled: true,
+        lifetimeDuration: 10.0,
+        gatedPruneEnabled: false,
+        pruneThreshold: 0.7,
+        pruneAudioMode: 'transient_cut',
+        colorPreset: 'meadow'
       };
 
     default:

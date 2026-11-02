@@ -296,6 +296,15 @@ export const ALL_MODULES: ModuleEntry[] = [
 
   // ─── EFFECTS ─────────────────────────────────────────────────────────
   {
+    id: 'GrassField',
+    glyph: '🌱',
+    label: 'Grass Field',
+    tooltip: '3D Procedural Animated Meadow & Flora Generator with Audio Normalling',
+    category: 'Effects',
+    moduleType: 'effect:GrassField',
+    tags: ['growth', 'grass', 'flora', 'meadow', 'procedural', '3d', 'tufts', 'field', 'generator', 'effect']
+  },
+  {
     id: 'Transform2D',
     glyph: '✥',
     label: 'Transform',
@@ -442,6 +451,15 @@ export const ALL_MODULES: ModuleEntry[] = [
     tags: ['fft', 'spectral', 'bands', 'equalizer', 'frequency', 'metering', 'bass', 'reactive']
   },
   {
+    id: 'WaterfallSpectrogram',
+    glyph: '🏔️',
+    label: 'Waterfall 3D',
+    tooltip: '3D Waterfall Spectrogram with Tilt & Palette Topography',
+    category: 'Audio',
+    moduleType: 'effect:WaterfallSpectrogram',
+    tags: ['fft', 'waterfall', 'spectrogram', '3d', 'terrain', 'topography', 'visualizer', 'audio']
+  },
+  {
     id: 'AudioUtility',
     glyph: '🎛️',
     label: 'Audio Util',
@@ -526,12 +544,12 @@ export const DEFAULT_BANK_CONFIG: BankConfig = {
     collapsed: false
   },
   Effects: {
-    order: ['Transform2D', 'ColorAdjust', 'SimpleFeedback', 'UVDisplace', 'Pattern', 'LumaKey'],
+    order: ['GrassField', 'Transform2D', 'ColorAdjust', 'SimpleFeedback', 'UVDisplace', 'Pattern', 'LumaKey'],
     sort: 'custom',
     collapsed: false
   },
   Audio: {
-    order: ['AudioInput', 'SpectralSplit', 'VocalPitchTracker'],
+    order: ['AudioInput', 'SpectralSplit', 'WaterfallSpectrogram', 'VocalPitchTracker'],
     sort: 'custom',
     collapsed: false
   }

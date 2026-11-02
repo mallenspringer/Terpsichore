@@ -24,11 +24,118 @@ export class MediaManager {
   public activeDeviceIds: Record<string, string> = {};
   public isSeeking: Record<string, boolean> = {};
 
+  public streamStatuses: Record<string, 'idle' | 'requesting' | 'active' | 'denied' | 'no_audio'> = {};
+  public streamLabels: Record<string, string> = {};
+  public requestingStreams: Set<string> = new Set();
+  public deniedStreams: Set<string> = new Set();
+  private streamListeners: Set<() => void> = new Set();
+
   private wasPaused = false;
   private lastResetSignal = 0;
 
   constructor() {
     MediaManager.instance = this;
+  }
+
+  public subscribeStreamChanges(fn: () => void): () => void {
+    this.streamListeners.add(fn);
+    return () => this.streamListeners.delete(fn);
+  }
+
+  private notifyStreamChanges() {
+    this.streamListeners.forEach(fn => {
+      try {
+        fn();
+      } catch (e) {
+        console.error('[MediaManager] Stream listener error:', e);
+      }
+    });
+  }
+
+  public async startSystemAudio(key: string): Promise<MediaStream | null> {
+    if (this.requestingStreams.has(key)) return null;
+    this.requestingStreams.add(key);
+    this.streamStatuses[key] = 'requesting';
+    this.notifyStreamChanges();
+
+    // Stop existing stream if any
+    this.stopStream(key);
+
+    try {
+      if (!navigator.mediaDevices?.getDisplayMedia) {
+        throw new Error('getDisplayMedia is not supported in this browser.');
+      }
+
+      await AudioEngine.getInstance().resume();
+
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+        } as any,
+      });
+
+      const audioTracks = stream.getAudioTracks();
+      if (audioTracks.length === 0) {
+        // User didn't check "Also share tab audio"
+        stream.getTracks().forEach(t => t.stop());
+        this.streamStatuses[key] = 'no_audio';
+        this.requestingStreams.delete(key);
+        this.notifyStreamChanges();
+        return null;
+      }
+
+      // Stop video tracks since we only need the audio stream; this stops screen capture overhead
+      stream.getVideoTracks().forEach(t => t.stop());
+
+      this.activeStreams[key] = stream;
+      this.streamStatuses[key] = 'active';
+      this.streamLabels[key] = audioTracks[0].label || 'Tab / System Audio';
+
+      await AudioEngine.getInstance().registerStream(key, stream);
+
+      audioTracks[0].onended = () => {
+        this.stopStream(key);
+      };
+
+      this.requestingStreams.delete(key);
+      this.notifyStreamChanges();
+      return stream;
+    } catch (err: any) {
+      this.requestingStreams.delete(key);
+      if (err?.name === 'NotAllowedError') {
+        this.streamStatuses[key] = 'denied';
+      } else {
+        console.error('[MediaManager] SystemAudio error:', err);
+        this.streamStatuses[key] = 'denied';
+      }
+      this.notifyStreamChanges();
+      return null;
+    }
+  }
+
+  public stopStream(key: string) {
+    const stream = this.activeStreams[key];
+    if (stream) {
+      stream.getTracks().forEach(t => t.stop());
+      delete this.activeStreams[key];
+    }
+    const aud = this.audioElements[key];
+    if (aud) {
+      aud.pause();
+      aud.srcObject = null;
+      aud.src = '';
+      aud.remove();
+      delete this.audioElements[key];
+    }
+    AudioEngine.getInstance().unregisterMediaElement(key);
+    this.streamStatuses[key] = 'idle';
+    delete this.streamLabels[key];
+    this.requestingStreams.delete(key);
+    this.deniedStreams.delete(key);
+    this.notifyStreamChanges();
   }
 
   public seekMedia(key: string, targetTime: number) {
@@ -118,7 +225,7 @@ export class MediaManager {
   }
 
   public applyAudioState(
-    el: HTMLAudioElement | HTMLVideoElement,
+    el: HTMLAudioElement | HTMLVideoElement | null,
     src: any,
     isMutedFromLayer: boolean,
     key: string
@@ -128,13 +235,19 @@ export class MediaManager {
     const shouldMute = isModuleMuted || isMutedFromLayer || globalMute;
 
     // Physical element level mute & volume clamping to prevent rogue direct-to-speaker leaks
-    el.muted = shouldMute;
-    el.volume = shouldMute ? 0 : 1.0;
+    if (el) {
+      el.muted = shouldMute;
+      el.volume = shouldMute ? 0 : 1.0;
+    }
 
     const ae = AudioEngine.getInstance();
     ae.setModuleMute(key, isModuleMuted);
     ae.setLayerMute(key, isMutedFromLayer);
     ae.setMasterMute(globalMute);
+    if (!isModuleMuted && !isMutedFromLayer && !globalMute) {
+      const vol = typeof src.volume === 'number' && isFinite(src.volume) ? src.volume : 1.0;
+      ae.setModuleVolume(key, vol);
+    }
   }
 
   public manageMediaSource(key: string, source: any): HTMLVideoElement | ImageBitmap | null {
@@ -267,26 +380,25 @@ export class MediaManager {
 
       this.syncMediaPlayback(aud, src, source._layerAudioMuted, key);
       return null;
-    } else if (source.type === 'AudioInput' || source.type === 'SystemAudio') {
+    } else if (source.type === 'SystemAudio') {
+      const src = source as any;
+      const aud = this.audioElements[key] || null;
+      this.applyAudioState(aud, src, source._layerAudioMuted, key);
+      return null;
+    } else if (source.type === 'AudioInput') {
       const src = source as any;
       let stream = this.activeStreams[key];
-      if (!stream) {
-        const constraints =
-          source.type === 'AudioInput'
-            ? {
-                audio: src.deviceId
-                  ? { deviceId: src.deviceId, echoCancellation: false, noiseSuppression: false, autoGainControl: false }
-                  : { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
-              }
-            : { audio: true, video: true };
-
-        const promise =
-          source.type === 'AudioInput'
-            ? navigator.mediaDevices.getUserMedia(constraints)
-            : navigator.mediaDevices.getDisplayMedia(constraints);
-
-        promise
-          .then(s => {
+      if (!stream && !this.requestingStreams.has(key) && !this.deniedStreams.has(key)) {
+        this.requestingStreams.add(key);
+        const constraints = {
+          audio: src.deviceId
+            ? { deviceId: src.deviceId, echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+            : { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+        };
+        navigator.mediaDevices?.getUserMedia?.(constraints)
+          ?.then(s => {
+            this.requestingStreams.delete(key);
+            this.deniedStreams.delete(key);
             this.activeStreams[key] = s;
             let aud = this.audioElements[key];
             if (!aud) {
@@ -296,10 +408,14 @@ export class MediaManager {
               this.audioElements[key] = aud;
             }
             aud.srcObject = s;
-            aud.play();
+            aud.play().catch(() => {});
             AudioEngine.getInstance().registerMediaElement(key, aud);
           })
-          .catch(e => console.error(`${source.type} Error:`, e));
+          ?.catch(e => {
+            this.requestingStreams.delete(key);
+            this.deniedStreams.add(key);
+            console.error(`AudioInput Error:`, e);
+          });
       }
 
       const aud = this.audioElements[key];
@@ -384,6 +500,12 @@ export class MediaManager {
       }
     });
 
+    Object.keys(this.activeStreams).forEach(id => {
+      if (!activeNodeIds.has(id)) {
+        this.stopStream(id);
+      }
+    });
+
     Object.values(layers).forEach(layer => {
       const isMedia = [
         'VideoURL',
@@ -391,6 +513,7 @@ export class MediaManager {
         'WebcamCapture',
         'AudioInput',
         'AudioFile',
+        'SystemAudio',
         'ImageFile',
         'ImageLoader',
       ].includes(layer.source.type);

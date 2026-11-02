@@ -58,7 +58,22 @@ New procedural source generating independent RGB noise (GPU-bound).
 ---
 
 ## 2. Effects
-Spatial and color processors that manipulate incoming video signals.
+Spatial, generative, and color processors that manipulate incoming signals and video streams.
+
+### Grass Field (🌱)
+3D procedural animated meadow & flora engine with Eurorack normalling and dynamic audio/CV overrides.
+*   **Parameters**:
+    *   **Tilt & Camera**: 3D perspective pitch angle (0° top-down lawn to 85° horizon gaze), Zoom, Horizon Y offset.
+    *   **Growth & Anatomy**: Height, Density, Curvature Bend, Blade Fatness/Width.
+    *   **Audio Normalling**:
+        *   **Growth Mode**: `Accumulate` (leaky audio energy charges growth over time) or `Pitch` (melodic note height).
+        *   **Curvature Inversion**: Invert bright/dark response (default: bright curls tips, dark stiffens).
+        *   **Wind Sway**: Coupled with sub-bass kick/bass transients.
+    *   **Wildflowers & Tufts**: 5 styles (*Meadow Wildflowers*, *Red Poppies*, *Dandelion Spores*, *Seaweed Bulbs*, *Golden Wheat*), stochastic spawn chance, trigger burst amount, and onset threshold.
+    *   **Dual Pruning Modes**:
+        *   **Timer Decay**: Module-body continuous lifespan timer with automatic fading.
+        *   **Gated Prune**: Threshold gate with `prune_in` CV override, or audio fallback (`Transient Cut` sudden scythe mow vs `Dust Dissolve` diagonal gradient dust wipe on music drop/silence).
+    *   **Color & Palette**: Built-in presets (*Spring Meadow*, *Bioluminescent Deep Flora*, *Golden Wheat*, *Cyber Neon Lawn*) or dynamic live gradient mapping via `palette_in`.
 
 ### Transform 2D (↔️)
 Primary spatial manipulator.

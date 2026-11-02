@@ -9,11 +9,151 @@ import {
 } from '../../../state/types';
 import { AudioEngine } from '../../../state/AudioEngine';
 import { MidiManager } from '../../../state/MidiManager';
+import { MediaManager } from '../../../renderer/MediaManager';
 import {
   ControlRowDef, SourceCtx,
   src, eff, chg, sup,
   KeyMappingRow, VUMeter, Slider
 } from './controlHelpers';
+
+function SystemAudioCaptureControl({ registrationId }: { registrationId: string }) {
+  const [status, setStatus] = useState<'idle' | 'requesting' | 'active' | 'denied' | 'no_audio'>(() => {
+    const mm = MediaManager.getInstance();
+    if (!mm) return 'idle';
+    if (mm.activeStreams[registrationId]) return 'active';
+    return mm.streamStatuses[registrationId] || 'idle';
+  });
+  const [label, setLabel] = useState<string>(() => {
+    const mm = MediaManager.getInstance();
+    return mm?.streamLabels[registrationId] || '';
+  });
+
+  useEffect(() => {
+    const mm = MediaManager.getInstance();
+    if (!mm) return;
+    const update = () => {
+      const active = !!mm.activeStreams[registrationId];
+      const curStatus = active ? 'active' : (mm.streamStatuses[registrationId] || 'idle');
+      setStatus(curStatus);
+      setLabel(mm.streamLabels[registrationId] || '');
+    };
+    update();
+    return mm.subscribeStreamChanges(update);
+  }, [registrationId]);
+
+  const handleStart = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const mm = MediaManager.getInstance();
+    if (!mm) return;
+    setStatus('requesting');
+    await mm.startSystemAudio(registrationId);
+  };
+
+  const handleStop = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const mm = MediaManager.getInstance();
+    mm?.stopStream(registrationId);
+  };
+
+  return (
+    <div
+      className="rack-row-content"
+      onPointerDown={e => e.stopPropagation()}
+      onDragStart={e => e.stopPropagation()}
+      style={{ flexDirection: 'column', gap: 6, width: '100%' }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+        <span className="rack-row-label">Source</span>
+        {status === 'active' ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10, color: '#4ade80' }}>
+            <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#4ade80', boxShadow: '0 0 6px #4ade80' }} />
+            <span style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={label}>
+              {label || 'Sharing Tab/Audio'}
+            </span>
+          </div>
+        ) : status === 'requesting' ? (
+          <span style={{ fontSize: 9, color: '#facc15' }}>Waiting for browser...</span>
+        ) : (
+          <span style={{ fontSize: 9, color: '#888' }}>Not Connected</span>
+        )}
+      </div>
+
+      {status === 'no_audio' && (
+        <div style={{ fontSize: 9, color: '#f87171', background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '4px 6px', borderRadius: 4, lineHeight: 1.3 }}>
+          ⚠️ No audio stream received. Make sure to check <strong>"Also share tab audio"</strong> in Chrome's tab sharing dialog.
+        </div>
+      )}
+
+      {status === 'denied' && (
+        <div style={{ fontSize: 9, color: '#fb923c', background: 'rgba(251, 146, 60, 0.1)', border: '1px solid rgba(251, 146, 60, 0.25)', padding: '3px 6px', borderRadius: 4 }}>
+          Sharing was cancelled or denied.
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: 6, width: '100%' }}>
+        {status === 'active' ? (
+          <>
+            <button
+              onClick={handleStart}
+              style={{
+                flex: 1,
+                padding: '4px 8px',
+                fontSize: 10,
+                background: '#2a2a2a',
+                color: '#ddd',
+                border: '1px solid #444',
+                borderRadius: 4,
+                cursor: 'pointer',
+              }}
+              title="Select a different tab or screen to capture audio from"
+            >
+              🔄 Change Tab
+            </button>
+            <button
+              onClick={handleStop}
+              style={{
+                padding: '4px 8px',
+                fontSize: 10,
+                background: '#3a1e1e',
+                color: '#f87171',
+                border: '1px solid #5a2e2e',
+                borderRadius: 4,
+                cursor: 'pointer',
+              }}
+              title="Stop sharing system audio"
+            >
+              ⏹ Stop
+            </button>
+          </>
+        ) : (
+          <button
+            onClick={handleStart}
+            disabled={status === 'requesting'}
+            style={{
+              flex: 1,
+              padding: '6px 10px',
+              fontSize: 11,
+              fontWeight: 500,
+              background: status === 'requesting' ? '#1f2937' : 'linear-gradient(135deg, #1e3a5f, #1e40af)',
+              color: status === 'requesting' ? '#9ca3af' : '#fff',
+              border: '1px solid #3b82f6',
+              borderRadius: 4,
+              cursor: status === 'requesting' ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+              boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+            }}
+          >
+            <span>🔊</span>
+            <span>{status === 'requesting' ? 'Selecting Tab...' : 'Select Tab / Screen Audio'}</span>
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export const SOURCE_ROWS: Record<string, ControlRowDef[]> = {
 
@@ -1022,6 +1162,16 @@ export const SOURCE_ROWS: Record<string, ControlRowDef[]> = {
   ],
 
   SystemAudio: [
+    { id: 'capture', label: 'Audio Source',
+      render: ctx => {
+        const effect = eff<SystemAudioSource>(ctx);
+        const registrationId = effect.id || (ctx as any).layer?.id || 'source';
+        return <SystemAudioCaptureControl registrationId={registrationId} />;
+      }
+    },
+    { id: 'volume', label: 'Volume',
+      render: ctx => <Slider label="Volume" min={0} max={2} step={0.01} value={src<SystemAudioSource>(ctx).volume ?? 1.0} onChange={v => chg(ctx)('volume', v)} paramId="volume" ctx={ctx} />
+    },
     { id: 'muted', label: 'Mute',
       render: ctx => (
         <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} onDragStart={e => e.stopPropagation()} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>

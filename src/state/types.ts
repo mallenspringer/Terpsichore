@@ -417,6 +417,10 @@ export interface OscilloscopeEffect {
   isFrozen: boolean;
   triggerLevel: number;
   timeScale: number;
+  traceColor?: [number, number, number, number]; // Default Analog Phosphor Green: [0.0, 1.0, 0.25, 1.0]
+  showScaffold?: boolean;                        // Default: false (set to true for grid/CRT background)
+  colorMode?: 'amplitude' | 'span' | 'frequency';// Default: 'amplitude'
+  gain?: number;                                 // Vertical & color sensitivity multiplier: 0.1 to 10.0 (default: 2.0)
 }
 
 export interface SpectralSplitterEffect {
@@ -425,6 +429,27 @@ export interface SpectralSplitterEffect {
   busId: string;
   smoothing: number;   // 0 to 0.99
   sensitivity: number; // 0.1 to 10
+  showScaffold?: boolean;               // Default: false (set to true for ghost FFT and gridlines)
+  colorMode?: 'frequency' | 'amplitude';// Default: 'frequency'
+  barColor?: [number, number, number, number]; // Default [0.1, 0.7, 0.8, 1.0]
+  gain?: number;                        // Vertical gain / sensitivity multiplier: 0.1 to 10.0 (default: 2.0)
+}
+
+export interface WaterfallSpectrogramEffect {
+  id: string;
+  type: 'WaterfallSpectrogram';
+  busId: string;
+  tilt: number;        // 0.0 to 1.0 (default: 0.5)
+  gain: number;        // 0.1 to 10.0 (default: 2.0)
+  speed: number;       // 0.1 to 5.0 (default: 1.0)
+  scaleX?: number;     // 0.1 to 4.0 (default: 1.0)
+  scaleY?: number;     // 0.1 to 4.0 (default: 1.0)
+  linkScale?: boolean; // default: true
+  colorMode: 'topographic' | 'decay' | 'transient' | 'frequency'; // default: 'topographic'
+  flowDirection: 'front-to-back' | 'back-to-front'; // default: 'front-to-back'
+  renderStyle: 'surface' | 'lines'; // default: 'surface'
+  showScaffold?: boolean;               // default: false (set to true for floor grid / scaffold)
+  lineColor?: [number, number, number, number]; // default: [0.0, 1.0, 0.4, 1.0]
 }
 
 export interface AudioTransformerEffect {
@@ -682,6 +707,37 @@ export interface ColorPaletteEffect {
   shuffleTriggerTime?: number;
 }
 
+export type TuftStyle = 'wildflowers' | 'poppies' | 'dandelions' | 'kelp' | 'wheat';
+
+export interface GrassFieldEffect {
+  id: string;
+  type: 'GrassField';
+  tilt: number;                   // 0.0 to 1.0, default 0.5 (~45 deg)
+  zoom: number;                   // 0.2 to 3.0, default 1.0
+  horizonY: number;               // -1.0 to 1.0, default 0.0
+  growth: number;                 // 0.0 to 1.0, default 0.0
+  growthRate?: number;            // 0.01 to 3.0, default 1.0 (down to 1% speed)
+  growthAudioMode: 'accumulate' | 'pitch'; // default 'accumulate'
+  density: number;                // 0.1 to 1.0, default 0.6
+  bend: number;                   // -1.0 to 1.0, default 0.2
+  invertCurvature: boolean;       // default false
+  fatness: number;                // 0.2 to 3.0, default 1.0
+  windSpeed: number;              // 0.0 to 5.0, default 1.5
+  windStrength: number;           // 0.0 to 3.0, default 1.0
+  bassCoupling: boolean;          // default true
+  tuftStyle: TuftStyle;           // default 'wildflowers'
+  tuftChance: number;             // 0.0 to 1.0, default 0.05
+  tuftBurstAmount: number;        // 1 to 50, default 12
+  tuftThreshold: number;          // 0.1 to 1.0, default 0.6
+  tuftTriggerTime?: number;
+  timerDecayEnabled: boolean;     // default true
+  lifetimeDuration: number;       // 1.0 to 30.0, default 10.0
+  gatedPruneEnabled: boolean;     // default false
+  pruneThreshold: number;         // 0.1 to 1.0, default 0.7
+  pruneAudioMode: 'transient_cut' | 'silence_dissolve'; // default 'transient_cut'
+  colorPreset: 'meadow' | 'bioluminescent' | 'golden' | 'neon';
+}
+
 export type AnyEffect = 
   | Transform2DEffect | ColorAdjustEffect | LumaKeyEffect | SimpleFeedbackEffect
   | InterLayerOutputEffect | InterLayerInputEffect | ColorRGBEffect | LumaSplitterEffect 
@@ -689,9 +745,9 @@ export type AnyEffect =
   | KeyMixerEffect | VideoMathEffect | UVDisplaceEffect
   | LogicGateEffect | TriggeredGateEffect | PatternEffect | KaleidoscopeEffect 
   | SignalMathEffect | SampleAndHoldEffect | StepSequencerEffect | PixelProcessorEffect
-  | AudioSourceEffect | OscilloscopeEffect | SpectralSplitterEffect | AudioTransformerEffect | AudioModulatorEffect | AudioGateEffect | AudioToCVEffect
+  | AudioSourceEffect | OscilloscopeEffect | SpectralSplitterEffect | WaterfallSpectrogramEffect | AudioTransformerEffect | AudioModulatorEffect | AudioGateEffect | AudioToCVEffect
   | SpeechEnvelopeTrackerEffect | VocalPitchTrackerEffect | VowelFormantTrackerEffect | SpokenWordVisualizerEffect
-  | CanvasBackgroundEffect | ParticleCloudEffect | ColorPaletteEffect
+  | CanvasBackgroundEffect | ParticleCloudEffect | ColorPaletteEffect | GrassFieldEffect
   | ShapeGeneratorSource | VideoURLSource | VideoFileSource | WebcamCaptureSource | NoiseVideoSource | ColorNoiseSource
   | AudioInputSource | AudioFileSource | SystemAudioSource | ImageLoaderSource | ImageFileSource;
 
@@ -700,9 +756,9 @@ export type EffectType =
   | 'InterLayerOutput' | 'InterLayerInput' 
   | 'ColorRGB' | 'LumaSplitter' | 'Spawn' | 'Path' | 'Inverter' | 'VideoMixer' | 'AlphaAdjust'
   | 'KeyMixer' | 'VideoMath' | 'UVDisplace'
-  | 'LogicGate' | 'TriggeredGate' | 'Pattern' | 'Kaleidoscope' | 'SignalMath' | 'SampleAndHold' | 'StepSequencer' | 'AudioSource' | 'Oscilloscope' | 'SpectralSplitter' | 'PixelProcessor' | 'AudioTransformer' | 'AudioModulator' | 'AudioGate' | 'AudioToCV'
+  | 'LogicGate' | 'TriggeredGate' | 'Pattern' | 'Kaleidoscope' | 'SignalMath' | 'SampleAndHold' | 'StepSequencer' | 'AudioSource' | 'Oscilloscope' | 'SpectralSplitter' | 'WaterfallSpectrogram' | 'PixelProcessor' | 'AudioTransformer' | 'AudioModulator' | 'AudioGate' | 'AudioToCV'
   | 'SpeechEnvelopeTracker' | 'VocalPitchTracker' | 'VowelFormantTracker' | 'SpokenWordVisualizer'
-  | 'CanvasBackground' | 'ParticleCloud' | 'ColorPalette'
+  | 'CanvasBackground' | 'ParticleCloud' | 'ColorPalette' | 'GrassField'
   | 'ShapeGenerator' | 'VideoURL' | 'VideoFile' | 'WebcamCapture' | 'NoiseSource' | 'ColorNoise' | 'AudioInput' | 'AudioFile' | 'SystemAudio' | 'ImageLoader' | 'ImageFile';
 
 export type GraphNode = AnyEffect;

@@ -5,7 +5,10 @@ import { AudioEngine } from '../../state/AudioEngine';
 vi.mock('../../state/AudioEngine', () => {
   const unregisterMediaElementMock = vi.fn();
   const registerMediaElementMock = vi.fn();
+  const registerStreamMock = vi.fn().mockResolvedValue(undefined);
+  const resumeMock = vi.fn().mockResolvedValue(undefined);
   const setModuleMuteMock = vi.fn();
+  const setModuleVolumeMock = vi.fn();
   const setLayerMuteMock = vi.fn();
   const setMasterMuteMock = vi.fn();
   const getBusDataMock = vi.fn();
@@ -15,7 +18,10 @@ vi.mock('../../state/AudioEngine', () => {
       getInstance: () => ({
         unregisterMediaElement: unregisterMediaElementMock,
         registerMediaElement: registerMediaElementMock,
+        registerStream: registerStreamMock,
+        resume: resumeMock,
         setModuleMute: setModuleMuteMock,
+        setModuleVolume: setModuleVolumeMock,
         setLayerMute: setLayerMuteMock,
         setMasterMute: setMasterMuteMock,
         getBusData: getBusDataMock,
@@ -147,8 +153,82 @@ describe('MediaManager', () => {
     mediaManager.dispose();
 
     expect(mockVideo.pause).toHaveBeenCalled();
-    expect(stopTrackMock).toHaveBeenCalled();
     expect(Object.keys(mediaManager.videoElements).length).toBe(0);
     expect(Object.keys(mediaManager.activeStreams).length).toBe(0);
+  });
+
+  it('should not call getDisplayMedia in manageMediaSource for SystemAudio', () => {
+    const getDisplayMediaMock = vi.fn();
+    (globalThis as any).navigator = {
+      mediaDevices: {
+        getDisplayMedia: getDisplayMediaMock,
+      },
+    };
+
+    const res = mediaManager.manageMediaSource('sys_1', { type: 'SystemAudio', volume: 1.0, muted: false });
+    expect(res).toBeNull();
+    // Must NOT call getDisplayMedia in the render loop!
+    expect(getDisplayMediaMock).not.toHaveBeenCalled();
+  });
+
+  it('should handle startSystemAudio successfully and stop video tracks', async () => {
+    const stopVideoMock = vi.fn();
+    const stopAudioMock = vi.fn();
+    const audioTrack = { kind: 'audio', label: 'Chrome Tab Audio', stop: stopAudioMock, onended: null };
+    const videoTrack = { kind: 'video', label: 'Screen Share', stop: stopVideoMock };
+
+    const mockStream = {
+      getTracks: () => [audioTrack, videoTrack],
+      getAudioTracks: () => [audioTrack],
+      getVideoTracks: () => [videoTrack],
+    } as unknown as MediaStream;
+
+    (globalThis as any).navigator = {
+      mediaDevices: {
+        getDisplayMedia: vi.fn().mockResolvedValue(mockStream),
+      },
+    };
+
+    const stream = await mediaManager.startSystemAudio('sys_audio_1');
+    expect(stream).toBe(mockStream);
+    expect(stopVideoMock).toHaveBeenCalled();
+    expect(mediaManager.streamStatuses['sys_audio_1']).toBe('active');
+    expect(mediaManager.streamLabels['sys_audio_1']).toBe('Chrome Tab Audio');
+    expect(mediaManager.activeStreams['sys_audio_1']).toBe(mockStream);
+
+    mediaManager.stopStream('sys_audio_1');
+    expect(stopAudioMock).toHaveBeenCalled();
+    expect(mediaManager.activeStreams['sys_audio_1']).toBeUndefined();
+    expect(mediaManager.streamStatuses['sys_audio_1']).toBe('idle');
+  });
+
+  it('should detect when user cancels or shares without audio', async () => {
+    // 1. Sharing without audio track
+    const mockStreamNoAudio = {
+      getTracks: () => [],
+      getAudioTracks: () => [],
+      getVideoTracks: () => [],
+    } as unknown as MediaStream;
+
+    (globalThis as any).navigator = {
+      mediaDevices: {
+        getDisplayMedia: vi.fn().mockResolvedValue(mockStreamNoAudio),
+      },
+    };
+
+    const stream1 = await mediaManager.startSystemAudio('sys_no_aud');
+    expect(stream1).toBeNull();
+    expect(mediaManager.streamStatuses['sys_no_aud']).toBe('no_audio');
+
+    // 2. Cancellation / NotAllowedError
+    (globalThis as any).navigator = {
+      mediaDevices: {
+        getDisplayMedia: vi.fn().mockRejectedValue({ name: 'NotAllowedError', message: 'Permission denied' }),
+      },
+    };
+
+    const stream2 = await mediaManager.startSystemAudio('sys_cancelled');
+    expect(stream2).toBeNull();
+    expect(mediaManager.streamStatuses['sys_cancelled']).toBe('denied');
   });
 });

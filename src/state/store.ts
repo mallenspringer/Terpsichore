@@ -296,3 +296,8 @@ export const useEngineStore = create<StoreState>((set) => ({
   setMidiLearnTarget: (target) => set({ midiLearnTarget: target }),
   setMidiOverlayActive: (active) => set({ midiOverlayActive: active }),
 }));
+
+if (typeof window !== 'undefined') {
+  (window as any).__TERPSICHORE_STORE__ = useEngineStore;
+}
+

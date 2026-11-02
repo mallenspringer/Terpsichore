@@ -2,12 +2,12 @@ import React, { useState, useRef } from 'react';
 import { PORT_DEFS, SIGNAL_COLORS, PortDef } from './portDefs';
 import { ControlRowDef, RowCtx, EffectCtx } from './moduleControls';
 import { 
-  SpawnEffect, StepSequencerEffect, AudioSourceEffect, OscilloscopeEffect, SpectralSplitterEffect,
+  SpawnEffect, StepSequencerEffect, AudioSourceEffect, OscilloscopeEffect, SpectralSplitterEffect, WaterfallSpectrogramEffect,
   SpeechEnvelopeTrackerEffect, VocalPitchTrackerEffect, VowelFormantTrackerEffect, SpokenWordVisualizerEffect,
   AudioGateEffect
 } from '../../state/types';
 import { useEngineStore } from '../../state/store';
-import { OscilloscopeVisualizer, AudioSourceVisualizer, SpectralVisualizer } from './AudioVisualizers';
+import { OscilloscopeVisualizer, AudioSourceVisualizer, SpectralVisualizer, WaterfallVisualizer } from './AudioVisualizers';
 import {
   Knob,
   SignalMeter,
@@ -96,15 +96,17 @@ export function ModuleNode({
       const effect = (rowCtx as EffectCtx).effect as AudioSourceEffect;
       return effect?.busId || 'master';
     }
-    if (moduleType === 'Oscilloscope' || moduleType === 'SpectralSplitter') {
+    if (moduleType === 'Oscilloscope' || moduleType === 'SpectralSplitter' || moduleType === 'WaterfallSpectrogram' || moduleType === 'GrassField') {
       const edge = layer?.graph?.edges.find(e => e.toNodeId === nodeId && e.toPort === 'audio_in');
-      if (!edge) return (moduleType === 'SpectralSplitter' ? ((rowCtx as EffectCtx).effect as any).busId || 'master' : null);
+      if (!edge) return ((moduleType === 'SpectralSplitter' || moduleType === 'WaterfallSpectrogram') ? ((rowCtx as EffectCtx).effect as any).busId || 'master' : null);
       const sourceEffect = layer?.effects.find(e => e.id === edge.fromNodeId);
       if (sourceEffect?.type === 'AudioSource') return (sourceEffect as AudioSourceEffect).busId;
       if (sourceEffect?.type === 'AudioFile' || sourceEffect?.type === 'AudioInput' || sourceEffect?.type === 'SystemAudio' || sourceEffect?.type === 'AudioTransformer') return edge.fromNodeId;
       if (edge.fromNodeId === 'source' || sourceEffect?.type === 'VideoFile' || sourceEffect?.type === 'VideoURL') return layerId;
     }
-    if (moduleType === 'AudioFile' || moduleType === 'AudioInput' || moduleType === 'SystemAudio') return nodeId;
+    if (moduleType === 'AudioFile' || moduleType === 'AudioInput' || moduleType === 'SystemAudio') {
+      return nodeId === 'source' ? layerId : nodeId;
+    }
     return null;
   })();
 
@@ -281,8 +283,11 @@ export function ModuleNode({
 
   const renderPatchbayRow = (port: PortDef, isGrid: boolean = false) => {
     const eCtx = rowCtx as EffectCtx;
-    const isLinked = (moduleType === 'Transform2D' && port.id === 'scaleY') && (eCtx.linkedScales?.[nodeId] ?? true);
-    const effectivePortId = isLinked ? 'scaleX' : port.id;
+    const isTransformLinked = (moduleType === 'Transform2D' && port.id === 'scaleY') && (eCtx.linkedScales?.[nodeId] ?? true);
+    const isWaterfallLinked = (moduleType === 'WaterfallSpectrogram' && port.id === 'scale_y_cv') && 
+                              ((eCtx.effect as any)?.linkScale ?? (eCtx.linkedScales?.[nodeId] ?? true));
+    const isLinked = isTransformLinked || isWaterfallLinked;
+    const effectivePortId = isTransformLinked ? 'scaleX' : (isWaterfallLinked ? 'scale_x_cv' : port.id);
     const settingsKey = `${nodeId}.${effectivePortId}`;
     const settings = inputSettings?.[settingsKey] || { amount: 1.0, bipolar: false, invert: false };
     
@@ -539,6 +544,9 @@ export function ModuleNode({
                 isFrozen={((rowCtx as EffectCtx).effect as OscilloscopeEffect).isFrozen}
                 triggerLevel={((rowCtx as EffectCtx).effect as OscilloscopeEffect).triggerLevel}
                 timeScale={((rowCtx as EffectCtx).effect as OscilloscopeEffect).timeScale}
+                traceColor={((rowCtx as EffectCtx).effect as OscilloscopeEffect).traceColor}
+                showScaffold={((rowCtx as EffectCtx).effect as OscilloscopeEffect).showScaffold}
+                gain={((rowCtx as EffectCtx).effect as OscilloscopeEffect).gain}
               />
             )}
             {(moduleType === 'AudioSource' || moduleType === 'AudioFile' || moduleType === 'AudioInput' || moduleType === 'SystemAudio') && (
@@ -548,6 +556,18 @@ export function ModuleNode({
               <SpectralVisualizer 
                 busId={connectedBusId}
                 sensitivity={((rowCtx as EffectCtx).effect as SpectralSplitterEffect).sensitivity}
+                gain={((rowCtx as EffectCtx).effect as SpectralSplitterEffect).gain}
+                showScaffold={((rowCtx as EffectCtx).effect as SpectralSplitterEffect).showScaffold}
+              />
+            )}
+            {moduleType === 'WaterfallSpectrogram' && (
+              <WaterfallVisualizer 
+                busId={connectedBusId || 'master'}
+                tilt={((rowCtx as EffectCtx).effect as WaterfallSpectrogramEffect).tilt}
+                gain={((rowCtx as EffectCtx).effect as WaterfallSpectrogramEffect).gain}
+                speed={((rowCtx as EffectCtx).effect as WaterfallSpectrogramEffect).speed}
+                renderStyle={((rowCtx as EffectCtx).effect as WaterfallSpectrogramEffect).renderStyle}
+                showScaffold={((rowCtx as EffectCtx).effect as WaterfallSpectrogramEffect).showScaffold}
               />
             )}
           </div>
