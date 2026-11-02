@@ -1,0 +1,260 @@
+.image-cue-rack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 0;
+  color: #e2e8f0;
+  box-sizing: border-box;
+}
+
+/* Header folder bar */
+.image-cue-folder-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #151a24;
+  border: 1px solid #232c3d;
+  border-radius: 6px;
+  padding: 5px 8px;
+}
+
+.image-cue-file-input-btn {
+  position: relative;
+  overflow: hidden;
+  display: inline-block;
+  background: #252f44;
+  border: 1px solid #3b4b6a;
+  color: #cbd5e1;
+  font-size: 10px;
+  font-weight: 500;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.image-cue-file-input-btn:hover {
+  background: #33415c;
+  color: #fff;
+}
+
+.image-cue-file-input-btn input[type="file"] {
+  position: absolute;
+  left: 0;
+  top: 0;
+  opacity: 0;
+  cursor: pointer;
+  width: 100%;
+  height: 100%;
+}
+
+.image-cue-folder-name {
+  flex: 1;
+  font-size: 10px;
+  color: #94a3b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.image-cue-refresh-btn {
+  background: transparent;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+
+.image-cue-refresh-btn:hover {
+  color: #f5c518;
+  transform: rotate(45deg);
+}
+
+/* Mode Switch */
+.image-cue-mode-switch {
+  display: flex;
+  background: #111520;
+  border: 1px solid #232c3d;
+  border-radius: 6px;
+  overflow: hidden;
+  padding: 2px;
+  gap: 2px;
+}
+
+.image-cue-mode-btn {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 5px 0;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+  text-align: center;
+}
+
+.image-cue-mode-btn.active {
+  background: #f5c518;
+  color: #0f172a;
+  font-weight: 600;
+  box-shadow: 0 0 10px rgba(245, 197, 24, 0.25);
+}
+
+/* 4x4 or 2x4 Pad Grid */
+.image-cue-pads-grid {
+  display: grid;
+  gap: 6px;
+  background: #10141e;
+  border: 1px solid #1e2638;
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.image-cue-pads-grid.grid-8 {
+  grid-template-columns: repeat(4, 1fr);
+  grid-template-rows: repeat(2, 38px);
+}
+
+.image-cue-pads-grid.grid-16 {
+  grid-template-columns: repeat(4, 1fr);
+  grid-template-rows: repeat(4, 34px);
+}
+
+.image-cue-pad-btn {
+  background: #181f2d;
+  border: 1px solid #28344c;
+  border-radius: 5px;
+  color: #94a3b8;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 4px 6px;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  user-select: none;
+  transition: all 0.12s ease;
+}
+
+.image-cue-pad-btn.empty {
+  opacity: 0.55;
+  border-style: dashed;
+}
+
+.image-cue-pad-btn:hover {
+  background: #222c3f;
+  border-color: #3f5073;
+  color: #f1f5f9;
+}
+
+.image-cue-pad-btn.active {
+  background: #1a2a40;
+  border-color: #38bdf8;
+  color: #38bdf8;
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.3);
+}
+
+.image-cue-pad-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.image-cue-pad-num {
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.image-cue-pad-led {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #334155;
+}
+
+.image-cue-pad-led.lit {
+  background: #38bdf8;
+  box-shadow: 0 0 6px #38bdf8;
+}
+
+/* Mini progress bar on pad bottom */
+.image-cue-pad-progress-bar {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  background: #f5c518;
+  box-shadow: 0 0 4px #f5c518;
+  transition: width 0.1s ease;
+}
+
+/* Manual Trigger & Row */
+.image-cue-trigger-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.image-cue-manual-btn {
+  flex: 1;
+  background: #1e283b;
+  border: 1px solid #334260;
+  color: #f1f5f9;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.12s ease;
+}
+
+.image-cue-manual-btn:hover {
+  background: #2a3852;
+  border-color: #485c82;
+  box-shadow: 0 0 10px rgba(245, 197, 24, 0.2);
+}
+
+.image-cue-manual-btn:active,
+.image-cue-manual-btn.active {
+  background: #f5c518;
+  color: #0f172a;
+  box-shadow: 0 0 15px rgba(245, 197, 24, 0.5);
+}
+
+.image-cue-key-badge {
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.15);
+  font-weight: normal;
+}
+
+.image-cue-edit-banks-btn {
+  background: rgba(245, 197, 24, 0.12);
+  border: 1px solid rgba(245, 197, 24, 0.35);
+  color: #f5c518;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.image-cue-edit-banks-btn:hover {
+  background: rgba(245, 197, 24, 0.22);
+  border-color: #f5c518;
+  box-shadow: 0 0 12px rgba(245, 197, 24, 0.25);
+}

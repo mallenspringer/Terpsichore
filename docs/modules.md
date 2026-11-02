@@ -30,6 +30,24 @@ Loads local media assets.
     *   **Object Fit**: `Cover` or `Contain`.
 *   **Signal Behavior**: Standard video output. Revokes Blob URLs on module removal to prevent memory leaks.
 
+### Image Cue (🎞️)
+Directory image queue, deterministic sequencer, and stochastic bank sampler.
+*   **Features & Architecture**:
+    *   **Directory Access**: Accesses local image directories with support for PNG (alpha transparency), JPEG, WebP, etc.
+    *   **Modes**: `Directory Mode` (direct sequential or shuffled folder playback) and `Bank Mode` (16 bank slots).
+    *   **Pop-Out Bank Editor Modal**: Complete asset pool with search, multi-selection (`Ctrl+Click`, `Shift+Click`, and marquee box selection), drag-and-drop to banks, drag-to-reorder banks/frames, and **"Randomly Populate"** (with 1–16 images/bank slider).
+    *   **Pad Matrix**: 2x4 (8 pads) or 4x4 (16 pads) with active glowing LEDs and mini bottom progress bars showing progression through multi-image banks.
+    *   **Transitions**: `Hard Cut`, `Crossfade`, and `Fade Out/In` with logarithmic duration throw (0.125s to 10.0s).
+    *   **Memory Efficiency**: Bounded LRU cache of max 24 decoded bitmaps (~80MB VRAM footprint max) with background prefetching for instant trigger switching on budget machines.
+*   **Ports**:
+    *   `video_out`: Primary video texture (RGBA with alpha preservation).
+    *   `gate_out`: Trigger pulse output emitted on image transition for downstream modular chaining.
+    *   `image_trig`: Advances image within directory or active bank on rising edge above threshold.
+    *   `bank_trig`: Advances to next bank slot on rising edge above threshold.
+    *   `reset_trig`: Resets sequence to first image / first bank.
+    *   `speed_cv`: Modulates auto-playback speed.
+    *   `bank_select_cv`: 0.0–1.0 CV voltage directly addresses Bank 1 through 8/16.
+
 ### Webcam (📷)
 Captures live video feed.
 *   **Parameters**:

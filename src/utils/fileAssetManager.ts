@@ -76,6 +76,16 @@ export function rehydrateProjectMedia(layers: any[]): any[] {
           fileUrl: convertFileSrc(updatedSource.filePath)
         };
       }
+    } else if (updatedSource && updatedSource.type === 'ImageCue' && inDesktop) {
+      const rehydrate = (p: string) => (p && !p.startsWith('http') && !p.startsWith('asset:') && !p.startsWith('blob:')) ? convertFileSrc(p) : p;
+      updatedSource = {
+        ...updatedSource,
+        files: (updatedSource.files || []).map(rehydrate),
+        banks: (updatedSource.banks || []).map((b: any) => ({
+          ...b,
+          images: (b.images || []).map(rehydrate)
+        }))
+      };
     }
 
     const updatedEffects = (layer.effects || []).map((eff: any) => {
@@ -86,6 +96,16 @@ export function rehydrateProjectMedia(layers: any[]): any[] {
             fileUrl: convertFileSrc(eff.filePath)
           };
         }
+      } else if (eff && eff.type === 'ImageCue' && inDesktop) {
+        const rehydrate = (p: string) => (p && !p.startsWith('http') && !p.startsWith('asset:') && !p.startsWith('blob:')) ? convertFileSrc(p) : p;
+        return {
+          ...eff,
+          files: (eff.files || []).map(rehydrate),
+          banks: (eff.banks || []).map((b: any) => ({
+            ...b,
+            images: (b.images || []).map(rehydrate)
+          }))
+        };
       }
       return eff;
     });

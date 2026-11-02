@@ -1,5 +1,5 @@
 // --- SOURCES ---
-export type SourceType = 'None' | 'ShapeGenerator' | 'VideoURL' | 'VideoFile' | 'WebcamCapture' | 'ImageLoader' | 'ImageFile' | 'AudioInput' | 'AudioFile' | 'SystemAudio';
+export type SourceType = 'None' | 'ShapeGenerator' | 'VideoURL' | 'VideoFile' | 'WebcamCapture' | 'ImageLoader' | 'ImageFile' | 'ImageCue' | 'AudioInput' | 'AudioFile' | 'SystemAudio';
 
 export interface NoneSource {
   type: 'None';
@@ -77,6 +77,64 @@ export interface ImageFileSource {
   filePath?: string;
   fileName: string;
   objectFit: 'cover' | 'contain' | 'fill';
+}
+
+export type ImageCueTransition = 'cut' | 'crossfade' | 'fade_black';
+export type ImageCueFit = 'fill' | 'cover' | 'contain' | 'center';
+export type ImageCueLoopMode = 'loop' | 'stop';
+
+export interface ImageCueBankSlot {
+  id: string;                      // e.g. "bank-1"
+  name: string;                    // e.g. "Bank 1"
+  images: string[];                // list of file URLs / asset paths
+  playbackOrder: 'in_order' | 'shuffle';
+  loopMode: ImageCueLoopMode;
+  autoPlayback: boolean;           // intra-bank auto step
+  playbackSpeed: number;           // intra-bank step interval (sec)
+  activeImageIndex: number;        // currently selected frame in slot
+}
+
+export interface ImageCueSource {
+  id?: string;
+  type: 'ImageCue';
+  
+  // Directory & Files
+  directoryPath?: string;
+  directoryName?: string;
+  files: string[];                 // All image file paths/URLs in folder
+  
+  // Top-Level Mode
+  playbackMode: 'directory' | 'bank'; // 'directory' by default
+  
+  // Directory Playback Settings
+  dirPlaybackOrder: 'in_order' | 'shuffle';
+  dirAutoPlayback: boolean;
+  dirPlaybackSpeed: number;        // seconds per image
+  dirLoopMode: ImageCueLoopMode;
+  activeDirIndex: number;
+  
+  // Bank Grid Configuration
+  bankGridMode: '8' | '16';        // '8' by default (2x4 rows), toggleable to '16' (4x4)
+  activeBankIndex: number;         // 0 to 15
+  banks: ImageCueBankSlot[];       // Exactly 16 slots initialized empty
+  bankAutoPlayback: boolean;       // auto rotate across banks
+  bankPlaybackSpeed: number;       // seconds per bank
+  bankLoopMode: ImageCueLoopMode;
+  
+  // Sizing & Transitions
+  objectFit: ImageCueFit;          // default 'fill' (stretch)
+  transitionType: ImageCueTransition; // default 'cut'
+  transitionDuration: number;      // 0.125s to 10.0s (default 0.5s)
+  
+  // Trigger & Modulation Controls
+  triggerThreshold: number;        // 0.0 to 1.0 (default 0.5)
+  keyMapping?: string;             // manual trigger keystroke (none, 1..0)
+  midiPadMappings?: Record<number, { note: number; channel: number }>; // Pad 1-16 MIDI bindings
+  
+  // Ephemeral Render / Transition State
+  currentImageUrl?: string;
+  prevImageUrl?: string;
+  transitionStartTime?: number;    // timestamp for interpolation
 }
 
 export interface AudioInputSource {
@@ -214,7 +272,7 @@ export interface MidiBinding {
   invert: boolean;
 }
 
-export type AnySource = NoneSource | ShapeGeneratorSource | VideoURLSource | VideoFileSource | WebcamCaptureSource | ImageLoaderSource | ImageFileSource | AudioInputSource | AudioFileSource | SystemAudioSource | LFOModulatorSource | TriggerPadSource | NoiseModulatorSource | NoiseVideoSource | ColorNoiseSource | MidiInputSource;
+export type AnySource = NoneSource | ShapeGeneratorSource | VideoURLSource | VideoFileSource | WebcamCaptureSource | ImageLoaderSource | ImageFileSource | ImageCueSource | AudioInputSource | AudioFileSource | SystemAudioSource | LFOModulatorSource | TriggerPadSource | NoiseModulatorSource | NoiseVideoSource | ColorNoiseSource | MidiInputSource;
 
 // --- EFFECTS ---
 
@@ -749,7 +807,7 @@ export type AnyEffect =
   | SpeechEnvelopeTrackerEffect | VocalPitchTrackerEffect | VowelFormantTrackerEffect | SpokenWordVisualizerEffect
   | CanvasBackgroundEffect | ParticleCloudEffect | ColorPaletteEffect | GrassFieldEffect
   | ShapeGeneratorSource | VideoURLSource | VideoFileSource | WebcamCaptureSource | NoiseVideoSource | ColorNoiseSource
-  | AudioInputSource | AudioFileSource | SystemAudioSource | ImageLoaderSource | ImageFileSource;
+  | AudioInputSource | AudioFileSource | SystemAudioSource | ImageLoaderSource | ImageFileSource | ImageCueSource;
 
 export type EffectType = 
   | 'Transform2D' | 'ColorAdjust' | 'LumaKey' | 'SimpleFeedback' 
@@ -759,7 +817,7 @@ export type EffectType =
   | 'LogicGate' | 'TriggeredGate' | 'Pattern' | 'Kaleidoscope' | 'SignalMath' | 'SampleAndHold' | 'StepSequencer' | 'AudioSource' | 'Oscilloscope' | 'SpectralSplitter' | 'WaterfallSpectrogram' | 'PixelProcessor' | 'AudioTransformer' | 'AudioModulator' | 'AudioGate' | 'AudioToCV'
   | 'SpeechEnvelopeTracker' | 'VocalPitchTracker' | 'VowelFormantTracker' | 'SpokenWordVisualizer'
   | 'CanvasBackground' | 'ParticleCloud' | 'ColorPalette' | 'GrassField'
-  | 'ShapeGenerator' | 'VideoURL' | 'VideoFile' | 'WebcamCapture' | 'NoiseSource' | 'ColorNoise' | 'AudioInput' | 'AudioFile' | 'SystemAudio' | 'ImageLoader' | 'ImageFile';
+  | 'ShapeGenerator' | 'VideoURL' | 'VideoFile' | 'WebcamCapture' | 'NoiseSource' | 'ColorNoise' | 'AudioInput' | 'AudioFile' | 'SystemAudio' | 'ImageLoader' | 'ImageFile' | 'ImageCue';
 
 export type GraphNode = AnyEffect;
 

@@ -7,3 +7,4 @@ export * from './VocalPitchTrackerUI';
 export * from './VowelFormantTrackerUI';
 export * from './SpokenWordVisualizerUI';
 export * from './StepSequencerUI';
+export * from './ImageCueNodeUI';

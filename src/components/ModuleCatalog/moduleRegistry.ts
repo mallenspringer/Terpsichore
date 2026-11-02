@@ -58,6 +58,15 @@ export const ALL_MODULES: ModuleEntry[] = [
     tags: ['image', 'texture', 'picture', 'file', 'photo', 'static']
   },
   {
+    id: 'ImageCue',
+    glyph: '🎞️',
+    label: 'Image Cue',
+    tooltip: 'Directory Image Queue & Bank Sampler',
+    category: 'Sources',
+    moduleType: 'source:ImageCue',
+    tags: ['image', 'cue', 'queue', 'directory', 'bank', 'sampler', 'folder', 'png', 'slideshow', 'trigger', 'shuffle']
+  },
+  {
     id: 'ImageURL',
     glyph: '🔗',
     label: 'Img URL',

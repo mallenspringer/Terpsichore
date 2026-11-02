@@ -9,6 +9,8 @@ import { ColorRGBWGSL } from './shaders/ColorRGB';
 import { LumaKeyWGSL } from './shaders/LumaKey';
 import { SimpleFeedbackWGSL } from './shaders/SimpleFeedback';
 import { ImageVideoSourceWGSL, VideoSourceWGSL } from './shaders/ImageVideoSource';
+import { ImageCueSourceWGSL } from './shaders/ImageCueSource';
+import { ImageCueManager } from './ImageCueManager';
 import { AudioEngine } from '../state/AudioEngine';
 import { LumaSplitterWGSL } from './shaders/LumaSplitter';
 import { SpawnWGSL, SpawnVertexWGSL } from './shaders/Spawn';
@@ -41,7 +43,7 @@ import {
   NoiseVideoSource, ColorNoiseSource, InverterEffect, PixelProcessorEffect,
   PatternEffect, KaleidoscopeEffect, SampleAndHoldEffect, OscilloscopeEffect, SpectralSplitterEffect, WaterfallSpectrogramEffect,
   SpokenWordVisualizerEffect,
-  LayerState, AnySource
+  LayerState, AnySource, ImageCueSource
 } from '../state/types';
 
 export class Renderer {
@@ -109,6 +111,9 @@ export class Renderer {
   private effectLayouts: Map<string, GPUBindGroupLayout> = new Map();
 
   public mediaTextures: Record<string, GPUTexture> = {};
+  private imageCuePipeline!: GPURenderPipeline;
+  private cueTexturesCurrent: Record<string, GPUTexture> = {};
+  private cueTexturesPrev: Record<string, GPUTexture> = {};
   private nodeTextures: Map<string, GPUTexture> = new Map();
   private analysisReadbackBuffers: Map<string, GPUBuffer> = new Map();
   private analysisWeightBuffers: Map<string, GPUBuffer> = new Map();
@@ -303,6 +308,22 @@ export class Renderer {
 
     this.shapePipeline = this.device.createRenderPipeline({ layout, vertex, fragment: { module: this.device.createShaderModule({ code: ShapeGeneratorWGSL }), entryPoint: 'fs_main', targets }, primitive });
     this.mediaPipeline = this.device.createRenderPipeline({ layout, vertex, fragment: { module: this.device.createShaderModule({ code: ImageVideoSourceWGSL }), entryPoint: 'fs_main', targets }, primitive });
+    this.imageCuePipeline = this.device.createRenderPipeline({
+      layout,
+      vertex,
+      fragment: {
+        module: this.device.createShaderModule({ code: ImageCueSourceWGSL }),
+        entryPoint: 'fs_main',
+        targets: [{
+          format: this.format,
+          blend: {
+            color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+            alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' }
+          }
+        }]
+      },
+      primitive
+    });
     this.transformPipeline = this.device.createRenderPipeline({ layout, vertex, fragment: { module: this.device.createShaderModule({ code: Transform2DWGSL }), entryPoint: 'fs_main', targets }, primitive });
     this.colorAdjustPipeline = this.device.createRenderPipeline({ layout, vertex, fragment: { module: this.device.createShaderModule({ code: ColorAdjustWGSL }), entryPoint: 'fs_main', targets }, primitive });
     this.lumaKeyPipeline = this.device.createRenderPipeline({ layout, vertex, fragment: { module: this.device.createShaderModule({ code: LumaKeyWGSL }), entryPoint: 'fs_main', targets }, primitive });
@@ -1033,6 +1054,10 @@ export class Renderer {
             pass.end();
             this.renderColorNoise(layer, 'source', target, timeSec, commandEncoder);
             return;
+          } else if (layer.source.type === 'ImageCue') {
+            pass.end();
+            this.renderImageCueSource(layer, 'source', target, timeSec, commandEncoder);
+            return;
           } else {
             const media = this.manageMediaSource(layer.id, { ...layer.source, _layerAudioMuted: layer.audioMuted });
             if (media) {
@@ -1070,9 +1095,12 @@ export class Renderer {
           if (!effect) return;
 
           // Category A: Generators (Sources or Visualizers that don't REQUIRE an input texture)
-          if (['ShapeGenerator', 'VideoFile', 'VideoURL', 'WebcamCapture', 'NoiseSource', 'ColorNoise', 'SpectralSplitter', 'Oscilloscope', 'WaterfallSpectrogram', 'SpokenWordVisualizer', 'ParticleCloud', 'GrassField'].includes(effect.type)) {
+          if (['ShapeGenerator', 'VideoFile', 'VideoURL', 'WebcamCapture', 'NoiseSource', 'ColorNoise', 'ImageCue', 'SpectralSplitter', 'Oscilloscope', 'WaterfallSpectrogram', 'SpokenWordVisualizer', 'ParticleCloud', 'GrassField'].includes(effect.type)) {
             const genTarget = this.ensureTexture(nodeId, 'video_out');
-            if (effect.type === 'ShapeGenerator') {
+            if (effect.type === 'ImageCue') {
+              this.renderImageCueSource(layer, nodeId, genTarget, timeSec, commandEncoder);
+              return;
+            } else if (effect.type === 'ShapeGenerator') {
               this.renderShapeSource(layer, nodeId, genTarget, timeSec, commandEncoder);
               return;
             } else if (effect.type === 'ParticleCloud') {
@@ -2189,6 +2217,123 @@ export class Renderer {
       const bindGroup = this.device.createBindGroup({ layout: this.mediaPipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: uniformBuffer } }, { binding: 1, resource: mediaTex.createView() }, { binding: 2, resource: this.sampler }] });
       pass.setPipeline(this.mediaPipeline); pass.setBindGroup(0, bindGroup); pass.draw(3);
     }
+    pass.end();
+  }
+
+  private renderImageCueSource(layer: LayerState, nodeId: string, target: GPUTexture, _timeSec: number, commandEncoder: GPUCommandEncoder) {
+    const src = (nodeId === 'source' ? layer.source : layer.effects.find(e => e.id === nodeId)) as ImageCueSource;
+    if (!src) return;
+
+    // Determine current and prev image URLs
+    let currentUrl = src.currentImageUrl;
+    if (!currentUrl) {
+      if (src.playbackMode === 'directory') {
+        currentUrl = src.files?.[src.activeDirIndex ?? 0];
+      } else {
+        const activeBank = src.banks?.[src.activeBankIndex ?? 0];
+        if (activeBank && activeBank.images && activeBank.images.length > 0) {
+          currentUrl = activeBank.images[activeBank.activeImageIndex ?? 0];
+        }
+      }
+    }
+
+    const mgr = ImageCueManager.getInstance();
+    const bmpCurr = mgr.getBitmap(currentUrl);
+
+    // If a transition is active and prevImageUrl exists, fetch it
+    const prevUrl = src.prevImageUrl;
+    const bmpPrev = (src.transitionType !== 'cut' && prevUrl) ? mgr.getBitmap(prevUrl) : null;
+
+    const pass = commandEncoder.beginRenderPass({
+      colorAttachments: [{
+        view: target.createView(),
+        clearValue: { r: 0, g: 0, b: 0, a: 0 },
+        loadOp: 'clear',
+        storeOp: 'store'
+      }]
+    });
+
+    if (!bmpCurr) {
+      pass.end();
+      return;
+    }
+
+    const wCurr = bmpCurr.width;
+    const hCurr = bmpCurr.height;
+
+    // Ensure current texture
+    let texCurr = this.cueTexturesCurrent[nodeId];
+    if (!texCurr || texCurr.width !== wCurr || texCurr.height !== hCurr) {
+      if (texCurr) texCurr.destroy();
+      texCurr = this.device.createTexture({
+        size: [wCurr, hCurr],
+        format: 'rgba8unorm',
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT
+      });
+      this.cueTexturesCurrent[nodeId] = texCurr;
+    }
+    this.device.queue.copyExternalImageToTexture({ source: bmpCurr }, { texture: texCurr }, [wCurr, hCurr]);
+
+    // Ensure prev texture
+    let texPrev = this.cueTexturesPrev[nodeId];
+    let wPrev = wCurr;
+    let hPrev = hCurr;
+
+    if (bmpPrev) {
+      wPrev = bmpPrev.width;
+      hPrev = bmpPrev.height;
+      if (!texPrev || texPrev.width !== wPrev || texPrev.height !== hPrev) {
+        if (texPrev) texPrev.destroy();
+        texPrev = this.device.createTexture({
+          size: [wPrev, hPrev],
+          format: 'rgba8unorm',
+          usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT
+        });
+        this.cueTexturesPrev[nodeId] = texPrev;
+      }
+      this.device.queue.copyExternalImageToTexture({ source: bmpPrev }, { texture: texPrev }, [wPrev, hPrev]);
+    } else {
+      texPrev = texCurr;
+    }
+
+    // Transition progress
+    let p = 1.0;
+    if (src.transitionType !== 'cut' && src.transitionStartTime) {
+      const elapsed = (Date.now() - src.transitionStartTime) / 1000;
+      p = Math.min(1.0, elapsed / Math.max(0.001, src.transitionDuration || 0.5));
+    }
+
+    const fitMap: Record<string, number> = { fill: 0, cover: 1, contain: 2, center: 3 };
+    const transMap: Record<string, number> = { cut: 0, crossfade: 1, fade_black: 2 };
+
+    const uniformBuffer = this.getUniformBuffer(`${layer.id}.${nodeId}.cue_uniforms`, 32);
+    const u32 = new Uint32Array(8);
+    const f32 = new Float32Array(u32.buffer);
+
+    u32[0] = fitMap[src.objectFit ?? 'fill'] ?? 0;
+    u32[1] = transMap[src.transitionType ?? 'cut'] ?? 0;
+    f32[2] = p;
+    f32[3] = this.canvas.width / this.canvas.height;
+    f32[4] = wCurr / hCurr;
+    f32[5] = wPrev / hPrev;
+    f32[6] = 0.0;
+    f32[7] = 0.0;
+
+    this.device.queue.writeBuffer(uniformBuffer, 0, u32.buffer);
+
+    const bindGroup = this.device.createBindGroup({
+      layout: this.imageCuePipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: uniformBuffer } },
+        { binding: 1, resource: texCurr.createView() },
+        { binding: 2, resource: texPrev.createView() },
+        { binding: 3, resource: this.sampler }
+      ]
+    });
+
+    pass.setPipeline(this.imageCuePipeline);
+    pass.setBindGroup(0, bindGroup);
+    pass.draw(3);
     pass.end();
   }
 

@@ -109,8 +109,77 @@ function App() {
                 nextEffects[idx] = { ...eff, manualTriggerTime: Date.now() };
               }
               effChanged = true;
+            } else if (eff.type === 'ImageCue' && (eff as any).keyMapping === key) {
+              const cue = eff as any;
+              if (cue.playbackMode === 'directory') {
+                const count = cue.files?.length || 0;
+                if (count > 0) {
+                  const nextIdx = ((cue.activeDirIndex ?? 0) + 1) % count;
+                  nextEffects[idx] = {
+                    ...cue,
+                    activeDirIndex: nextIdx,
+                    prevImageUrl: cue.currentImageUrl || cue.files[nextIdx],
+                    currentImageUrl: cue.files[nextIdx],
+                    transitionStartTime: Date.now()
+                  };
+                  effChanged = true;
+                }
+              } else {
+                const b = cue.banks?.[cue.activeBankIndex ?? 0];
+                if (b && b.images && b.images.length > 0) {
+                  const count = b.images.length;
+                  const nextImgIdx = ((b.activeImageIndex ?? 0) + 1) % count;
+                  const newBanks = [...cue.banks];
+                  newBanks[cue.activeBankIndex] = { ...b, activeImageIndex: nextImgIdx };
+                  nextEffects[idx] = {
+                    ...cue,
+                    banks: newBanks,
+                    prevImageUrl: cue.currentImageUrl || b.images[nextImgIdx],
+                    currentImageUrl: b.images[nextImgIdx],
+                    transitionStartTime: Date.now()
+                  };
+                  effChanged = true;
+                }
+              }
             }
           });
+
+          // Also check if layer.source is ImageCue
+          if (layer.source?.type === 'ImageCue' && (layer.source as any).keyMapping === key) {
+            const cue = layer.source as any;
+            if (cue.playbackMode === 'directory') {
+              const count = cue.files?.length || 0;
+              if (count > 0) {
+                const nextIdx = ((cue.activeDirIndex ?? 0) + 1) % count;
+                updateLayer(layerId, {
+                  source: {
+                    ...cue,
+                    activeDirIndex: nextIdx,
+                    prevImageUrl: cue.currentImageUrl || cue.files[nextIdx],
+                    currentImageUrl: cue.files[nextIdx],
+                    transitionStartTime: Date.now()
+                  }
+                });
+              }
+            } else {
+              const b = cue.banks?.[cue.activeBankIndex ?? 0];
+              if (b && b.images && b.images.length > 0) {
+                const count = b.images.length;
+                const nextImgIdx = ((b.activeImageIndex ?? 0) + 1) % count;
+                const newBanks = [...cue.banks];
+                newBanks[cue.activeBankIndex] = { ...b, activeImageIndex: nextImgIdx };
+                updateLayer(layerId, {
+                  source: {
+                    ...cue,
+                    banks: newBanks,
+                    prevImageUrl: cue.currentImageUrl || b.images[nextImgIdx],
+                    currentImageUrl: b.images[nextImgIdx],
+                    transitionStartTime: Date.now()
+                  }
+                });
+              }
+            }
+          }
         }
 
         if (modChanged || effChanged) {

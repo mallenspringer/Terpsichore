@@ -4,11 +4,12 @@ import {
   SignalMathEffect, SampleAndHoldEffect, StepSequencerEffect, OscilloscopeEffect,
   SpectralSplitterEffect, AlphaAdjustEffect, AudioTransformerEffect, AudioModulatorEffect,
   AudioGateEffect, SpeechEnvelopeTrackerEffect, VocalPitchTrackerEffect, VowelFormantTrackerEffect,
-  SpokenWordVisualizerEffect, AudioToCVEffect, ColorPaletteEffect
+  SpokenWordVisualizerEffect, AudioToCVEffect, ColorPaletteEffect, ImageCueSource
 } from './types';
 import { AudioEngine } from './AudioEngine';
 import { MidiManager } from './MidiManager';
 import { MediaManager } from '../renderer/MediaManager';
+import { ImageCueManager } from '../renderer/ImageCueManager';
 
 type SignalFunction = (context: DispatchContext, dt: number) => void;
 
@@ -45,6 +46,7 @@ export class SignalDispatcher {
   private vowelStateMap = new Map<string, string>();
   private audioToCvSmoothed = new Map<string, number>();
   private midiOverrides = new Map<string, number>();
+  private imageCueStates = new Map<string, { dirTimer: number; bankTimer: number; intraBankTimer: number; gateTimer: number }>();
 
   private constructor() {
     MidiManager.getInstance().initialize();
@@ -123,7 +125,7 @@ export class SignalDispatcher {
     
     sortedNodeIds.forEach(nodeId => {
       if (nodeId === 'source') {
-        pipeline.push((ctx) => {
+        pipeline.push((ctx: DispatchContext, dt: number) => {
           ctx.signalValues['source.video_out'] = 1.0;
           const srcType = ctx.layer.source.type;
           if (srcType === 'AudioInput' || srcType === 'AudioFile' || srcType === 'SystemAudio') {
@@ -133,6 +135,9 @@ export class SignalDispatcher {
           }
           if (srcType === 'VideoFile' || srcType === 'VideoURL' || srcType === 'AudioFile') {
             this.handlePlayerTriggers(ctx, 'source', ctx.layer.source as any, true);
+          }
+          if (srcType === 'ImageCue') {
+            this.handleImageCueTriggers(ctx, 'source', ctx.layer.source as ImageCueSource, true, dt);
           }
         });
       } else {
@@ -292,6 +297,12 @@ export class SignalDispatcher {
                 ctx.signalValues[`${nodeId}.audio_out`] = 1.0;
               }
               this.handlePlayerTriggers(ctx, nodeId, ef as any, false);
+            });
+          } else if (effect.type === 'ImageCue') {
+            pipeline.push((ctx: DispatchContext, dt: number) => {
+              const ef = ctx.layer.effects.find(e => e.id === nodeId) as ImageCueSource;
+              if (!ef) return;
+              this.handleImageCueTriggers(ctx, nodeId, ef, false, dt);
             });
           } else if (effect.type === 'AudioSource') {
             pipeline.push((ctx: DispatchContext) => {
@@ -1526,6 +1537,210 @@ export class SignalDispatcher {
       const targetTime = resetTarget === 'start of file' ? 0 : (node.loopStart ?? 0);
       const mediaKey = isSource ? ctx.layer.id : nodeId;
       MediaManager.getInstance()?.seekMedia(mediaKey, targetTime);
+    }
+  }
+
+  private handleImageCueTriggers(
+    ctx: DispatchContext,
+    nodeId: string,
+    src: ImageCueSource,
+    isSource: boolean,
+    dt: number
+  ) {
+    const stateKey = `${ctx.layer.id}.${nodeId}`;
+    let cState = this.imageCueStates.get(stateKey);
+    if (!cState) {
+      cState = { dirTimer: 0, bankTimer: 0, intraBankTimer: 0, gateTimer: 0 };
+      this.imageCueStates.set(stateKey, cState);
+    }
+
+    // 1. Read Inputs
+    const thresh = src.triggerThreshold ?? 0.5;
+
+    const imgTrigVal = ctx.signalValues[`${nodeId}.image_trig`] ?? 0;
+    const lastImgTrig = this.lastTriggerVals.get(`${stateKey}.image_trig`) ?? 0;
+    const isImgTrigRising = imgTrigVal >= thresh && lastImgTrig < thresh;
+    this.lastTriggerVals.set(`${stateKey}.image_trig`, imgTrigVal);
+
+    const bankTrigVal = ctx.signalValues[`${nodeId}.bank_trig`] ?? 0;
+    const lastBankTrig = this.lastTriggerVals.get(`${stateKey}.bank_trig`) ?? 0;
+    const isBankTrigRising = bankTrigVal >= thresh && lastBankTrig < thresh;
+    this.lastTriggerVals.set(`${stateKey}.bank_trig`, bankTrigVal);
+
+    const resetTrigVal = ctx.signalValues[`${nodeId}.reset_trig`] ?? 0;
+    const lastResetTrig = this.lastTriggerVals.get(`${stateKey}.reset_trig`) ?? 0;
+    const isResetRising = resetTrigVal >= thresh && lastResetTrig < thresh;
+    this.lastTriggerVals.set(`${stateKey}.reset_trig`, resetTrigVal);
+
+    const speedCv = ctx.signalValues[`${nodeId}.speed_cv`] ?? 0;
+    const bankSelectCv = ctx.signalValues[`${nodeId}.bank_select_cv`];
+
+    let imageSwapped = false;
+    let nextDirIndex = src.activeDirIndex ?? 0;
+    let nextBankIndex = src.activeBankIndex ?? 0;
+    const banks = src.banks || [];
+    let updatedBanks = [...banks];
+    const maxBanks = src.bankGridMode === '16' ? 16 : 8;
+
+    // 2. Reset Handling
+    if (isResetRising) {
+      nextDirIndex = 0;
+      nextBankIndex = 0;
+      if (updatedBanks[nextBankIndex]) {
+        updatedBanks[nextBankIndex] = { ...updatedBanks[nextBankIndex], activeImageIndex: 0 };
+      }
+      imageSwapped = true;
+    }
+
+    // 3. Bank CV direct addressing
+    if (bankSelectCv !== undefined && !isResetRising) {
+      const clampedCv = Math.max(0, Math.min(1.0, bankSelectCv));
+      const targetBank = Math.min(maxBanks - 1, Math.floor(clampedCv * maxBanks));
+      if (targetBank !== nextBankIndex) {
+        nextBankIndex = targetBank;
+        imageSwapped = true;
+      }
+    }
+
+    // 4. Directory Mode Execution
+    if (src.playbackMode === 'directory') {
+      const fileCount = src.files?.length || 0;
+      let shouldStep = isImgTrigRising;
+
+      if (src.dirAutoPlayback && fileCount > 0) {
+        const speed = Math.max(0.05, (src.dirPlaybackSpeed ?? 1.0) * Math.pow(2, -speedCv));
+        cState.dirTimer += dt;
+        if (cState.dirTimer >= speed) {
+          shouldStep = true;
+          cState.dirTimer = 0;
+        }
+      }
+
+      if (shouldStep && fileCount > 0) {
+        if (src.dirPlaybackOrder === 'shuffle') {
+          if (fileCount > 1) {
+            let rand = Math.floor(Math.random() * fileCount);
+            if (rand === nextDirIndex) rand = (rand + 1) % fileCount;
+            nextDirIndex = rand;
+          }
+        } else {
+          // in_order
+          if (nextDirIndex + 1 < fileCount) {
+            nextDirIndex++;
+          } else if (src.dirLoopMode !== 'stop') {
+            nextDirIndex = 0;
+          }
+        }
+        imageSwapped = true;
+      }
+    }
+    // 5. Bank Mode Execution
+    else {
+      // Bank rotation (bank_trig or bankAutoPlayback)
+      let shouldStepBank = isBankTrigRising;
+      if (src.bankAutoPlayback) {
+        const speed = Math.max(0.05, (src.bankPlaybackSpeed ?? 1.0) * Math.pow(2, -speedCv));
+        cState.bankTimer += dt;
+        if (cState.bankTimer >= speed) {
+          shouldStepBank = true;
+          cState.bankTimer = 0;
+        }
+      }
+
+      if (shouldStepBank) {
+        if (nextBankIndex + 1 < maxBanks) {
+          nextBankIndex++;
+        } else if (src.bankLoopMode !== 'stop') {
+          nextBankIndex = 0;
+        }
+        imageSwapped = true;
+      }
+
+      // Intra-bank image stepping (image_trig or active bank's autoPlayback)
+      const curBank = updatedBanks[nextBankIndex];
+      if (curBank && curBank.images && curBank.images.length > 0) {
+        const imgCount = curBank.images.length;
+        let shouldStepImg = isImgTrigRising;
+        if (curBank.autoPlayback) {
+          const speed = Math.max(0.05, (curBank.playbackSpeed ?? 1.0) * Math.pow(2, -speedCv));
+          cState.intraBankTimer += dt;
+          if (cState.intraBankTimer >= speed) {
+            shouldStepImg = true;
+            cState.intraBankTimer = 0;
+          }
+        }
+
+        if (shouldStepImg && imgCount > 1) {
+          let nextImgIdx = curBank.activeImageIndex ?? 0;
+          if (curBank.playbackOrder === 'shuffle') {
+            let rand = Math.floor(Math.random() * imgCount);
+            if (rand === nextImgIdx) rand = (rand + 1) % imgCount;
+            nextImgIdx = rand;
+          } else {
+            if (nextImgIdx + 1 < imgCount) {
+              nextImgIdx++;
+            } else if (curBank.loopMode !== 'stop') {
+              nextImgIdx = 0;
+            }
+          }
+          updatedBanks[nextBankIndex] = { ...curBank, activeImageIndex: nextImgIdx };
+          imageSwapped = true;
+        }
+      }
+    }
+
+    // 6. Handle Image Swap Transition & Gate Output
+    if (imageSwapped) {
+      cState.gateTimer = 0.05; // 50ms pulse
+      let nextUrl: string | undefined;
+      if (src.playbackMode === 'directory') {
+        nextUrl = src.files?.[nextDirIndex];
+      } else {
+        const b = updatedBanks[nextBankIndex];
+        nextUrl = b?.images?.[b?.activeImageIndex ?? 0];
+      }
+
+      const updates: Partial<ImageCueSource> = {
+        activeDirIndex: nextDirIndex,
+        activeBankIndex: nextBankIndex,
+        banks: updatedBanks
+      };
+
+      if (nextUrl && nextUrl !== src.currentImageUrl) {
+        updates.prevImageUrl = src.currentImageUrl || nextUrl;
+        updates.currentImageUrl = nextUrl;
+        updates.transitionStartTime = Date.now();
+      }
+
+      if (isSource) {
+        useEngineStore.getState().updateLayer(ctx.layer.id, {
+          source: { ...ctx.layer.source, ...updates } as any
+        });
+      } else {
+        useEngineStore.getState().updateEffect(ctx.layer.id, nodeId, updates as any);
+      }
+    }
+
+    // 7. Gate Output pulse decay
+    if (cState.gateTimer > 0) {
+      cState.gateTimer -= dt;
+      ctx.signalValues[`${nodeId}.gate_out`] = 1.0;
+    } else {
+      ctx.signalValues[`${nodeId}.gate_out`] = 0.0;
+    }
+
+    ctx.signalValues[`${nodeId}.video_out`] = 1.0;
+
+    // 8. Background prefetch next image candidate
+    if (src.playbackMode === 'directory' && src.files && src.files.length > 0) {
+      const nextIdx = (nextDirIndex + 1) % src.files.length;
+      ImageCueManager.getInstance().preloadImage(src.files[nextIdx]);
+    } else if (src.playbackMode === 'bank') {
+      const curBank = updatedBanks[nextBankIndex];
+      if (curBank && curBank.images && curBank.images.length > 1) {
+        const nextImgIdx = ((curBank.activeImageIndex ?? 0) + 1) % curBank.images.length;
+        ImageCueManager.getInstance().preloadImage(curBank.images[nextImgIdx]);
+      }
     }
   }
 }

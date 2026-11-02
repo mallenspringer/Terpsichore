@@ -4,7 +4,7 @@ import { ControlRowDef, RowCtx, EffectCtx } from './moduleControls';
 import { 
   SpawnEffect, StepSequencerEffect, AudioSourceEffect, OscilloscopeEffect, SpectralSplitterEffect, WaterfallSpectrogramEffect,
   SpeechEnvelopeTrackerEffect, VocalPitchTrackerEffect, VowelFormantTrackerEffect, SpokenWordVisualizerEffect,
-  AudioGateEffect
+  AudioGateEffect, ImageCueSource
 } from '../../state/types';
 import { useEngineStore } from '../../state/store';
 import { OscilloscopeVisualizer, AudioSourceVisualizer, SpectralVisualizer, WaterfallVisualizer } from './AudioVisualizers';
@@ -17,6 +17,7 @@ import {
   VowelFormantTrackerUI,
   SpokenWordVisualizerUI,
   StepSequencerUI,
+  ImageCueNodeUI,
 } from './customNodes';
 
 
@@ -713,12 +714,28 @@ export function ModuleNode({
               inputSettings={inputSettings}
             />
           )}
+          {moduleType === 'ImageCue' && (
+            <ImageCueNodeUI
+              nodeId={nodeId}
+              layerId={layerId}
+              source={((rowCtx as any).source || (rowCtx as any).effect) as ImageCueSource}
+              onUpdate={(updates) => {
+                if ((rowCtx as any).onUpdate) {
+                  (rowCtx as any).onUpdate(updates);
+                } else if ((rowCtx as any).onChange) {
+                  Object.entries(updates).forEach(([k, v]) => (rowCtx as any).onChange(k, v));
+                }
+              }}
+              rowCtx={rowCtx}
+            />
+          )}
 
           {moduleType !== 'SpeechEnvelopeTracker' &&
            moduleType !== 'AudioGate' &&
            moduleType !== 'VocalPitchTracker' &&
            moduleType !== 'VowelFormantTracker' &&
            moduleType !== 'SpokenWordVisualizer' &&
+           moduleType !== 'ImageCue' &&
            orderedRows.slice(0, visibleRows).map((row, index) => (
               <div
                 key={row.id}
@@ -741,6 +758,7 @@ export function ModuleNode({
            moduleType !== 'VocalPitchTracker' &&
            moduleType !== 'VowelFormantTracker' &&
            moduleType !== 'SpokenWordVisualizer' &&
+           moduleType !== 'ImageCue' &&
            (hiddenCount > 0 || nodeState.expanded) ? (
             <div className="node-collapse-footer"
               onClick={() => onLayoutChange({ expanded: !nodeState.expanded })}>

@@ -27,6 +27,7 @@ const MODULE_PARAMS: Record<string, string[]> = {
   AudioFile: ['playbackSpeed', 'volume', 'loop'],
   ImageLoader: ['objectFit'],
   ImageFile: ['objectFit'],
+  ImageCue: ['dirPlaybackSpeed', 'bankPlaybackSpeed', 'triggerThreshold', 'transitionDuration', 'objectFit'],
   
   // Effects / Utilities / Modulators
   LFO: ['frequency', 'amplitude', 'offset', 'bipolar'],

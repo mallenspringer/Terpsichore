@@ -40,6 +40,42 @@ export function createDefaultSource(type: string): AnySource {
       return { type: 'ImageLoader', imageUrl: "/logo.png", objectFit: 'cover' };
     case 'ColorNoise':
       return { type: 'ColorNoise', noiseType: 'perlin', scale: 2.0, evolution: 1.0, octaves: 4, persistence: 0.5, seed: 123, brightness: 0, contrast: 1, flowSpeed: 1.0, autoAnimate: true };
+    case 'ImageCue': {
+      const defaultBanks = Array.from({ length: 16 }, (_, i) => ({
+        id: `bank-${i + 1}`,
+        name: `Bank ${i + 1}`,
+        images: [] as string[],
+        playbackOrder: 'in_order' as const,
+        loopMode: 'loop' as const,
+        autoPlayback: false,
+        playbackSpeed: 1.0,
+        activeImageIndex: 0
+      }));
+      return {
+        type: 'ImageCue',
+        directoryPath: '',
+        directoryName: 'No folder selected',
+        files: [],
+        playbackMode: 'directory',
+        dirPlaybackOrder: 'in_order',
+        dirAutoPlayback: false,
+        dirPlaybackSpeed: 1.0,
+        dirLoopMode: 'loop',
+        activeDirIndex: 0,
+        bankGridMode: '8',
+        activeBankIndex: 0,
+        banks: defaultBanks,
+        bankAutoPlayback: false,
+        bankPlaybackSpeed: 1.0,
+        bankLoopMode: 'loop',
+        objectFit: 'fill',
+        transitionType: 'cut',
+        transitionDuration: 0.5,
+        triggerThreshold: 0.5,
+        keyMapping: 'none',
+        midiPadMappings: {}
+      } as any;
+    }
     default:
       return { type: 'None' } as any;
   }
@@ -264,6 +300,8 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
       return { id, ...createDefaultSource('NoiseSource') } as any;
     case 'ImageFile':
       return { id, ...createDefaultSource('ImageFile') } as any;
+    case 'ImageCue':
+      return { id, ...createDefaultSource('ImageCue') } as any;
     case 'ColorNoise':
       return { id, ...createDefaultSource('ColorNoise') } as any;
     case 'ImageLoader':
