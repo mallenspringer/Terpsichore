@@ -1697,21 +1697,23 @@ export class Renderer {
           } else if (effect.type === 'ChromaBands') {
               pipeline = this.chromaBandsPipeline;
               const ef = effect as ChromaBandsEffect;
-              const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 208);
+              const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 256);
               const pal = this.getConnectedPalette(layer, nodeId, 'palette_in');
 
-              const f32 = new Float32Array(52);
+              const f32 = new Float32Array(64);
               const bandCount = Math.max(2, Math.min(8, ef.bands ? ef.bands.length : 2));
               const smoothing = Math.max(0, Math.min(1, this.getEffectiveParam(layer, ef.id, 'smooth_cv', ef.spatialSmoothing ?? 0.35, timeSec)));
-              const chromaGate = Math.max(0, Math.min(0.5, ef.chromaGate ?? 0.08));
-              const hueCV = this.getEffectiveParam(layer, ef.id, 'hue_cv', 0, timeSec);
+              const chromaGate = Math.max(0, Math.min(0.5, ef.chromaGate ?? 0.02));
+              
+              const manualHue = (ef.hueShift ?? 0) / 360.0;
+              const hueMod = this.getEffectiveParam(layer, ef.id, 'hue_cv', 0, timeSec);
               const aspect = target.width / Math.max(1, target.height);
 
-              // params0: [bandCount, spatialSmoothing, chromaGate, hueCV]
+              // params0: [bandCount, spatialSmoothing, chromaGate, totalHueShift]
               f32[0] = bandCount;
               f32[1] = smoothing;
               f32[2] = chromaGate;
-              f32[3] = hueCV;
+              f32[3] = manualHue + hueMod;
 
               // params1: [outlineEnabled, outlineWidth, outlineOpacity, aspect]
               const baseWidth = ef.outlineWidth ?? 2.0;
@@ -1721,12 +1723,20 @@ export class Renderer {
               f32[6] = ef.outlineOpacity ?? 1.0;
               f32[7] = aspect;
 
+              // params2: [chromaSensitivity, gateMode, unused, unused]
+              const baseSens = ef.chromaSensitivity ?? 1.5;
+              const sensMod = this.getEffectiveParam(layer, ef.id, 'sens_cv', 0, timeSec);
+              f32[8] = Math.max(0.1, Math.min(10.0, baseSens + sensMod));
+              f32[9] = ef.gateMode === 'neutral_color' ? 1.0 : 0.0;
+              f32[10] = 0.0;
+              f32[11] = 0.0;
+
               // outlineColor: rgba
               const outCol = ef.outlineColor ?? [0, 0, 0, 1];
-              f32[8] = outCol[0];
-              f32[9] = outCol[1];
-              f32[10] = outCol[2];
-              f32[11] = outCol[3] ?? 1.0;
+              f32[12] = outCol[0];
+              f32[13] = outCol[1];
+              f32[14] = outCol[2];
+              f32[15] = outCol[3] ?? 1.0;
 
               // thresholds0 (bands 0..3) & thresholds1 (bands 4..7) normalized to 0.0..1.0 (from 360 deg)
               for (let i = 0; i < 8; i++) {
@@ -1734,7 +1744,7 @@ export class Renderer {
                 if (ef.bands && i < ef.bands.length) {
                   t = (ef.bands[i].threshold ?? 360) / 360.0;
                 }
-                const offset = (i < 4) ? (12 + i) : (16 + (i - 4));
+                const offset = (i < 4) ? (16 + i) : (20 + (i - 4));
                 f32[offset] = Math.max(0, Math.min(1, t));
               }
 
@@ -1747,7 +1757,7 @@ export class Renderer {
                 } else if (ef.bands && i < ef.bands.length && ef.bands[i].color) {
                   c = ef.bands[i].color;
                 }
-                const base = 20 + i * 4;
+                const base = 24 + i * 4;
                 f32[base] = c[0];
                 f32[base + 1] = c[1];
                 f32[base + 2] = c[2];

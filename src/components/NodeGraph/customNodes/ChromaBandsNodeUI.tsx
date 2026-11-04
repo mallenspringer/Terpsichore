@@ -197,25 +197,63 @@ export const ChromaBandsNodeUI: React.FC<ChromaBandsNodeUIProps> = ({
           })}
       </div>
 
-      {/* Chroma Noise Gate & Cel Smoothing */}
+      {/* Color Tuning, Sensitivity & Smoothing */}
       <div className="cb-section-panel">
+        {/* Chroma Sensitivity / Saturation Expansion */}
         <div className="cb-section-title">
-          <span>Chroma Gate (Min Saturation)</span>
-          <span className="cb-val-badge">{Math.round((effect.chromaGate ?? 0.08) * 100)}%</span>
+          <span>Chroma Sensitivity</span>
+          <span className="cb-val-badge">{(effect.chromaSensitivity ?? 1.5).toFixed(1)}x</span>
+        </div>
+        <div className="cb-slider-row">
+          <input
+            type="range"
+            min={0.5}
+            max={5.0}
+            step={0.1}
+            value={effect.chromaSensitivity ?? 1.5}
+            onChange={e => handleUpdate({ chromaSensitivity: parseFloat(e.target.value) })}
+            onDoubleClick={() => handleUpdate({ chromaSensitivity: 1.5 })}
+            title="Color range expander: Boosts subtle hues in washed-out video (Double-click to reset to 1.5x)"
+          />
+        </div>
+
+        {/* Global Hue Rotation */}
+        <div className="cb-section-title" style={{ marginTop: 4 }}>
+          <span>Hue Rotation</span>
+          <span className="cb-val-badge">{Math.round(effect.hueShift ?? 0)}°</span>
         </div>
         <div className="cb-slider-row">
           <input
             type="range"
             min={0}
-            max={0.5}
-            step={0.01}
-            value={effect.chromaGate ?? 0.08}
-            onChange={e => handleUpdate({ chromaGate: parseFloat(e.target.value) })}
-            onDoubleClick={() => handleUpdate({ chromaGate: 0.08 })}
-            title="Chroma noise floor: Desaturated pixels below threshold map to Base Layer (Double-click to reset to 8%)"
+            max={360}
+            step={1}
+            value={effect.hueShift ?? 0}
+            onChange={e => handleUpdate({ hueShift: parseInt(e.target.value, 10) })}
+            onDoubleClick={() => handleUpdate({ hueShift: 0 })}
+            title="Rotates color wheel to align video colors with target swatches (Double-click to reset to 0°)"
           />
         </div>
 
+        {/* Chroma Gate */}
+        <div className="cb-section-title" style={{ marginTop: 4 }}>
+          <span>Chroma Gate (Min Saturation)</span>
+          <span className="cb-val-badge">{((effect.chromaGate ?? 0.02) * 100).toFixed(1)}%</span>
+        </div>
+        <div className="cb-slider-row">
+          <input
+            type="range"
+            min={0}
+            max={0.25}
+            step={0.005}
+            value={effect.chromaGate ?? 0.02}
+            onChange={e => handleUpdate({ chromaGate: parseFloat(e.target.value) })}
+            onDoubleClick={() => handleUpdate({ chromaGate: 0.02 })}
+            title="Noise floor: Desaturated pixels below threshold map to Base Layer (Double-click to reset to 2%)"
+          />
+        </div>
+
+        {/* Cel Swathe Smoothing */}
         <div className="cb-section-title" style={{ marginTop: 4 }}>
           <span>Cel Swathe Smoothing</span>
           <span className="cb-val-badge">{Math.round((effect.spatialSmoothing ?? 0.35) * 100)}%</span>

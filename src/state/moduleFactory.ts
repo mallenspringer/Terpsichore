@@ -521,7 +521,10 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
           { id: 'cb-0', threshold: 180, color: [0.85, 0.20, 0.20, 1.0] },
           { id: 'cb-1', threshold: 360, color: [0.20, 0.40, 0.90, 1.0] }
         ],
-        chromaGate: 0.08,
+        chromaGate: 0.02,
+        chromaSensitivity: 1.5,
+        hueShift: 0,
+        gateMode: 'base_layer',
         spatialSmoothing: 0.35,
         usePaletteIn: true,
         outlineEnabled: true,

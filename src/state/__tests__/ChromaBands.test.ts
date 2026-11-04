@@ -62,7 +62,8 @@ describe('ChromaBands (Quantization & Ink Hue Cel-Shading) Module', () => {
     expect(cb.bands).toHaveLength(2);
     expect(cb.bands[0].threshold).toBe(180);
     expect(cb.bands[1].threshold).toBe(360);
-    expect(cb.chromaGate).toBe(0.08);
+    expect(cb.chromaGate).toBe(0.02);
+    expect(cb.chromaSensitivity).toBe(1.5);
     expect(cb.spatialSmoothing).toBe(0.35);
     expect(cb.outlineEnabled).toBe(true);
     expect(cb.outlineWidth).toBe(2);
@@ -86,13 +87,14 @@ describe('ChromaBands (Quantization & Ink Hue Cel-Shading) Module', () => {
     }
   });
 
-  it('exposes all required ports (video_in, palette_in, hue_cv, smooth_cv, width_cv, video_out, matte_out)', () => {
+  it('exposes all required ports (video_in, palette_in, hue_cv, sens_cv, smooth_cv, width_cv, video_out, matte_out)', () => {
     const ports = PORT_DEFS.ChromaBands;
     expect(ports).toBeDefined();
     const portIds = ports.map(p => p.id);
     expect(portIds).toContain('video_in');
     expect(portIds).toContain('palette_in');
     expect(portIds).toContain('hue_cv');
+    expect(portIds).toContain('sens_cv');
     expect(portIds).toContain('smooth_cv');
     expect(portIds).toContain('width_cv');
     expect(portIds).toContain('video_out');

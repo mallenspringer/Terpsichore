@@ -961,6 +961,9 @@ export interface ChromaBandsEffect {
   type: 'ChromaBands';
   bands: ChromaBand[];
   chromaGate: number; // 0..0.5 min saturation/chroma threshold
+  chromaSensitivity?: number; // 0.5..5.0x saturation expander
+  hueShift?: number; // 0..360 deg manual hue rotation
+  gateMode?: 'base_layer' | 'neutral_color';
   spatialSmoothing: number;
   usePaletteIn: boolean;
   outlineEnabled: boolean;
