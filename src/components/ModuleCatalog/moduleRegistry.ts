@@ -323,6 +323,15 @@ export const ALL_MODULES: ModuleEntry[] = [
     tags: ['effect', 'text', 'title', 'titlemaker', 'videonics', 'character', 'generator', 'cg', 'scroll', 'crawl', 'crt', 'ntsc', 'superimpose', 'overlay', 'typography']
   },
   {
+    id: 'LumaBands',
+    glyph: '🥞',
+    label: 'Luma Bands',
+    tooltip: 'Multi-Band Luminance Quantization & Ink Cel-Shading',
+    category: 'Effects',
+    moduleType: 'effect:LumaBands',
+    tags: ['effect', 'luma', 'posterize', 'bands', 'color', 'cel', 'shading', 'threshold', 'contour', 'outline']
+  },
+  {
     id: 'GrassField',
     glyph: '🌱',
     label: 'Grass Field',

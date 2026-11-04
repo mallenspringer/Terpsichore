@@ -35,6 +35,8 @@ import { CanvasBackgroundWGSL } from './shaders/CanvasBackground';
 import { AlphaAdjustWGSL } from './shaders/AlphaAdjust';
 import { ParticleComputeWGSL, ParticleRenderWGSL } from './shaders/ParticleCloud';
 import { GrassComputeWGSL, GrassRenderWGSL } from './shaders/GrassField';
+import { LumaBandsWGSL } from './shaders/LumaBands';
+import { DEFAULT_LUMA_PALETTE } from '../state/moduleFactory';
 
 import { PORT_DEFS } from '../components/NodeGraph/portDefs';
 import { SignalDispatcher } from '../state/SignalDispatcher';
@@ -46,7 +48,7 @@ import {
   NoiseVideoSource, ColorNoiseSource, InverterEffect, PixelProcessorEffect,
   PatternEffect, KaleidoscopeEffect, SampleAndHoldEffect, OscilloscopeEffect, SpectralSplitterEffect, WaterfallSpectrogramEffect,
   SpokenWordVisualizerEffect,
-  LayerState, AnySource, ImageCueSource, TextCueSource, TextMakerEffect
+  LayerState, AnySource, ImageCueSource, TextCueSource, TextMakerEffect, LumaBandsEffect
 } from '../state/types';
 
 export class Renderer {
@@ -122,6 +124,7 @@ export class Renderer {
   private textCueTextures: Record<string, GPUTexture> = {};
   private textMakerStage1Pipeline!: GPURenderPipeline;
   private textMakerStage2Pipeline!: GPURenderPipeline;
+  private lumaBandsPipeline!: GPURenderPipeline;
   private textMakerCurrGlyphTex: Record<string, GPUTexture> = {};
   private textMakerPrevGlyphTex: Record<string, GPUTexture> = {};
   private textMakerRuntime = new Map<string, {
@@ -765,6 +768,21 @@ export class Renderer {
       },
       primitive
     });
+
+    this.lumaBandsPipeline = this.device.createRenderPipeline({
+      layout,
+      vertex,
+      fragment: {
+        module: this.device.createShaderModule({ code: LumaBandsWGSL }),
+        entryPoint: 'fs_main',
+        targets: [
+          { format: this.format },
+          { format: this.format }
+        ]
+      },
+      primitive
+    });
+    this.effectLayouts.set('LumaBands', this.lumaBandsPipeline.getBindGroupLayout(0));
 
     this.grassComputePipeline = this.device.createComputePipeline({
       layout: 'auto',
@@ -1579,7 +1597,86 @@ export class Renderer {
             });
             const layout = this.effectLayouts.get(effect.type) || pipeline.getBindGroupLayout(0);
             const bg = this.device.createBindGroup({ layout, entries });
-            pass.setPipeline(pipeline); pass.setBindGroup(0, bg); pass.draw(3); pass.end();
+                        pass.setPipeline(pipeline); pass.setBindGroup(0, bg); pass.draw(3); pass.end();
+            pipeline = null;
+          } else if (effect.type === 'LumaBands') {
+              pipeline = this.lumaBandsPipeline;
+              const ef = effect as LumaBandsEffect;
+              const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 208);
+              const pal = this.getConnectedPalette(layer, nodeId, 'palette_in');
+
+              const f32 = new Float32Array(52);
+              const bandCount = Math.max(2, Math.min(8, ef.bands ? ef.bands.length : 2));
+              const smoothing = Math.max(0, Math.min(1, this.getEffectiveParam(layer, ef.id, 'smooth_cv', ef.spatialSmoothing ?? 0.35, timeSec)));
+              const feather = Math.max(0, Math.min(1, ef.feather ?? 0.0));
+              const threshCV = this.getEffectiveParam(layer, ef.id, 'threshold_cv', 0, timeSec);
+              const aspect = target.width / Math.max(1, target.height);
+
+              // params0: [bandCount, spatialSmoothing, feather, thresholdCV]
+              f32[0] = bandCount;
+              f32[1] = smoothing;
+              f32[2] = feather;
+              f32[3] = threshCV;
+
+              // params1: [outlineEnabled, outlineWidth, outlineOpacity, aspect]
+              const baseWidth = ef.outlineWidth ?? 2.0;
+              const outlineWidth = Math.max(0.0, Math.min(8.0, this.getEffectiveParam(layer, ef.id, 'width_cv', baseWidth, timeSec)));
+              f32[4] = ef.outlineEnabled !== false ? 1.0 : 0.0;
+              f32[5] = outlineWidth;
+              f32[6] = ef.outlineOpacity ?? 1.0;
+              f32[7] = aspect;
+
+              // outlineColor: rgba
+              const outCol = ef.outlineColor ?? [0, 0, 0, 1];
+              f32[8] = outCol[0];
+              f32[9] = outCol[1];
+              f32[10] = outCol[2];
+              f32[11] = outCol[3] ?? 1.0;
+
+              // thresholds0 (bands 0..3) & thresholds1 (bands 4..7)
+              for (let i = 0; i < 8; i++) {
+                let t = 1.0;
+                if (ef.bands && i < ef.bands.length) {
+                  t = (ef.bands[i].threshold ?? 255) / 255.0;
+                }
+                const offset = (i < 4) ? (12 + i) : (16 + (i - 4));
+                f32[offset] = Math.max(0, Math.min(1, t));
+              }
+
+              // band colors 0..7
+              for (let i = 0; i < 8; i++) {
+                let c = DEFAULT_LUMA_PALETTE[i];
+                if (pal && ef.usePaletteIn !== false && pal.colors.length > 0) {
+                  const pc = pal.colors[i % pal.colors.length];
+                  c = [pc[0], pc[1], pc[2], pc[3] ?? 1.0];
+                } else if (ef.bands && i < ef.bands.length && ef.bands[i].color) {
+                  c = ef.bands[i].color;
+                }
+                const base = 20 + i * 4;
+                f32[base] = c[0];
+                f32[base + 1] = c[1];
+                f32[base + 2] = c[2];
+                f32[base + 3] = c[3] ?? 1.0;
+              }
+
+              this.device.queue.writeBuffer(uniformBuffer, 0, f32);
+              entries = [
+                { binding: 0, resource: { buffer: uniformBuffer } },
+                { binding: 1, resource: tex.createView() },
+                { binding: 2, resource: this.sampler }
+              ];
+
+              const matteTex = this.ensureTexture(nodeId, 'matte_out');
+              const pass = commandEncoder.beginRenderPass({
+                colorAttachments: [
+                  { view: target.createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' },
+                  { view: matteTex.createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' }
+                ]
+              });
+              const layout = this.effectLayouts.get(effect.type) || pipeline.getBindGroupLayout(0);
+              const bg = this.device.createBindGroup({ layout, entries });
+              pass.setPipeline(pipeline); pass.setBindGroup(0, bg); pass.draw(3); pass.end();
+            pipeline = null;
           } else {
             if (effect.type === 'Transform2D') {
               pipeline = this.transformPipeline;

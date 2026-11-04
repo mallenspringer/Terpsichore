@@ -494,7 +494,23 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
         jitterAmount: 0.2,
         noiseEnabled: false,
         noiseAmount: 0.15
-        // Omit closing brace since original line 433 had }; right below it
+      };
+
+    case 'LumaBands':
+      return {
+        id,
+        type: 'LumaBands',
+        bands: [
+          { id: 'b-0', threshold: 127, color: [0.10, 0.10, 0.15, 1.0] },
+          { id: 'b-1', threshold: 255, color: [0.95, 0.95, 0.90, 1.0] }
+        ],
+        spatialSmoothing: 0.35,
+        feather: 0.0,
+        usePaletteIn: true,
+        outlineEnabled: true,
+        outlineWidth: 2,
+        outlineOpacity: 1.0,
+        outlineColor: [0.0, 0.0, 0.0, 1.0]
       };
 
     default:
@@ -515,4 +531,68 @@ export function createDefaultModulator(type: string): any {
     default:
       return { type: 'TriggerPad', isPressed: false, keyMapping: 'none', useEnvelope: false, attack: 0.1, release: 0.5 };
   }
+}
+
+export const DEFAULT_LUMA_PALETTE: [number, number, number, number][] = [
+  [0.10, 0.10, 0.15, 1.0], // Deep slate (Base)
+  [0.18, 0.32, 0.65, 1.0], // Cobalt Navy
+  [0.15, 0.58, 0.35, 1.0], // Forest Green
+  [0.85, 0.45, 0.12, 1.0], // Ochre / Rust Orange
+  [0.92, 0.75, 0.18, 1.0], // Warm Gold
+  [0.85, 0.35, 0.65, 1.0], // Rose / Magenta
+  [0.45, 0.85, 0.95, 1.0], // Cyan
+  [0.96, 0.96, 0.92, 1.0]  // Warm Ivory (Highlight)
+];
+
+export function autoDistributeLumaThresholds(bandCount: number): number[] {
+  const count = Math.max(2, Math.min(8, bandCount));
+  const step = 256 / count;
+  const thresholds: number[] = [];
+  for (let i = 1; i <= count; i++) {
+    thresholds.push(Math.min(255, Math.round(i * step) - 1));
+  }
+  thresholds[thresholds.length - 1] = 255;
+  return thresholds;
+}
+
+/**
+ * Updates a band's threshold and cascades any overlaps:
+ * - Pulling a slider down pushes lower bands down (waterfall reduction)
+ * - Pulling a slider up pushes higher bands up (below top ceiling)
+ * - Maintains 1 <= T[0] < T[1] < ... < T[N-2] < T[N-1] = 255
+ */
+export function cascadeLumaThresholds<T extends { threshold: number }>(
+  bands: T[],
+  targetIndex: number,
+  newThreshold: number
+): T[] {
+  const N = bands.length;
+  if (N <= 1 || targetIndex >= N - 1 || targetIndex < 0) {
+    return bands;
+  }
+
+  const nextBands = bands.map(b => ({ ...b }));
+
+  // Clamp target value to valid range given count of bands below and above
+  const minAllowed = targetIndex + 1;
+  const maxAllowed = 255 - (N - 1 - targetIndex);
+  const clampedVal = Math.max(minAllowed, Math.min(maxAllowed, newThreshold));
+  nextBands[targetIndex].threshold = clampedVal;
+
+  // Cascade downward: if band[i] >= band[i+1], push band[i] down
+  for (let i = targetIndex - 1; i >= 0; i--) {
+    if (nextBands[i].threshold >= nextBands[i + 1].threshold) {
+      nextBands[i].threshold = nextBands[i + 1].threshold - 1;
+    }
+  }
+
+  // Cascade upward: if band[i] <= band[i-1], push band[i] up (top band at N-1 is always 255)
+  for (let i = targetIndex + 1; i < N - 1; i++) {
+    if (nextBands[i].threshold <= nextBands[i - 1].threshold) {
+      nextBands[i].threshold = nextBands[i - 1].threshold + 1;
+    }
+  }
+
+  nextBands[N - 1].threshold = 255;
+  return nextBands;
 }

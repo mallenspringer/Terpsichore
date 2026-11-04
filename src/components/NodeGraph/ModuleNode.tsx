@@ -4,7 +4,7 @@ import { ControlRowDef, RowCtx, EffectCtx } from './moduleControls';
 import { 
   SpawnEffect, StepSequencerEffect, AudioSourceEffect, OscilloscopeEffect, SpectralSplitterEffect, WaterfallSpectrogramEffect,
   SpeechEnvelopeTrackerEffect, VocalPitchTrackerEffect, VowelFormantTrackerEffect, SpokenWordVisualizerEffect,
-  AudioGateEffect, ImageCueSource, TextCueSource, TextMakerEffect
+  AudioGateEffect, ImageCueSource, TextCueSource, TextMakerEffect, LumaBandsEffect
 } from '../../state/types';
 import { useEngineStore } from '../../state/store';
 import { OscilloscopeVisualizer, AudioSourceVisualizer, SpectralVisualizer, WaterfallVisualizer } from './AudioVisualizers';
@@ -20,6 +20,7 @@ import {
   ImageCueNodeUI,
   TextCueNodeUI,
   TextMakerNodeUI,
+  LumaBandsNodeUI,
 } from './customNodes';
 
 
@@ -721,6 +722,14 @@ export function ModuleNode({
               nodeId={nodeId}
               layerId={layerId}
               effect={((rowCtx as any).effect || (rowCtx as any).source) as TextMakerEffect}
+              rowCtx={rowCtx}
+            />
+          )}
+          {moduleType === 'LumaBands' && (
+            <LumaBandsNodeUI
+              nodeId={nodeId}
+              layerId={layerId}
+              effect={((rowCtx as any).effect || (rowCtx as any).source) as LumaBandsEffect}
               rowCtx={rowCtx}
             />
           )}
