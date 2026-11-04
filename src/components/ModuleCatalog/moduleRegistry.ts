@@ -332,6 +332,15 @@ export const ALL_MODULES: ModuleEntry[] = [
     tags: ['effect', 'luma', 'posterize', 'bands', 'color', 'cel', 'shading', 'threshold', 'contour', 'outline']
   },
   {
+    id: 'ChromaBands',
+    glyph: '🎨',
+    label: 'Chroma Bands',
+    tooltip: 'Multi-Band Chromatic Quantization & Hue Cel-Shading',
+    category: 'Effects',
+    moduleType: 'effect:ChromaBands',
+    tags: ['effect', 'chroma', 'hue', 'posterize', 'bands', 'color', 'cel', 'shading', 'threshold', 'contour', 'outline']
+  },
+  {
     id: 'GrassField',
     glyph: '🌱',
     label: 'Grass Field',

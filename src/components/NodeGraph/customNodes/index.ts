@@ -11,3 +11,4 @@ export * from './ImageCueNodeUI';
 export * from './TextCueNodeUI';
 export * from './TextMakerNodeUI';
 export * from './LumaBandsNodeUI';
+export * from './ChromaBandsNodeUI';

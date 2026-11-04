@@ -522,6 +522,15 @@ export const PORT_DEFS: Record<string, PortDef[]> = {
     { id: 'video_out',     label: 'Video Out',     direction: 'out', signalType: 'video',      priority: 0 },
     { id: 'matte_out',     label: 'Matte Out',     direction: 'out', signalType: 'video',      priority: 1 },
   ],
+  ChromaBands: [
+    { id: 'video_in',      label: 'Video In',      direction: 'in',  signalType: 'video',      priority: 0, alwaysShow: true },
+    { id: 'palette_in',    label: 'Palette In',    direction: 'in',  signalType: 'palette',    priority: 1 },
+    { id: 'hue_cv',        label: 'Hue CV',        direction: 'in',  signalType: 'modulation', priority: 2, bipolar: true },
+    { id: 'smooth_cv',     label: 'Smooth CV',     direction: 'in',  signalType: 'modulation', priority: 3 },
+    { id: 'width_cv',      label: 'Width CV',      direction: 'in',  signalType: 'modulation', priority: 4, bipolar: true },
+    { id: 'video_out',     label: 'Video Out',     direction: 'out', signalType: 'video',      priority: 0 },
+    { id: 'matte_out',     label: 'Matte Out',     direction: 'out', signalType: 'video',      priority: 1 },
+  ],
   StepSequencer: [
     { id: 'global_out', label: 'Seq Out', direction: 'out', signalType: 'modulation', priority: 0 },
     { id: 'rate_cv',    label: 'Rate CV', direction: 'in',  signalType: 'modulation' },
@@ -674,6 +683,7 @@ export const MODULE_DISPLAY_NAMES: Record<string, string> = {
   TextCue: 'Text Bank',
   TextMaker: 'TextMaker',
   LumaBands: 'Luma Bands',
+  ChromaBands: 'Chroma Bands',
   ImageLoader: 'Img URL',
   AudioInput: 'Audio In',
   AudioFile: 'Audio File',

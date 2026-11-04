@@ -513,6 +513,24 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
         outlineColor: [0.0, 0.0, 0.0, 1.0]
       };
 
+    case 'ChromaBands':
+      return {
+        id,
+        type: 'ChromaBands',
+        bands: [
+          { id: 'cb-0', threshold: 180, color: [0.85, 0.20, 0.20, 1.0] },
+          { id: 'cb-1', threshold: 360, color: [0.20, 0.40, 0.90, 1.0] }
+        ],
+        chromaGate: 0.08,
+        spatialSmoothing: 0.35,
+        usePaletteIn: true,
+        outlineEnabled: true,
+        outlineWidth: 2,
+        outlineOpacity: 1.0,
+        outlineColor: [0.0, 0.0, 0.0, 1.0]
+      };
+
+
     default:
       return { id, type: 'SimpleFeedback', feedbackAmount: 0.9, zoom: 0.95, angle: 0.05 } as any;
   }
@@ -594,5 +612,64 @@ export function cascadeLumaThresholds<T extends { threshold: number }>(
   }
 
   nextBands[N - 1].threshold = 255;
+  return nextBands;
+}
+
+export const DEFAULT_CHROMA_PALETTE: [number, number, number, number][] = [
+  [0.85, 0.20, 0.20, 1.0], // Crimson / Red
+  [0.90, 0.55, 0.15, 1.0], // Amber / Orange
+  [0.92, 0.85, 0.15, 1.0], // Gold / Yellow
+  [0.20, 0.75, 0.35, 1.0], // Emerald / Green
+  [0.15, 0.75, 0.85, 1.0], // Cyan / Turquoise
+  [0.20, 0.40, 0.90, 1.0], // Royal Blue
+  [0.65, 0.25, 0.85, 1.0], // Purple / Violet
+  [0.90, 0.25, 0.60, 1.0]  // Magenta / Rose
+];
+
+export function autoDistributeChromaThresholds(bandCount: number): number[] {
+  const count = Math.max(2, Math.min(8, bandCount));
+  const step = 360 / count;
+  const thresholds: number[] = [];
+  for (let i = 1; i <= count; i++) {
+    thresholds.push(Math.min(360, Math.round(i * step)));
+  }
+  thresholds[thresholds.length - 1] = 360;
+  return thresholds;
+}
+
+/**
+ * Updates a chroma band's angular threshold and cascades any overlaps:
+ * - Maintains 1 <= T[0] < T[1] < ... < T[N-2] < T[N-1] = 360
+ */
+export function cascadeChromaThresholds<T extends { threshold: number }>(
+  bands: T[],
+  targetIndex: number,
+  newThreshold: number
+): T[] {
+  const N = bands.length;
+  if (N <= 1 || targetIndex >= N - 1 || targetIndex < 0) {
+    return bands;
+  }
+
+  const nextBands = bands.map(b => ({ ...b }));
+
+  const minAllowed = targetIndex + 1;
+  const maxAllowed = 360 - (N - 1 - targetIndex);
+  const clampedVal = Math.max(minAllowed, Math.min(maxAllowed, newThreshold));
+  nextBands[targetIndex].threshold = clampedVal;
+
+  for (let i = targetIndex - 1; i >= 0; i--) {
+    if (nextBands[i].threshold >= nextBands[i + 1].threshold) {
+      nextBands[i].threshold = nextBands[i + 1].threshold - 1;
+    }
+  }
+
+  for (let i = targetIndex + 1; i < N - 1; i++) {
+    if (nextBands[i].threshold <= nextBands[i - 1].threshold) {
+      nextBands[i].threshold = nextBands[i - 1].threshold + 1;
+    }
+  }
+
+  nextBands[N - 1].threshold = 360;
   return nextBands;
 }
