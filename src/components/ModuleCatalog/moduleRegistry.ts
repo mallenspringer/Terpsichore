@@ -67,6 +67,15 @@ export const ALL_MODULES: ModuleEntry[] = [
     tags: ['image', 'cue', 'queue', 'directory', 'bank', 'sampler', 'folder', 'png', 'slideshow', 'trigger', 'shuffle']
   },
   {
+    id: 'TextCue',
+    glyph: '📝',
+    label: 'Text Bank',
+    tooltip: 'Text Bank & Card Sequencer (Dual Video & Text Bus Output)',
+    category: 'Sources',
+    moduleType: 'source:TextCue',
+    tags: ['text', 'bank', 'card', 'cue', 'queue', 'string', 'txt', 'lyrics', 'script', 'trigger', 'shuffle']
+  },
+  {
     id: 'ImageURL',
     glyph: '🔗',
     label: 'Img URL',
@@ -304,6 +313,15 @@ export const ALL_MODULES: ModuleEntry[] = [
   },
 
   // ─── EFFECTS ─────────────────────────────────────────────────────────
+  {
+    id: 'TextMaker',
+    glyph: '📺',
+    label: 'TextMaker',
+    tooltip: 'Videonics-Style Analog Video Character Generator & Title Superimposer',
+    category: 'Effects',
+    moduleType: 'effect:TextMaker',
+    tags: ['effect', 'text', 'title', 'titlemaker', 'videonics', 'character', 'generator', 'cg', 'scroll', 'crawl', 'crt', 'ntsc', 'superimpose', 'overlay', 'typography']
+  },
   {
     id: 'GrassField',
     glyph: '🌱',

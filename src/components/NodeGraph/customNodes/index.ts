@@ -8,3 +8,5 @@ export * from './VowelFormantTrackerUI';
 export * from './SpokenWordVisualizerUI';
 export * from './StepSequencerUI';
 export * from './ImageCueNodeUI';
+export * from './TextCueNodeUI';
+export * from './TextMakerNodeUI';

@@ -56,6 +56,7 @@ export function createDefaultSource(type: string): AnySource {
         directoryPath: '',
         directoryName: 'No folder selected',
         files: [],
+        fileNames: [],
         playbackMode: 'directory',
         dirPlaybackOrder: 'in_order',
         dirAutoPlayback: false,
@@ -66,6 +67,7 @@ export function createDefaultSource(type: string): AnySource {
         activeBankIndex: 0,
         banks: defaultBanks,
         bankAutoPlayback: false,
+        bankSkipEmpty: true,
         bankPlaybackSpeed: 1.0,
         bankLoopMode: 'loop',
         objectFit: 'fill',
@@ -74,6 +76,37 @@ export function createDefaultSource(type: string): AnySource {
         triggerThreshold: 0.5,
         keyMapping: 'none',
         midiPadMappings: {}
+      } as any;
+    }
+    case 'TextCue': {
+      const defaultBanks = Array.from({ length: 24 }, (_, i) => ({
+        id: `bank-${i + 1}`,
+        name: `Bank ${i + 1}`,
+        cards: [],
+        playbackOrder: 'in_order' as const,
+        loopMode: 'loop' as const,
+        autoPlayback: false,
+        playbackSpeed: 1.0,
+        activeCardIndex: 0
+      }));
+      return {
+        type: 'TextCue',
+        bankGridMode: '8',
+        activeBankIndex: 0,
+        banks: defaultBanks,
+        bankAutoPlayback: false,
+        bankSkipEmpty: true,
+        bankPlaybackSpeed: 2.0,
+        bankPlaybackOrder: 'in_order',
+        bankLoopMode: 'loop',
+        triggerThreshold: 0.5,
+        keyMapping: 'none',
+        bankKeyMapping: 'none',
+        midiPadMappings: {},
+        currentText: '',
+        prevText: '',
+        lastStepTime: 0,
+        stepCount: 0
       } as any;
     }
     default:
@@ -302,6 +335,8 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
       return { id, ...createDefaultSource('ImageFile') } as any;
     case 'ImageCue':
       return { id, ...createDefaultSource('ImageCue') } as any;
+    case 'TextCue':
+      return { id, ...createDefaultSource('TextCue') } as any;
     case 'ColorNoise':
       return { id, ...createDefaultSource('ColorNoise') } as any;
     case 'ImageLoader':
@@ -395,6 +430,71 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
         pruneThreshold: 0.7,
         pruneAudioMode: 'transient_cut',
         colorPreset: 'meadow'
+      };
+
+    case 'TextMaker':
+      return {
+        id,
+        type: 'TextMaker',
+        localText: 'TERPSICHORE\nVIDEO SYNTHESIS SYSTEM',
+        allCaps: false,
+        fontFamily: 'broadcast_sans',
+        fontSize: 52,
+        stretchMode: '1x',
+        textAlign: 'center',
+        letterSpacing: 1,
+        lineHeight: 1.25,
+        headerOverrideEnabled: false,
+        headerScale: 1.4,
+        headerColor: [1.0, 0.85, 0.1, 1.0],
+        textColor: [1.0, 1.0, 1.0, 1.0],
+        textColorB: [0.35, 0.75, 1.0, 1.0],
+        colorFillMode: 'solid',
+        gradientDirection: 'line_vertical',
+        colorCycleSpeed: 0.5,
+        outlineEnabled: true,
+        outlineWidth: 0.25,
+        outlineColor: [0.05, 0.05, 0.08, 1.0],
+        shadowEnabled: true,
+        shadowAmount: 0.45,
+        shadowAngle: 135,
+        shadowColor: [0.0, 0.0, 0.0, 0.85],
+        extrudeEnabled: false,
+        extrudeAmount: 0.35,
+        extrudeAngle: 135,
+        extrudeColor: [0.15, 0.25, 0.55, 1.0],
+        glowEnabled: false,
+        glowAmount: 0.4,
+        glowColor: [0.2, 0.7, 1.0, 1.0],
+        glowMatchTextColor: false,
+        backdropMode: 'none',
+        backdropColor: [0.05, 0.1, 0.35, 0.85],
+        backdropBorderWidth: 0.3,
+        backdropBorderColor: [1.0, 0.85, 0.1, 1.0],
+        bgMode: 'transparent',
+        bgColorA: [0.06, 0.08, 0.22, 1.0],
+        bgColorB: [0.02, 0.02, 0.06, 1.0],
+        layoutMode: 'page',
+        snapZone: 4,
+        posX: 0.0,
+        posY: 0.0,
+        scrollSpeed: 0.4,
+        transitionMode: 'crossfade',
+        transitionDuration: 0.6,
+        typewriterCursor: 'block',
+        keyMapping: 'none',
+        analogFxMaster: true,
+        pixelateEnabled: true,
+        pixelateAmount: 0.3,
+        chromaBleedEnabled: true,
+        chromaBleedAmount: 0.35,
+        scanlinesEnabled: true,
+        scanlinesAmount: 0.25,
+        jitterEnabled: false,
+        jitterAmount: 0.2,
+        noiseEnabled: false,
+        noiseAmount: 0.15
+        // Omit closing brace since original line 433 had }; right below it
       };
 
     default:

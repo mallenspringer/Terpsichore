@@ -4,6 +4,7 @@ import { PORT_DEFS } from '../../components/NodeGraph/portDefs';
 import { ImageCueSource } from '../types';
 import { ImageCueManager } from '../../renderer/ImageCueManager';
 import { SignalDispatcher } from '../SignalDispatcher';
+import { MidiManager } from '../MidiManager';
 import { useEngineStore } from '../store';
 
 vi.mock('../AudioEngine', () => ({
@@ -45,6 +46,7 @@ describe('ImageCue Module', () => {
       expect(src.activeDirIndex).toBe(0);
 
       expect(src.bankGridMode).toBe('8');
+      expect(src.bankSkipEmpty).toBe(true);
       expect(src.banks).toHaveLength(16);
       expect(src.banks[0].images).toEqual([]);
       expect(src.banks[0].activeImageIndex).toBe(0);
@@ -287,6 +289,80 @@ describe('ImageCue Module', () => {
       expect(updated.currentImageUrl).toBe('frame2.png');
       expect(updated.prevImageUrl).toBe('frame1.png');
       expect(mockCtx.signalValues['source.gate_out']).toBe(1.0);
+    });
+
+    it('skips empty banks on bank_trig when bankSkipEmpty is enabled (default)', () => {
+      const dispatcher = SignalDispatcher.getInstance();
+      const defaultSrc = createDefaultSource('ImageCue') as ImageCueSource;
+      defaultSrc.playbackMode = 'bank';
+      defaultSrc.activeBankIndex = 0;
+      defaultSrc.banks[0] = { ...defaultSrc.banks[0], images: ['b1.png'] };
+      // Banks 1 and 2 are empty; Bank 3 is populated
+      defaultSrc.banks[3] = { ...defaultSrc.banks[3], images: ['b4.png'] };
+
+      const layerId = 'skip-empty-test';
+      useEngineStore.setState({
+        layers: {
+          [layerId]: { id: layerId, source: defaultSrc, effects: [], modulators: {}, graph: { edges: [] } } as any
+        },
+        layerOrder: [layerId]
+      });
+
+      const mockCtx: any = {
+        layer: useEngineStore.getState().layers[layerId],
+        signalValues: { 'source.bank_trig': 1.0 },
+        audioEngine: {}
+      };
+
+      (dispatcher as any).lastTriggerVals.set(`${layerId}.source.bank_trig`, 0.0);
+      (dispatcher as any).handleImageCueTriggers(mockCtx, 'source', defaultSrc, true, 0.016);
+
+      let updated = useEngineStore.getState().layers[layerId].source as ImageCueSource;
+      expect(updated.activeBankIndex).toBe(3);
+      expect(updated.currentImageUrl).toBe('b4.png');
+
+      // Next bank_trig wraps back to first populated bank (0)
+      (dispatcher as any).lastTriggerVals.set(`${layerId}.source.bank_trig`, 0.0);
+      (dispatcher as any).handleImageCueTriggers(mockCtx, 'source', updated, true, 0.016);
+      updated = useEngineStore.getState().layers[layerId].source as ImageCueSource;
+      expect(updated.activeBankIndex).toBe(0);
+      expect(updated.currentImageUrl).toBe('b1.png');
+    });
+
+    it('triggers mapped bank pads on MIDI Note On messages', () => {
+      const defaultSrc = createDefaultSource('ImageCue') as ImageCueSource;
+      defaultSrc.banks[2] = {
+        ...defaultSrc.banks[2],
+        images: ['pad3_a.png', 'pad3_b.png'],
+        activeImageIndex: 0
+      };
+      defaultSrc.midiPadMappings = {
+        2: { note: 36, channel: 1 }
+      };
+
+      const layerId = 'midi-pad-test';
+      useEngineStore.setState({
+        layers: {
+          [layerId]: { id: layerId, source: defaultSrc, effects: [], modulators: {}, graph: { edges: [] } } as any
+        },
+        layerOrder: [layerId]
+      });
+
+      const midi = MidiManager.getInstance();
+      midi.isPadLearning = false;
+
+      // Hit Note 36 on Channel 1 (0x90, 36, 100) -> switches to bank mode, bank index 2
+      midi.handleMidiMessage(new Uint8Array([0x90, 36, 100]));
+      let updated = useEngineStore.getState().layers[layerId].source as ImageCueSource;
+      expect(updated.playbackMode).toBe('bank');
+      expect(updated.activeBankIndex).toBe(2);
+      expect(updated.currentImageUrl).toBe('pad3_a.png');
+
+      // Hit Note 36 again while active -> steps to next image in bank 2
+      midi.handleMidiMessage(new Uint8Array([0x90, 36, 100]));
+      updated = useEngineStore.getState().layers[layerId].source as ImageCueSource;
+      expect(updated.banks[2].activeImageIndex).toBe(1);
+      expect(updated.currentImageUrl).toBe('pad3_b.png');
     });
   });
 });

@@ -975,6 +975,7 @@ export const SOURCE_ROWS: Record<string, ControlRowDef[]> = {
   ],
 
   ImageCue: [],
+  TextCue: [],
 
   AudioInput: [
     { id: 'deviceId', label: 'Device',

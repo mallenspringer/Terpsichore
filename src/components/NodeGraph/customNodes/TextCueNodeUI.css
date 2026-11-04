@@ -1,0 +1,276 @@
+.text-cue-rack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 0;
+  color: #e2e8f0;
+  box-sizing: border-box;
+}
+
+/* Top Status & Grid Size Bar */
+.text-cue-top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  background: #151a24;
+  border: 1px solid #232c3d;
+  border-radius: 6px;
+  padding: 5px 8px;
+}
+
+.text-cue-status-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: #a3e635;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.text-cue-size-switch {
+  display: flex;
+  background: #0e121a;
+  border: 1px solid #253047;
+  border-radius: 4px;
+  padding: 1px;
+  gap: 2px;
+}
+
+.text-cue-size-btn {
+  background: transparent;
+  border: none;
+  color: #64748b;
+  font-size: 9px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.text-cue-size-btn.active {
+  background: #a3e635;
+  color: #0f172a;
+}
+
+/* Live Active Text Preview Box */
+.text-cue-preview-box {
+  background: #0d1017;
+  border: 1px solid #1f283a;
+  border-radius: 6px;
+  padding: 6px 8px;
+  min-height: 32px;
+  max-height: 46px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 11px;
+  color: #f8fafc;
+  line-height: 1.3;
+  cursor: pointer;
+}
+
+.text-cue-preview-box.empty {
+  color: #64748b;
+  font-style: italic;
+  font-size: 10px;
+}
+
+/* 8 / 16 / 24 Bank Pad Grid */
+.text-cue-pads-grid {
+  display: grid;
+  gap: 6px;
+  background: #10141e;
+  border: 1px solid #1e2638;
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.text-cue-pads-grid.grid-8 {
+  grid-template-columns: repeat(4, 1fr);
+  grid-template-rows: repeat(2, 38px);
+}
+
+.text-cue-pads-grid.grid-16 {
+  grid-template-columns: repeat(4, 1fr);
+  grid-template-rows: repeat(4, 34px);
+}
+
+.text-cue-pads-grid.grid-24 {
+  grid-template-columns: repeat(4, 1fr);
+  grid-template-rows: repeat(6, 32px);
+}
+
+.text-cue-pad-btn {
+  background: #181f2d;
+  border: 1px solid #28344c;
+  border-radius: 5px;
+  color: #94a3b8;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 4px 6px;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  user-select: none;
+  transition: all 0.12s ease;
+}
+
+.text-cue-pad-btn.empty {
+  opacity: 0.55;
+  border-style: dashed;
+}
+
+.text-cue-pad-btn:hover {
+  background: #222c3f;
+  border-color: #3f5073;
+  color: #f1f5f9;
+}
+
+.text-cue-pad-btn.active {
+  background: #1a2a40;
+  border-color: #38bdf8;
+  color: #38bdf8;
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.3);
+}
+
+.text-cue-pad-btn.learning {
+  background: rgba(163, 230, 53, 0.22);
+  border-color: #a3e635;
+  color: #a3e635;
+  box-shadow: 0 0 12px rgba(163, 230, 53, 0.45);
+  animation: text-cue-pad-pulse 0.8s infinite alternate;
+}
+
+@keyframes text-cue-pad-pulse {
+  from { box-shadow: 0 0 4px rgba(163, 230, 53, 0.25); }
+  to { box-shadow: 0 0 14px rgba(163, 230, 53, 0.65); }
+}
+
+.text-cue-pad-midi-badge {
+  font-size: 8px;
+  font-family: monospace;
+  color: #a3e635;
+  background: rgba(163, 230, 53, 0.14);
+  border: 1px solid rgba(163, 230, 53, 0.3);
+  border-radius: 3px;
+  padding: 0 3px;
+  line-height: 1.3;
+  align-self: flex-start;
+  margin-bottom: 2px;
+}
+
+.text-cue-pad-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.text-cue-pad-num {
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.text-cue-pad-led {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #334155;
+}
+
+.text-cue-pad-led.lit {
+  background: #38bdf8;
+  box-shadow: 0 0 6px #38bdf8;
+}
+
+.text-cue-pad-progress-bar {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  background: #a3e635;
+  box-shadow: 0 0 4px #a3e635;
+  transition: width 0.1s ease;
+}
+
+/* Manual Step & Edit Banks Row */
+.text-cue-trigger-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.text-cue-manual-btn {
+  flex: 1;
+  background: #1e283b;
+  border: 1px solid #334260;
+  color: #f1f5f9;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 7px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  white-space: nowrap;
+  transition: all 0.12s ease;
+}
+
+.text-cue-manual-btn:hover {
+  background: #2a3852;
+  border-color: #485c82;
+  box-shadow: 0 0 10px rgba(163, 230, 53, 0.2);
+}
+
+.text-cue-manual-btn:active,
+.text-cue-manual-btn.active {
+  background: #a3e635;
+  color: #0f172a;
+  box-shadow: 0 0 15px rgba(163, 230, 53, 0.5);
+}
+
+.text-cue-key-badge {
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.15);
+  font-weight: normal;
+}
+
+.text-cue-edit-banks-btn {
+  background: rgba(163, 230, 53, 0.12);
+  border: 1px solid rgba(163, 230, 53, 0.35);
+  color: #a3e635;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 7px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.text-cue-edit-banks-btn:hover {
+  background: rgba(163, 230, 53, 0.22);
+  border-color: #a3e635;
+  box-shadow: 0 0 12px rgba(163, 230, 53, 0.25);
+}
+
+.text-cue-section-divider {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: #64748b;
+  padding-top: 4px;
+  border-top: 1px solid #1e2638;
+}
+

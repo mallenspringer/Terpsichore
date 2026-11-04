@@ -4,7 +4,7 @@ import {
   SignalMathEffect, SampleAndHoldEffect, StepSequencerEffect, OscilloscopeEffect,
   SpectralSplitterEffect, AlphaAdjustEffect, AudioTransformerEffect, AudioModulatorEffect,
   AudioGateEffect, SpeechEnvelopeTrackerEffect, VocalPitchTrackerEffect, VowelFormantTrackerEffect,
-  SpokenWordVisualizerEffect, AudioToCVEffect, ColorPaletteEffect, ImageCueSource
+  SpokenWordVisualizerEffect, AudioToCVEffect, ColorPaletteEffect, ImageCueSource, TextCueSource
 } from './types';
 import { AudioEngine } from './AudioEngine';
 import { MidiManager } from './MidiManager';
@@ -47,6 +47,7 @@ export class SignalDispatcher {
   private audioToCvSmoothed = new Map<string, number>();
   private midiOverrides = new Map<string, number>();
   private imageCueStates = new Map<string, { dirTimer: number; bankTimer: number; intraBankTimer: number; gateTimer: number }>();
+  private textCueStates = new Map<string, { bankTimer: number; intraBankTimer: number; gateTimer: number }>();
 
   private constructor() {
     MidiManager.getInstance().initialize();
@@ -135,6 +136,9 @@ export class SignalDispatcher {
           }
           if (srcType === 'VideoFile' || srcType === 'VideoURL' || srcType === 'AudioFile') {
             this.handlePlayerTriggers(ctx, 'source', ctx.layer.source as any, true);
+          }
+          if (srcType === 'TextCue') {
+            this.handleTextCueTriggers(ctx, 'source', ctx.layer.source as TextCueSource, true, dt);
           }
           if (srcType === 'ImageCue') {
             this.handleImageCueTriggers(ctx, 'source', ctx.layer.source as ImageCueSource, true, dt);
@@ -297,6 +301,18 @@ export class SignalDispatcher {
                 ctx.signalValues[`${nodeId}.audio_out`] = 1.0;
               }
               this.handlePlayerTriggers(ctx, nodeId, ef as any, false);
+            });
+          } else if (effect.type === 'TextCue') {
+            pipeline.push((ctx: DispatchContext, dt: number) => {
+              const ef = ctx.layer.effects.find(e => e.id === nodeId) as TextCueSource;
+              if (!ef) return;
+              this.handleTextCueTriggers(ctx, nodeId, ef, false, dt);
+            });
+          } else if (effect.type === 'TextMaker') {
+            pipeline.push((ctx: DispatchContext) => {
+              ctx.signalValues[`${nodeId}.video_out`] = 1.0;
+              ctx.signalValues[`${nodeId}.matte_out`] = 1.0;
+              ctx.signalValues[`${nodeId}.text_out`] = 1.0;
             });
           } else if (effect.type === 'ImageCue') {
             pipeline.push((ctx: DispatchContext, dt: number) => {
@@ -1648,7 +1664,24 @@ export class SignalDispatcher {
       }
 
       if (shouldStepBank) {
-        if (nextBankIndex + 1 < maxBanks) {
+        cState.intraBankTimer = 0;
+        const skipEmpty = src.bankSkipEmpty ?? true;
+        const populatedIndices: number[] = [];
+        if (skipEmpty) {
+          for (let i = 0; i < maxBanks; i++) {
+            if (updatedBanks[i]?.images && updatedBanks[i].images.length > 0) {
+              populatedIndices.push(i);
+            }
+          }
+        }
+        if (skipEmpty && populatedIndices.length > 0) {
+          const nextPopulated = populatedIndices.find(idx => idx > nextBankIndex);
+          if (nextPopulated !== undefined) {
+            nextBankIndex = nextPopulated;
+          } else if (src.bankLoopMode !== 'stop') {
+            nextBankIndex = populatedIndices[0];
+          }
+        } else if (nextBankIndex + 1 < maxBanks) {
           nextBankIndex++;
         } else if (src.bankLoopMode !== 'stop') {
           nextBankIndex = 0;
@@ -1743,4 +1776,255 @@ export class SignalDispatcher {
       }
     }
   }
+
+  private handleTextCueTriggers(ctx: DispatchContext, nodeId: string, src: TextCueSource, isSource: boolean, dt: number) {
+    const stateKey = `${ctx.layer.id}.${nodeId}`;
+    let cState = this.textCueStates.get(stateKey);
+    if (!cState) {
+      cState = { bankTimer: 0, intraBankTimer: 0, gateTimer: 0 };
+      this.textCueStates.set(stateKey, cState);
+    }
+
+    // 1. Read Inputs
+    const thresh = src.triggerThreshold ?? 0.5;
+
+    const cardTrigVal = ctx.signalValues[`${nodeId}.card_trig`] ?? 0;
+    const lastCardTrig = this.lastTriggerVals.get(`${stateKey}.card_trig`) ?? 0;
+    let isCardTrigRising = cardTrigVal >= thresh && lastCardTrig < thresh;
+
+    // Also listen for trigger from any connected downstream TextMaker
+    const downstreamTmEdges = ctx.layer.graph?.edges.filter(
+      e => e.fromNodeId === nodeId && (e.fromPort === 'text_out' || e.fromPort === 'video_out')
+    ) || [];
+    for (const e of downstreamTmEdges) {
+      const targetEffect = ctx.layer.effects.find(eff => eff.id === e.toNodeId);
+      if (targetEffect?.type === 'TextMaker') {
+        const wipeVal = ctx.signalValues[`${targetEffect.id}.wipe_trig`] ?? 0;
+        const lastWipe = this.lastTriggerVals.get(`${stateKey}.${targetEffect.id}.wipe_trig`) ?? 0;
+        if (wipeVal >= thresh && lastWipe < thresh) {
+          isCardTrigRising = true;
+        }
+        this.lastTriggerVals.set(`${stateKey}.${targetEffect.id}.wipe_trig`, wipeVal);
+      }
+    }
+    this.lastTriggerVals.set(`${stateKey}.card_trig`, cardTrigVal);
+
+    const bankTrigVal = ctx.signalValues[`${nodeId}.bank_trig`] ?? 0;
+    const lastBankTrig = this.lastTriggerVals.get(`${stateKey}.bank_trig`) ?? 0;
+    const isBankTrigRising = bankTrigVal >= thresh && lastBankTrig < thresh;
+    this.lastTriggerVals.set(`${stateKey}.bank_trig`, bankTrigVal);
+
+    const resetTrigVal = ctx.signalValues[`${nodeId}.reset_trig`] ?? 0;
+    const lastResetTrig = this.lastTriggerVals.get(`${stateKey}.reset_trig`) ?? 0;
+    const isResetRising = resetTrigVal >= thresh && lastResetTrig < thresh;
+    this.lastTriggerVals.set(`${stateKey}.reset_trig`, resetTrigVal);
+
+    const speedCv = ctx.signalValues[`${nodeId}.speed_cv`] ?? 0;
+    const bankSelectCv = ctx.signalValues[`${nodeId}.bank_select_cv`];
+
+    let cardSwapped = false;
+    let nextBankIndex = src.activeBankIndex ?? 0;
+    const banks = src.banks || [];
+    let updatedBanks = [...banks];
+    const maxBanks = src.bankGridMode === '24' ? 24 : src.bankGridMode === '16' ? 16 : 8;
+    const skipEmpty = src.bankSkipEmpty ?? true;
+    const populatedIndices: number[] = [];
+    if (skipEmpty) {
+      for (let i = 0; i < maxBanks; i++) {
+        if (updatedBanks[i]?.cards && updatedBanks[i].cards.length > 0) {
+          populatedIndices.push(i);
+        }
+      }
+    }
+    const candidates = (skipEmpty && populatedIndices.length > 0)
+      ? populatedIndices
+      : Array.from({ length: maxBanks }, (_, i) => i);
+
+    // 2. Reset Handling
+    if (isResetRising) {
+      cState.bankTimer = 0;
+      cState.intraBankTimer = 0;
+      nextBankIndex = 0;
+      if (skipEmpty && populatedIndices.length > 0) {
+        nextBankIndex = populatedIndices[0];
+      }
+      if (updatedBanks[nextBankIndex]) {
+        updatedBanks[nextBankIndex] = { ...updatedBanks[nextBankIndex], activeCardIndex: 0 };
+      }
+      cardSwapped = true;
+    }
+
+    // 3. Bank CV direct addressing
+    if (bankSelectCv !== undefined && !isResetRising) {
+      const clampedCv = Math.max(0, Math.min(1.0, bankSelectCv));
+      const targetBank = Math.min(maxBanks - 1, Math.floor(clampedCv * maxBanks));
+      if (targetBank !== nextBankIndex) {
+        nextBankIndex = targetBank;
+        cState.intraBankTimer = 0;
+        cardSwapped = true;
+      }
+    }
+
+    // 4. Bank Rotation (bank_trig or bankAutoPlayback)
+    let shouldStepBank = isBankTrigRising;
+    if (src.bankAutoPlayback) {
+      const speed = Math.max(0.05, (src.bankPlaybackSpeed ?? 2.0) * Math.pow(2, -speedCv));
+      cState.bankTimer += dt;
+      if (cState.bankTimer >= speed) {
+        shouldStepBank = true;
+        cState.bankTimer = 0;
+      }
+    }
+
+    if (shouldStepBank && !isResetRising) {
+      cState.intraBankTimer = 0;
+      if (src.bankPlaybackOrder === 'shuffle') {
+        if (candidates.length > 1) {
+          const otherCandidates = candidates.filter(idx => idx !== nextBankIndex);
+          nextBankIndex = otherCandidates[Math.floor(Math.random() * otherCandidates.length)];
+        } else if (candidates.length === 1) {
+          nextBankIndex = candidates[0];
+        }
+      } else {
+        const nextCandidate = candidates.find(idx => idx > nextBankIndex);
+        if (nextCandidate !== undefined) {
+          nextBankIndex = nextCandidate;
+        } else if (src.bankLoopMode !== 'stop' && candidates.length > 0) {
+          nextBankIndex = candidates[0];
+        }
+      }
+      cardSwapped = true;
+    }
+
+    // 5. Intra-Bank Card Stepping (card_trig or active bank's autoPlayback)
+    const curBank = updatedBanks[nextBankIndex];
+    if (curBank && curBank.cards && curBank.cards.length > 0 && !isResetRising) {
+      const cardCount = curBank.cards.length;
+      let shouldStepCard = isCardTrigRising;
+      if (curBank.autoPlayback) {
+        const speed = Math.max(0.05, (curBank.playbackSpeed ?? 1.0) * Math.pow(2, -speedCv));
+        cState.intraBankTimer += dt;
+        if (cState.intraBankTimer >= speed) {
+          shouldStepCard = true;
+          cState.intraBankTimer = 0;
+        }
+      }
+
+      if (shouldStepCard) {
+        let nextCardIdx = curBank.activeCardIndex ?? 0;
+        const universalOrder = src.cardPlaybackOrder ?? curBank.playbackOrder ?? 'in_order';
+        const universalLoop = src.cardLoopMode ?? curBank.loopMode ?? 'loop';
+        if (cardCount > 1) {
+          if (universalOrder === 'shuffle') {
+            let rand = Math.floor(Math.random() * cardCount);
+            if (rand === nextCardIdx) rand = (rand + 1) % cardCount;
+            nextCardIdx = rand;
+            cardSwapped = true;
+          } else {
+            if (nextCardIdx + 1 < cardCount) {
+              nextCardIdx++;
+              cardSwapped = true;
+            } else if (universalLoop === 'bank') {
+              let targetBankIdx = nextBankIndex;
+              if (src.bankPlaybackOrder === 'shuffle') {
+                if (candidates.length > 1) {
+                  const others = candidates.filter(idx => idx !== nextBankIndex);
+                  targetBankIdx = others[Math.floor(Math.random() * others.length)];
+                } else if (candidates.length === 1) {
+                  targetBankIdx = candidates[0];
+                }
+              } else {
+                const nextCand = candidates.find(idx => idx > nextBankIndex);
+                if (nextCand !== undefined) {
+                  targetBankIdx = nextCand;
+                } else if (src.bankLoopMode !== 'stop' && candidates.length > 0) {
+                  targetBankIdx = candidates[0];
+                }
+              }
+              if (targetBankIdx !== nextBankIndex) {
+                nextBankIndex = targetBankIdx;
+                const tb = updatedBanks[nextBankIndex];
+                updatedBanks[nextBankIndex] = { ...tb, activeCardIndex: 0 };
+                cardSwapped = true;
+              } else if (src.bankLoopMode !== 'stop') {
+                nextCardIdx = 0;
+                cardSwapped = true;
+              }
+            } else if (universalLoop !== 'stop') {
+              nextCardIdx = 0;
+              cardSwapped = true;
+            }
+          }
+          if (universalLoop !== 'bank' || nextBankIndex === src.activeBankIndex) {
+            updatedBanks[nextBankIndex] = { ...curBank, activeCardIndex: nextCardIdx };
+          }
+        } else if (universalLoop === 'bank') {
+          let targetBankIdx = nextBankIndex;
+          if (src.bankPlaybackOrder === 'shuffle') {
+            if (candidates.length > 1) {
+              const others = candidates.filter(idx => idx !== nextBankIndex);
+              targetBankIdx = others[Math.floor(Math.random() * others.length)];
+            } else if (candidates.length === 1) {
+              targetBankIdx = candidates[0];
+            }
+          } else {
+            const nextCand = candidates.find(idx => idx > nextBankIndex);
+            if (nextCand !== undefined) {
+              targetBankIdx = nextCand;
+            } else if (src.bankLoopMode !== 'stop' && candidates.length > 0) {
+              targetBankIdx = candidates[0];
+            }
+          }
+          if (targetBankIdx !== nextBankIndex) {
+            nextBankIndex = targetBankIdx;
+            const tb = updatedBanks[nextBankIndex];
+            updatedBanks[nextBankIndex] = { ...tb, activeCardIndex: 0 };
+            cardSwapped = true;
+          } else if (src.bankLoopMode !== 'stop' || isCardTrigRising) {
+            cardSwapped = true;
+          }
+        } else if (universalLoop !== 'stop' || isCardTrigRising) {
+          cardSwapped = true;
+        }
+      }
+    }
+
+    // 6. Handle Card Swap Transition Metadata & Gate Output
+    if (cardSwapped) {
+      cState.gateTimer = 0.05; // 50ms pulse
+      const b = updatedBanks[nextBankIndex];
+      const nextCard = b?.cards?.[b?.activeCardIndex ?? 0];
+      const nextText = nextCard?.text ?? '';
+
+      const updates: Partial<TextCueSource> = {
+        activeBankIndex: nextBankIndex,
+        banks: updatedBanks,
+        prevText: src.currentText ?? '',
+        currentText: nextText,
+        lastStepTime: Date.now(),
+        stepCount: (src.stepCount ?? 0) + 1
+      };
+
+      if (isSource) {
+        useEngineStore.getState().updateLayer(ctx.layer.id, {
+          source: { ...ctx.layer.source, ...updates } as any
+        });
+      } else {
+        useEngineStore.getState().updateEffect(ctx.layer.id, nodeId, updates as any);
+      }
+    }
+
+    // 7. Gate Output pulse decay & output signals
+    if (cState.gateTimer > 0) {
+      cState.gateTimer -= dt;
+      ctx.signalValues[`${nodeId}.gate_out`] = 1.0;
+    } else {
+      ctx.signalValues[`${nodeId}.gate_out`] = 0.0;
+    }
+
+    ctx.signalValues[`${nodeId}.video_out`] = 1.0;
+    const activeBank = updatedBanks[nextBankIndex];
+    ctx.signalValues[`${nodeId}.text_out`] = (activeBank?.cards && activeBank.cards.length > 0) ? 1.0 : 0.0;
+  }
+
 }

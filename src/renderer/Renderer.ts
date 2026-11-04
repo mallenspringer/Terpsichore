@@ -11,6 +11,9 @@ import { SimpleFeedbackWGSL } from './shaders/SimpleFeedback';
 import { ImageVideoSourceWGSL, VideoSourceWGSL } from './shaders/ImageVideoSource';
 import { ImageCueSourceWGSL } from './shaders/ImageCueSource';
 import { ImageCueManager } from './ImageCueManager';
+import { TextCueRenderer } from './TextCueRenderer';
+import { TextMakerRenderer } from './TextMakerRenderer';
+import { TextMakerStage1WGSL, TextMakerStage2WGSL } from './shaders/TextMaker';
 import { AudioEngine } from '../state/AudioEngine';
 import { LumaSplitterWGSL } from './shaders/LumaSplitter';
 import { SpawnWGSL, SpawnVertexWGSL } from './shaders/Spawn';
@@ -43,7 +46,7 @@ import {
   NoiseVideoSource, ColorNoiseSource, InverterEffect, PixelProcessorEffect,
   PatternEffect, KaleidoscopeEffect, SampleAndHoldEffect, OscilloscopeEffect, SpectralSplitterEffect, WaterfallSpectrogramEffect,
   SpokenWordVisualizerEffect,
-  LayerState, AnySource, ImageCueSource
+  LayerState, AnySource, ImageCueSource, TextCueSource, TextMakerEffect
 } from '../state/types';
 
 export class Renderer {
@@ -114,6 +117,25 @@ export class Renderer {
   private imageCuePipeline!: GPURenderPipeline;
   private cueTexturesCurrent: Record<string, GPUTexture> = {};
   private cueTexturesPrev: Record<string, GPUTexture> = {};
+  private cueLastBitmapCurrent: Record<string, ImageBitmap> = {};
+  private cueLastBitmapPrev: Record<string, ImageBitmap> = {};
+  private textCueTextures: Record<string, GPUTexture> = {};
+  private textMakerStage1Pipeline!: GPURenderPipeline;
+  private textMakerStage2Pipeline!: GPURenderPipeline;
+  private textMakerCurrGlyphTex: Record<string, GPUTexture> = {};
+  private textMakerPrevGlyphTex: Record<string, GPUTexture> = {};
+  private textMakerRuntime = new Map<string, {
+    currentText: string;
+    prevText: string;
+    lastStepTime: number;
+    stepCount: number;
+    lastSeenExtStep: number;
+    lastManualTrig: number;
+    lastWipeTrig: number;
+    scrollAccum: number;
+    lastTimeSec: number;
+    hadExternalText: boolean;
+  }>();
   private nodeTextures: Map<string, GPUTexture> = new Map();
   private analysisReadbackBuffers: Map<string, GPUBuffer> = new Map();
   private analysisWeightBuffers: Map<string, GPUBuffer> = new Map();
@@ -719,6 +741,31 @@ export class Renderer {
       primitive
     });
 
+    this.textMakerStage1Pipeline = this.device.createRenderPipeline({
+      layout,
+      vertex,
+      fragment: {
+        module: this.device.createShaderModule({ code: TextMakerStage1WGSL }),
+        entryPoint: 'fs_main',
+        targets: [{ format: this.format }]
+      },
+      primitive
+    });
+
+    this.textMakerStage2Pipeline = this.device.createRenderPipeline({
+      layout,
+      vertex,
+      fragment: {
+        module: this.device.createShaderModule({ code: TextMakerStage2WGSL }),
+        entryPoint: 'fs_main',
+        targets: [
+          { format: this.format },
+          { format: this.format }
+        ]
+      },
+      primitive
+    });
+
     this.grassComputePipeline = this.device.createComputePipeline({
       layout: 'auto',
       compute: {
@@ -1054,6 +1101,10 @@ export class Renderer {
             pass.end();
             this.renderColorNoise(layer, 'source', target, timeSec, commandEncoder);
             return;
+          } else if (layer.source.type === 'TextCue') {
+            pass.end();
+            this.renderTextCueSource(layer, 'source', target, commandEncoder);
+            return;
           } else if (layer.source.type === 'ImageCue') {
             pass.end();
             this.renderImageCueSource(layer, 'source', target, timeSec, commandEncoder);
@@ -1095,9 +1146,15 @@ export class Renderer {
           if (!effect) return;
 
           // Category A: Generators (Sources or Visualizers that don't REQUIRE an input texture)
-          if (['ShapeGenerator', 'VideoFile', 'VideoURL', 'WebcamCapture', 'NoiseSource', 'ColorNoise', 'ImageCue', 'SpectralSplitter', 'Oscilloscope', 'WaterfallSpectrogram', 'SpokenWordVisualizer', 'ParticleCloud', 'GrassField'].includes(effect.type)) {
+          if (['ShapeGenerator', 'VideoFile', 'VideoURL', 'WebcamCapture', 'NoiseSource', 'ColorNoise', 'ImageCue', 'TextCue', 'TextMaker', 'SpectralSplitter', 'Oscilloscope', 'WaterfallSpectrogram', 'SpokenWordVisualizer', 'ParticleCloud', 'GrassField'].includes(effect.type)) {
             const genTarget = this.ensureTexture(nodeId, 'video_out');
-            if (effect.type === 'ImageCue') {
+            if (effect.type === 'TextCue') {
+              this.renderTextCueSource(layer, nodeId, genTarget, commandEncoder);
+              return;
+            } else if (effect.type === 'TextMaker') {
+              this.renderTextMaker(layer, nodeId, effect as TextMakerEffect, genTarget, timeSec, commandEncoder);
+              return;
+            } else if (effect.type === 'ImageCue') {
               this.renderImageCueSource(layer, nodeId, genTarget, timeSec, commandEncoder);
               return;
             } else if (effect.type === 'ShapeGenerator') {
@@ -2253,16 +2310,41 @@ export class Renderer {
       }]
     });
 
-    if (!bmpCurr) {
+    const texKey = `${layer.id}.${nodeId}`;
+    let texCurr = this.cueTexturesCurrent[texKey];
+    if (!bmpCurr && !texCurr) {
+      pass.end();
+      return;
+    }
+    const wCurr = bmpCurr ? bmpCurr.width : texCurr.width;
+    const hCurr = bmpCurr ? bmpCurr.height : texCurr.height;
+    if (bmpCurr) {
+      if (!texCurr || texCurr.width !== wCurr || texCurr.height !== hCurr) {
+        if (texCurr) texCurr.destroy();
+        texCurr = this.device.createTexture({
+          size: [wCurr, hCurr],
+          format: 'rgba8unorm',
+          usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT
+        });
+        this.cueTexturesCurrent[texKey] = texCurr;
+        this.cueLastBitmapCurrent[texKey] = undefined as any;
+      }
+      if (this.cueLastBitmapCurrent[texKey] !== bmpCurr) {
+        this.device.queue.copyExternalImageToTexture({ source: bmpCurr }, { texture: texCurr }, [wCurr, hCurr]);
+        this.cueLastBitmapCurrent[texKey] = bmpCurr;
+      }
+    }
+    /* unused block start:
       pass.end();
       return;
     }
 
-    const wCurr = bmpCurr.width;
-    const hCurr = bmpCurr.height;
+    // (wCurr handled above)
+    // (hCurr handled above)
 
     // Ensure current texture
-    let texCurr = this.cueTexturesCurrent[nodeId];
+    const texKey = `${layer.id}.${nodeId}`;
+    let texCurr = this.cueTexturesCurrent[texKey];
     if (!texCurr || texCurr.width !== wCurr || texCurr.height !== hCurr) {
       if (texCurr) texCurr.destroy();
       texCurr = this.device.createTexture({
@@ -2270,12 +2352,12 @@ export class Renderer {
         format: 'rgba8unorm',
         usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT
       });
-      this.cueTexturesCurrent[nodeId] = texCurr;
+      this.cueTexturesCurrent[texKey] = texCurr;
     }
-    this.device.queue.copyExternalImageToTexture({ source: bmpCurr }, { texture: texCurr }, [wCurr, hCurr]);
+    unused block end */
 
     // Ensure prev texture
-    let texPrev = this.cueTexturesPrev[nodeId];
+    let texPrev = this.cueTexturesPrev[texKey];
     let wPrev = wCurr;
     let hPrev = hCurr;
 
@@ -2289,9 +2371,12 @@ export class Renderer {
           format: 'rgba8unorm',
           usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT
         });
-        this.cueTexturesPrev[nodeId] = texPrev;
+        this.cueTexturesPrev[texKey] = texPrev;
       }
-      this.device.queue.copyExternalImageToTexture({ source: bmpPrev }, { texture: texPrev }, [wPrev, hPrev]);
+      if (this.cueLastBitmapPrev[texKey] !== bmpPrev) {
+        this.device.queue.copyExternalImageToTexture({ source: bmpPrev }, { texture: texPrev }, [wPrev, hPrev]);
+        this.cueLastBitmapPrev[texKey] = bmpPrev;
+      }
     } else {
       texPrev = texCurr;
     }
@@ -2316,8 +2401,9 @@ export class Renderer {
     f32[3] = this.canvas.width / this.canvas.height;
     f32[4] = wCurr / hCurr;
     f32[5] = wPrev / hPrev;
-    f32[6] = 0.0;
-    f32[7] = 0.0;
+    f32[6] = this.canvas.width / wCurr;
+    f32[7] = this.canvas.width / wPrev;
+    // f32[6..7] set above
 
     this.device.queue.writeBuffer(uniformBuffer, 0, u32.buffer);
 
@@ -2335,6 +2421,500 @@ export class Renderer {
     pass.setBindGroup(0, bindGroup);
     pass.draw(3);
     pass.end();
+  }
+
+  private renderTextCueSource(layer: LayerState, nodeId: string, target: GPUTexture, commandEncoder: GPUCommandEncoder) {
+    const src = (nodeId === 'source' ? layer.source : layer.effects.find(e => e.id === nodeId)) as TextCueSource;
+    if (!src) return;
+
+    let activeText = src.currentText;
+    if (!activeText) {
+      const activeBank = src.banks?.[src.activeBankIndex ?? 0];
+      activeText = activeBank?.cards?.[activeBank?.activeCardIndex ?? 0]?.text ?? '';
+    }
+
+    const texKey = `${layer.id}.${nodeId}`;
+    const w = Math.max(64, this.canvas.width || 1280);
+    const h = Math.max(64, this.canvas.height || 720);
+    const { canvas: textCanvas, dirty } = TextCueRenderer.getInstance().renderToCanvas(texKey, activeText || '', w, h);
+
+    let gpuTex = this.textCueTextures[texKey];
+    let needsUpload = dirty;
+    if (!gpuTex || gpuTex.width !== w || gpuTex.height !== h) {
+      if (gpuTex) gpuTex.destroy();
+      gpuTex = this.device.createTexture({
+        size: [w, h],
+        format: 'rgba8unorm',
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT
+      });
+      this.textCueTextures[texKey] = gpuTex;
+      needsUpload = true;
+    }
+
+    if (needsUpload) {
+      this.device.queue.copyExternalImageToTexture({ source: textCanvas }, { texture: gpuTex }, [w, h]);
+    }
+
+    const pass = commandEncoder.beginRenderPass({
+      colorAttachments: [{
+        view: target.createView(),
+        clearValue: { r: 0, g: 0, b: 0, a: 0 },
+        loadOp: 'clear',
+        storeOp: 'store'
+      }]
+    });
+
+    const bindGroup = this.device.createBindGroup({
+      layout: this.blitPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: gpuTex.createView() },
+        { binding: 1, resource: this.sampler }
+      ]
+    });
+
+    pass.setPipeline(this.blitPipeline);
+    pass.setBindGroup(0, bindGroup);
+    pass.draw(3);
+    pass.end();
+  }
+
+  public getConnectedTextSource(layer: LayerState, nodeId: string, portName: string = 'text_in'): any {
+    const edge = layer.graph?.edges.find(e => e.toNodeId === nodeId && e.toPort === portName);
+    if (!edge) return null;
+    if (edge.fromNodeId === 'source' && layer.source.type === 'TextCue') {
+      const src = layer.source as TextCueSource;
+      const activeBank = src.banks?.[src.activeBankIndex ?? 0];
+      const resolvedText = (src.currentText && src.currentText.length > 0)
+        ? src.currentText
+        : (activeBank?.cards?.[activeBank?.activeCardIndex ?? 0]?.text ?? '');
+      return { ...src, currentText: resolvedText };
+    }
+    const effect = layer.effects.find(e => e.id === edge.fromNodeId);
+    if (!effect) return null;
+    if (effect.type === 'TextCue') {
+      const src = effect as TextCueSource;
+      const activeBank = src.banks?.[src.activeBankIndex ?? 0];
+      const resolvedText = (src.currentText && src.currentText.length > 0)
+        ? src.currentText
+        : (activeBank?.cards?.[activeBank?.activeCardIndex ?? 0]?.text ?? '');
+      return { ...src, currentText: resolvedText };
+    }
+    if (effect.type === 'TextMaker') {
+      const tm = effect as TextMakerEffect;
+      const rt = this.textMakerRuntime.get(`${layer.id}.${tm.id}`);
+      const durMs = Math.max(50, (tm.transitionDuration ?? 0.6) * 1000);
+      const transitionProgress =
+        tm.transitionMode === 'cut' || !rt?.lastStepTime
+          ? 1.0
+          : Math.min(1.0, (Date.now() - rt.lastStepTime) / durMs);
+      return {
+        ...tm,
+        currentText: rt?.currentText ?? tm.localText ?? '',
+        prevText: rt?.prevText ?? '',
+        lastStepTime: rt?.lastStepTime ?? 0,
+        stepCount: rt?.stepCount ?? 0,
+        transitionMode: tm.transitionMode,
+        transitionDuration: tm.transitionDuration,
+        transitionProgress,
+        styleRecipe: {
+          fontFamily: tm.fontFamily,
+          fontSize: tm.fontSize,
+          stretchMode: tm.stretchMode,
+          textAlign: tm.textAlign,
+          letterSpacing: tm.letterSpacing,
+          lineHeight: tm.lineHeight,
+          allCaps: tm.allCaps,
+          headerOverrideEnabled: tm.headerOverrideEnabled,
+          headerScale: tm.headerScale,
+          headerColor: tm.headerColor,
+          textColor: tm.textColor,
+          textColorB: tm.textColorB,
+          colorFillMode: tm.colorFillMode,
+          gradientDirection: tm.gradientDirection,
+          colorCycleSpeed: tm.colorCycleSpeed,
+          outlineEnabled: tm.outlineEnabled,
+          outlineWidth: tm.outlineWidth,
+          outlineColor: tm.outlineColor,
+          shadowEnabled: tm.shadowEnabled,
+          shadowAmount: tm.shadowAmount,
+          shadowAngle: tm.shadowAngle,
+          shadowColor: tm.shadowColor,
+          extrudeEnabled: tm.extrudeEnabled,
+          extrudeAmount: tm.extrudeAmount,
+          extrudeAngle: tm.extrudeAngle,
+          extrudeColor: tm.extrudeColor,
+          glowEnabled: tm.glowEnabled,
+          glowAmount: tm.glowAmount,
+          glowColor: tm.glowMatchTextColor ? (tm.textColor || [1.0, 1.0, 1.0, 1.0]) : (tm.glowColor || [0.2, 0.7, 1.0, 1.0]),
+          glowMatchTextColor: tm.glowMatchTextColor
+        },
+        stylizedTexture: this.getTextureForNode(tm.id, 'text_out')
+      };
+    }
+    return null;
+  }
+
+  private renderTextMaker(
+    layer: LayerState,
+    nodeId: string,
+    ef: TextMakerEffect,
+    target: GPUTexture,
+    timeSec: number,
+    commandEncoder: GPUCommandEncoder
+  ) {
+    const texKey = `${layer.id}.${nodeId}`;
+    const extSource = this.getConnectedTextSource(layer, nodeId, 'text_in');
+    const hasExt = extSource !== null;
+    const incomingText: string = hasExt ? (extSource.currentText ?? '') : (ef.localText ?? '');
+    const extStepCount: number = extSource?.stepCount ?? 0;
+
+    let rt = this.textMakerRuntime.get(texKey);
+    if (!rt) {
+      rt = {
+        currentText: incomingText,
+        prevText: '',
+        lastStepTime: 0,
+        stepCount: 0,
+        lastSeenExtStep: extStepCount,
+        lastManualTrig: ef.manualTriggerTime ?? 0,
+        lastWipeTrig: 0,
+        scrollAccum: 0,
+        lastTimeSec: timeSec,
+        hadExternalText: hasExt
+      };
+      this.textMakerRuntime.set(texKey, rt);
+    }
+
+    const dt = Math.max(0, Math.min(0.1, timeSec - rt.lastTimeSec));
+    rt.lastTimeSec = timeSec;
+    rt.scrollAccum = (((rt.scrollAccum + dt * (ef.scrollSpeed ?? 0.4) * 0.25) % 1.0) + 1.0) % 1.0;
+
+    const latestSignals = SignalDispatcher.getInstance().getLatestSignals(layer.id);
+    const wipeTrigVal = latestSignals[`${nodeId}.wipe_trig`] ?? 0;
+    const isWipeRising = wipeTrigVal > 0.5 && rt.lastWipeTrig <= 0.5;
+    rt.lastWipeTrig = wipeTrigVal;
+
+    const curManualTrig = ef.manualTriggerTime ?? 0;
+    const isManualRising = curManualTrig > rt.lastManualTrig;
+    rt.lastManualTrig = curManualTrig;
+
+    if (hasExt !== rt.hadExternalText) {
+      // Immediately override default localText when an external text source is connected or disconnected
+      rt.hadExternalText = hasExt;
+      rt.currentText = incomingText;
+      rt.prevText = incomingText;
+      rt.lastStepTime = 0;
+      rt.lastSeenExtStep = extStepCount;
+    } else if (incomingText !== rt.currentText || extStepCount !== rt.lastSeenExtStep) {
+      rt.prevText = rt.currentText;
+      rt.currentText = incomingText;
+      rt.lastStepTime = Date.now();
+      rt.stepCount += 1;
+      rt.lastSeenExtStep = extStepCount;
+    } else if (isWipeRising || isManualRising) {
+      rt.lastStepTime = Date.now();
+      rt.stepCount += 1;
+      rt.scrollAccum = 0;
+    }
+
+    const durMs = Math.max(50, (ef.transitionDuration ?? 0.6) * 1000);
+    const transitionProgress =
+      ef.transitionMode === 'cut' || rt.lastStepTime === 0
+        ? 1.0
+        : Math.min(1.0, (Date.now() - rt.lastStepTime) / durMs);
+
+    const w = Math.max(64, this.canvas.width || 1280);
+    const h = Math.max(64, this.canvas.height || 720);
+
+    const currGlyph = TextMakerRenderer.getInstance().renderGlyphMask(
+      `${texKey}.curr`,
+      rt.currentText,
+      ef,
+      w,
+      h,
+      transitionProgress
+    );
+    const prevGlyph = TextMakerRenderer.getInstance().renderGlyphMask(
+      `${texKey}.prev`,
+      rt.prevText,
+      ef,
+      w,
+      h,
+      1.0
+    );
+
+    let currGpuTex = this.textMakerCurrGlyphTex[texKey];
+    let needCurrUpload = currGlyph.dirty;
+    if (!currGpuTex || currGpuTex.width !== w || currGpuTex.height !== h) {
+      if (currGpuTex) currGpuTex.destroy();
+      currGpuTex = this.device.createTexture({
+        size: [w, h],
+        format: 'rgba8unorm',
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT
+      });
+      this.textMakerCurrGlyphTex[texKey] = currGpuTex;
+      needCurrUpload = true;
+    }
+    if (needCurrUpload) {
+      this.device.queue.copyExternalImageToTexture({ source: currGlyph.canvas }, { texture: currGpuTex }, [w, h]);
+    }
+
+    let prevGpuTex = this.textMakerPrevGlyphTex[texKey];
+    let needPrevUpload = prevGlyph.dirty;
+    if (!prevGpuTex || prevGpuTex.width !== w || prevGpuTex.height !== h) {
+      if (prevGpuTex) prevGpuTex.destroy();
+      prevGpuTex = this.device.createTexture({
+        size: [w, h],
+        format: 'rgba8unorm',
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT
+      });
+      this.textMakerPrevGlyphTex[texKey] = prevGpuTex;
+      needPrevUpload = true;
+    }
+    if (needPrevUpload) {
+      this.device.queue.copyExternalImageToTexture({ source: prevGlyph.canvas }, { texture: prevGpuTex }, [w, h]);
+    }
+
+    // ── STAGE 1: Render Stationary Stylized Plate (text_out) ──
+    const plateTex = this.ensureTexture(nodeId, 'text_out');
+    const s1 = new Float32Array(64);
+
+    const transMap: Record<string, number> = {
+      cut: 0,
+      crossfade: 1,
+      fade_out_in: 2,
+      typewriter: 3,
+      wipe_lr: 4,
+      venetian: 5,
+      slide_up: 6
+    };
+    const fillMap: Record<string, number> = {
+      solid: 0,
+      gradient: 1,
+      color_cycle: 2,
+      line_step: 3
+    };
+    const gradDirMap: Record<string, number> = {
+      line_vertical: 0,
+      block_vertical: 1,
+      horizontal: 2
+    };
+
+    const aspect = w / h;
+    const modGlow = Math.max(0, Math.min(1.5, this.getEffectiveParam(layer, nodeId, 'glow_cv', ef.glowAmount ?? 0.4, timeSec)));
+    const modShadow = Math.max(0, Math.min(1.5, this.getEffectiveParam(layer, nodeId, 'shadow_cv', ef.shadowAmount ?? 0.45, timeSec)));
+    const modExtrude = Math.max(0, Math.min(1.5, this.getEffectiveParam(layer, nodeId, 'extrude_cv', ef.extrudeAmount ?? 0.35, timeSec)));
+    const modColorCv = this.getEffectiveParam(layer, nodeId, 'color_cv', 0.0, timeSec);
+    const pal = this.getConnectedPalette(layer, nodeId, 'palette_in');
+
+    // params0: [aspect, timeSec, transitionMode, transitionProgress]
+    s1[0] = aspect;
+    s1[1] = timeSec;
+    s1[2] = transMap[ef.transitionMode ?? 'crossfade'] ?? 1;
+    s1[3] = transitionProgress;
+
+    // params1: [colorFillMode, gradientDir, colorCycleSpeed, colorCv]
+    s1[4] = fillMap[ef.colorFillMode ?? 'solid'] ?? 0;
+    s1[5] = gradDirMap[ef.gradientDirection ?? 'line_vertical'] ?? 0;
+    s1[6] = ef.colorCycleSpeed ?? 0.5;
+    s1[7] = modColorCv;
+
+    // params2: [headerOverrideEnabled, headerSplitV, startV, lineStepV]
+    s1[8] = ef.headerOverrideEnabled ? 1.0 : 0.0;
+    s1[9] = currGlyph.metrics.headerSplitV;
+    s1[10] = currGlyph.metrics.startV;
+    s1[11] = currGlyph.metrics.lineStepV;
+
+    // bounds: [minU, minV, maxU, maxV]
+    s1.set(currGlyph.metrics.bounds, 12);
+
+    // edgeFlags: [outlineEnabled, outlineWidth, shadowEnabled, shadowAmount]
+    s1[16] = ef.outlineEnabled !== false ? 1.0 : 0.0;
+    s1[17] = ef.outlineWidth ?? 0.25;
+    s1[18] = ef.shadowEnabled !== false ? 1.0 : 0.0;
+    s1[19] = modShadow;
+
+    // edgeParams: [shadowAngleRad, extrudeEnabled, extrudeAmount, extrudeAngleRad]
+    s1[20] = ((ef.shadowAngle ?? 135) * Math.PI) / 180.0;
+    s1[21] = ef.extrudeEnabled ? 1.0 : 0.0;
+    s1[22] = modExtrude;
+    s1[23] = ((ef.extrudeAngle ?? 135) * Math.PI) / 180.0;
+
+    // glowParams: [glowEnabled, glowAmount, useCustomPalette, palCount]
+    s1[24] = ef.glowEnabled ? 1.0 : 0.0;
+    s1[25] = modGlow;
+    s1[26] = pal ? 1.0 : 0.0;
+    s1[27] = pal ? pal.count : 0.0;
+
+    // palMeta: [palInterpolation, lineCount, 0, 0]
+    s1[28] = pal ? pal.interpolation : 0.0;
+    s1[29] = currGlyph.metrics.lineCount;
+    s1[30] = 0.0;
+    s1[31] = 0.0;
+
+    s1.set(ef.textColor || [1, 1, 1, 1], 32);
+    s1.set(ef.textColorB || [0.35, 0.75, 1, 1], 36);
+    s1.set(ef.headerColor || [1, 0.85, 0.1, 1], 40);
+    s1.set(ef.outlineColor || [0.05, 0.05, 0.08, 1], 44);
+    s1.set(ef.shadowColor || [0, 0, 0, 0.85], 48);
+    s1.set(ef.extrudeColor || [0.15, 0.25, 0.55, 1], 52);
+    const effectiveGlow = ef.glowMatchTextColor ? (ef.textColor || [1, 1, 1, 1]) : (ef.glowColor || [0.2, 0.7, 1, 1]);
+    s1.set(effectiveGlow, 56);
+
+    // Wait: we need 8 palColors (32 floats) + 2 palPositions (8 floats) -> total 60 + 40 = 100 floats (400 bytes)!
+    // Let's allocate 400 bytes (100 floats) for Stage1Uniforms!
+    const stage1FullBuf = this.getUniformBuffer(`${texKey}.stage1_full_uniforms`, 416);
+    const s1Full = new Float32Array(100);
+    s1Full.set(s1.subarray(0, 60), 0);
+
+    if (pal) {
+      for (let i = 0; i < 8; i++) {
+        s1Full[60 + i * 4 + 0] = pal.colors[i][0];
+        s1Full[60 + i * 4 + 1] = pal.colors[i][1];
+        s1Full[60 + i * 4 + 2] = pal.colors[i][2];
+        s1Full[60 + i * 4 + 3] = pal.colors[i][3];
+      }
+      for (let i = 0; i < 8; i++) {
+        s1Full[92 + i] = pal.positions[i];
+      }
+    }
+
+    this.device.queue.writeBuffer(stage1FullBuf, 0, s1Full);
+
+    const pass1 = commandEncoder.beginRenderPass({
+      colorAttachments: [{
+        view: plateTex.createView(),
+        clearValue: { r: 0, g: 0, b: 0, a: 0 },
+        loadOp: 'clear',
+        storeOp: 'store'
+      }]
+    });
+    const bg1 = this.device.createBindGroup({
+      layout: this.textMakerStage1Pipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: stage1FullBuf } },
+        { binding: 1, resource: currGpuTex.createView() },
+        { binding: 2, resource: prevGpuTex.createView() },
+        { binding: 3, resource: this.sampler }
+      ]
+    });
+    pass1.setPipeline(this.textMakerStage1Pipeline);
+    pass1.setBindGroup(0, bg1);
+    pass1.draw(3);
+    pass1.end();
+
+    // ── STAGE 2: Layout Motion + Backdrop + Genlock/Internal BG + Analog CRT FX ──
+    const matteTex = this.ensureTexture(nodeId, 'matte_out');
+    const stage2Buf = this.getUniformBuffer(`${texKey}.stage2_uniforms`, 192);
+    const s2 = new Float32Array(44);
+
+    const layoutMap: Record<string, number> = {
+      page: 0,
+      lower_third: 1,
+      roll: 2,
+      crawl: 3
+    };
+    const backdropMap: Record<string, number> = {
+      none: 0,
+      tight_box: 1,
+      full_banner: 2,
+      line_strips: 3
+    };
+    const bgMap: Record<string, number> = {
+      transparent: 0,
+      solid: 1,
+      gradient: 2,
+      color_bars: 3
+    };
+
+    const zone = ef.snapZone ?? 4;
+    const zoneCol = (zone % 3) - 1; // -1, 0, +1
+    const zoneRow = Math.floor(zone / 3) - 1; // -1, 0, +1
+    const snapX = zoneCol * 0.48;
+    const snapY = zoneRow * 0.52;
+
+    const modPosX = snapX + this.getEffectiveParam(layer, nodeId, 'pos_x_cv', ef.posX ?? 0.0, timeSec);
+    const modPosY = snapY + this.getEffectiveParam(layer, nodeId, 'pos_y_cv', ef.posY ?? 0.0, timeSec);
+
+    const videoInEdge = layer.graph?.edges.find(e => e.toNodeId === nodeId && e.toPort === 'video_in');
+    const videoInTex = videoInEdge ? this.getTextureForNode(videoInEdge.fromNodeId, videoInEdge.fromPort) : null;
+
+    // layoutParams: [layoutMode, posX, posY, scrollOffset]
+    s2[0] = layoutMap[ef.layoutMode ?? 'page'] ?? 0;
+    s2[1] = modPosX;
+    s2[2] = modPosY;
+    s2[3] = rt.scrollAccum;
+
+    // bounds: [minU, minV, maxU, maxV]
+    s2.set(currGlyph.metrics.bounds, 4);
+
+    // lineMetrics: [startV, lineStepV, lineCount, backdropMode]
+    s2[8] = currGlyph.metrics.startV;
+    s2[9] = currGlyph.metrics.lineStepV;
+    s2[10] = currGlyph.metrics.lineCount;
+    s2[11] = backdropMap[ef.backdropMode ?? 'none'] ?? 0;
+
+    s2.set(ef.backdropColor || [0.05, 0.1, 0.35, 0.85], 12);
+    s2.set(ef.backdropBorderColor || [1.0, 0.85, 0.1, 1.0], 16);
+
+    // bgParams: [backdropBorderWidth, bgMode, hasVideoIn, aspect]
+    s2[20] = ef.backdropBorderWidth ?? 0.3;
+    s2[21] = bgMap[ef.bgMode ?? 'transparent'] ?? 0;
+    s2[22] = videoInTex ? 1.0 : 0.0;
+    s2[23] = aspect;
+
+    s2.set(ef.bgColorA || [0.06, 0.08, 0.22, 1.0], 24);
+    s2.set(ef.bgColorB || [0.02, 0.02, 0.06, 1.0], 28);
+
+    // analogFlags: [analogFxMaster, pixelateEnabled, chromaBleedEnabled, scanlinesEnabled]
+    s2[32] = ef.analogFxMaster !== false ? 1.0 : 0.0;
+    s2[33] = ef.pixelateEnabled !== false ? 1.0 : 0.0;
+    s2[34] = ef.chromaBleedEnabled !== false ? 1.0 : 0.0;
+    s2[35] = ef.scanlinesEnabled !== false ? 1.0 : 0.0;
+
+    // analogAmounts: [pixelateAmount, chromaBleedAmount, scanlinesAmount, jitterAmount]
+    s2[36] = ef.pixelateAmount ?? 0.3;
+    s2[37] = ef.chromaBleedAmount ?? 0.35;
+    s2[38] = ef.scanlinesAmount ?? 0.25;
+    s2[39] = ef.jitterAmount ?? 0.2;
+
+    // analogExtra: [jitterEnabled, noiseEnabled, noiseAmount, timeSec]
+    s2[40] = ef.jitterEnabled ? 1.0 : 0.0;
+    s2[41] = ef.noiseEnabled ? 1.0 : 0.0;
+    s2[42] = ef.noiseAmount ?? 0.15;
+    s2[43] = timeSec;
+
+    this.device.queue.writeBuffer(stage2Buf, 0, s2);
+
+    const pass2 = commandEncoder.beginRenderPass({
+      colorAttachments: [
+        {
+          view: target.createView(),
+          clearValue: { r: 0, g: 0, b: 0, a: 0 },
+          loadOp: 'clear',
+          storeOp: 'store'
+        },
+        {
+          view: matteTex.createView(),
+          clearValue: { r: 0, g: 0, b: 0, a: 1 },
+          loadOp: 'clear',
+          storeOp: 'store'
+        }
+      ]
+    });
+    const bg2 = this.device.createBindGroup({
+      layout: this.textMakerStage2Pipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: stage2Buf } },
+        { binding: 1, resource: plateTex.createView() },
+        { binding: 2, resource: (videoInTex ?? this.blankTexture).createView() },
+        { binding: 3, resource: this.sampler }
+      ]
+    });
+    pass2.setPipeline(this.textMakerStage2Pipeline);
+    pass2.setBindGroup(0, bg2);
+    pass2.draw(3);
+    pass2.end();
   }
 
   private renderNoiseSource(layer: LayerState, nodeId: string, target: GPUTexture, timeSec: number, commandEncoder: GPUCommandEncoder) {

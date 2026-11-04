@@ -7,6 +7,7 @@
 export class ImageCueManager {
   private static instance: ImageCueManager | null = null;
   private maxCacheSize = 24;
+  private maxBitmapDim = 3840; // Cap decoded bitmap dimensions at 4K to protect VRAM and WebGPU 2D texture limits
 
   // Cache: url -> { bitmap: ImageBitmap; lastUsed: number }
   private cache = new Map<string, { bitmap: ImageBitmap; lastUsed: number }>();
@@ -74,11 +75,22 @@ export class ImageCueManager {
 
       img.onload = async () => {
         try {
-          // createImageBitmap with premultiplyAlpha preserved
-          const bmp = await createImageBitmap(img, {
+          const nw = img.naturalWidth || img.width || 0;
+          const nh = img.naturalHeight || img.height || 0;
+          const options: ImageBitmapOptions = {
             imageOrientation: 'from-image',
             premultiplyAlpha: 'default'
-          });
+          };
+
+          // Downscale ultra-high-res images (>4K) proportionally during decode
+          if (nw > this.maxBitmapDim || nh > this.maxBitmapDim) {
+            const scale = this.maxBitmapDim / Math.max(nw, nh);
+            options.resizeWidth = Math.max(1, Math.round(nw * scale));
+            options.resizeHeight = Math.max(1, Math.round(nh * scale));
+            options.resizeQuality = 'medium';
+          }
+
+          const bmp = await createImageBitmap(img, options);
           this.setInCache(url, bmp);
           this.loading.delete(url);
           this.notify();

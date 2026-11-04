@@ -138,6 +138,22 @@ export function buildAutoEdges(layer: LayerState, existingGraph?: LayerGraph): G
   for (let i = 0; i < videoNodes.length - 1; i++) {
     const from = videoNodes[i];
     const to = videoNodes[i + 1];
+    const fromTextPort = PORT_DEFS[from.type]?.find(p => p.direction === 'out' && p.signalType === 'text');
+    const toTextPort = PORT_DEFS[to.type]?.find(p => p.direction === 'in' && p.signalType === 'text');
+    if (fromTextPort && toTextPort) {
+      if (!isPortOccupied(to.id, toTextPort.id)) {
+        autoEdges.push({
+          id: `auto_${from.id}_${to.id}`,
+          fromNodeId: from.id,
+          fromPort: fromTextPort.id,
+          toNodeId: to.id,
+          toPort: toTextPort.id,
+          signalType: 'text',
+          isAuto: true,
+        });
+      }
+      continue;
+    }
     const fromPort = getPrimaryOutput(from.type);
     const toPort = PORT_DEFS[to.type]?.find(p => p.direction === 'in' && p.signalType === 'video');
     

@@ -6,8 +6,8 @@ struct CueUniforms {
   canvasRatio: f32,
   mediaRatioCurrent: f32,
   mediaRatioPrev: f32,
-  pad0: f32,
-  pad1: f32,
+  scaleXCurrent: f32,      // canvasWidth / mediaWidthCurrent
+  scaleXPrev: f32,         // canvasWidth / mediaWidthPrev
 };
 
 @group(0) @binding(0) var<uniform> uniforms: CueUniforms;
@@ -20,7 +20,7 @@ struct VertexOutput {
   @location(0) uv: vec2<f32>,
 };
 
-fn computeUV(rawUV: vec2<f32>, fit: u32, mediaRatio: f32, canvasRatio: f32) -> vec2<f32> {
+fn computeUV(rawUV: vec2<f32>, fit: u32, mediaRatio: f32, canvasRatio: f32, scale1to1X: f32) -> vec2<f32> {
   var uv = rawUV;
   if (fit == 0u) {
     // Fill (stretch) - unmodified
@@ -44,9 +44,11 @@ fn computeUV(rawUV: vec2<f32>, fit: u32, mediaRatio: f32, canvasRatio: f32) -> v
       uv.x = (uv.x - 0.5) * scale + 0.5;
     }
   } else if (fit == 3u) {
-    // Center (1:1 aspect maintained, scaled to fit inside)
-    let s = min(canvasRatio / mediaRatio, 1.0);
-    uv = (uv - 0.5) / s + 0.5;
+    // Center (1:1 native pixel scale & true aspect ratio, never stretched/skewed)
+    let scaleX = max(scale1to1X, 0.0001);
+    let scaleY = scaleX * (mediaRatio / canvasRatio);
+    uv.x = (uv.x - 0.5) * scaleX + 0.5;
+    uv.y = (uv.y - 0.5) * scaleY + 0.5;
   }
   return uv;
 }
@@ -55,22 +57,20 @@ fn computeUV(rawUV: vec2<f32>, fit: u32, mediaRatio: f32, canvasRatio: f32) -> v
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
   let p = clamp(uniforms.transitionProgress, 0.0, 1.0);
 
-  // Compute UVs for both textures
-  let uvCurr = computeUV(in.uv, uniforms.objectFit, uniforms.mediaRatioCurrent, uniforms.canvasRatio);
-  var colorCurr = vec4<f32>(0.0);
-  if (uvCurr.x >= 0.0 && uvCurr.x <= 1.0 && uvCurr.y >= 0.0 && uvCurr.y <= 1.0) {
-    colorCurr = textureSample(textureCurrent, texSampler, uvCurr);
-  }
+  // Sample both textures unconditionally in uniform control flow (WGSL requirement)
+  let uvCurr = computeUV(in.uv, uniforms.objectFit, uniforms.mediaRatioCurrent, uniforms.canvasRatio, uniforms.scaleXCurrent);
+  let rawCurr = textureSample(textureCurrent, texSampler, uvCurr);
+  let inBoundsCurr = uvCurr.x >= 0.0 && uvCurr.x <= 1.0 && uvCurr.y >= 0.0 && uvCurr.y <= 1.0;
+  let colorCurr = select(vec4<f32>(0.0), rawCurr, inBoundsCurr);
+
+  let uvPrev = computeUV(in.uv, uniforms.objectFit, uniforms.mediaRatioPrev, uniforms.canvasRatio, uniforms.scaleXPrev);
+  let rawPrev = textureSample(texturePrev, texSampler, uvPrev);
+  let inBoundsPrev = uvPrev.x >= 0.0 && uvPrev.x <= 1.0 && uvPrev.y >= 0.0 && uvPrev.y <= 1.0;
+  let colorPrev = select(vec4<f32>(0.0), rawPrev, inBoundsPrev);
 
   // Fast path: Hard Cut or transition complete
   if (uniforms.transitionType == 0u || p >= 1.0) {
     return colorCurr;
-  }
-
-  let uvPrev = computeUV(in.uv, uniforms.objectFit, uniforms.mediaRatioPrev, uniforms.canvasRatio);
-  var colorPrev = vec4<f32>(0.0);
-  if (uvPrev.x >= 0.0 && uvPrev.x <= 1.0 && uvPrev.y >= 0.0 && uvPrev.y <= 1.0) {
-    colorPrev = textureSample(texturePrev, texSampler, uvPrev);
   }
 
   if (uniforms.transitionType == 1u) {

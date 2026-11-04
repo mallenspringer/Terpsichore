@@ -4,7 +4,7 @@ import { ControlRowDef, RowCtx, EffectCtx } from './moduleControls';
 import { 
   SpawnEffect, StepSequencerEffect, AudioSourceEffect, OscilloscopeEffect, SpectralSplitterEffect, WaterfallSpectrogramEffect,
   SpeechEnvelopeTrackerEffect, VocalPitchTrackerEffect, VowelFormantTrackerEffect, SpokenWordVisualizerEffect,
-  AudioGateEffect, ImageCueSource
+  AudioGateEffect, ImageCueSource, TextCueSource, TextMakerEffect
 } from '../../state/types';
 import { useEngineStore } from '../../state/store';
 import { OscilloscopeVisualizer, AudioSourceVisualizer, SpectralVisualizer, WaterfallVisualizer } from './AudioVisualizers';
@@ -18,6 +18,8 @@ import {
   SpokenWordVisualizerUI,
   StepSequencerUI,
   ImageCueNodeUI,
+  TextCueNodeUI,
+  TextMakerNodeUI,
 } from './customNodes';
 
 
@@ -422,7 +424,7 @@ export function ModuleNode({
   return (
     <div
       ref={nodeRef}
-      className={`module-node ${isOutput ? 'output-node' : ''} ${zoom < 0.6 ? 'lod-low' : ''}`}
+      className={`module-node module-type-${moduleType} ${isOutput ? 'output-node' : ''} ${zoom < 0.6 ? 'lod-low' : ''}`}
       style={{ left: nodeState.x, top: nodeState.y }}
       data-node-id={nodeId}
     >
@@ -714,6 +716,29 @@ export function ModuleNode({
               inputSettings={inputSettings}
             />
           )}
+          {moduleType === 'TextMaker' && (
+            <TextMakerNodeUI
+              nodeId={nodeId}
+              layerId={layerId}
+              effect={((rowCtx as any).effect || (rowCtx as any).source) as TextMakerEffect}
+              rowCtx={rowCtx}
+            />
+          )}
+          {moduleType === 'TextCue' && (
+            <TextCueNodeUI
+              nodeId={nodeId}
+              layerId={layerId}
+              source={((rowCtx as any).source || (rowCtx as any).effect) as TextCueSource}
+              onUpdate={(updates) => {
+                if ((rowCtx as any).onUpdate) {
+                  (rowCtx as any).onUpdate(updates);
+                } else if ((rowCtx as any).onChange) {
+                  Object.entries(updates).forEach(([k, v]) => (rowCtx as any).onChange(k, v));
+                }
+              }}
+              rowCtx={rowCtx}
+            />
+          )}
           {moduleType === 'ImageCue' && (
             <ImageCueNodeUI
               nodeId={nodeId}
@@ -736,6 +761,8 @@ export function ModuleNode({
            moduleType !== 'VowelFormantTracker' &&
            moduleType !== 'SpokenWordVisualizer' &&
            moduleType !== 'ImageCue' &&
+           moduleType !== 'TextCue' &&
+           moduleType !== 'TextMaker' &&
            orderedRows.slice(0, visibleRows).map((row, index) => (
               <div
                 key={row.id}
@@ -759,6 +786,8 @@ export function ModuleNode({
            moduleType !== 'VowelFormantTracker' &&
            moduleType !== 'SpokenWordVisualizer' &&
            moduleType !== 'ImageCue' &&
+           moduleType !== 'TextCue' &&
+           moduleType !== 'TextMaker' &&
            (hiddenCount > 0 || nodeState.expanded) ? (
             <div className="node-collapse-footer"
               onClick={() => onLayoutChange({ expanded: !nodeState.expanded })}>

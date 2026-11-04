@@ -11,6 +11,7 @@ export class MidiManager {
   private static instance: MidiManager;
 
   private isInitialized = false;
+  public isPadLearning = false;
   private midiAccess: any = null;
   private inputs: any[] = [];
   
@@ -207,6 +208,9 @@ export class MidiManager {
 
       this.addActiveNote(channel, note, velocity);
       this.addActiveNote('all', note, velocity);
+      if (!this.isPadLearning) {
+        this.triggerImageCuePads(channel, note);
+      }
     }
     // Note Off
     else if (command === 0x80 || (command === 0x90 && data2 === 0)) {
@@ -283,5 +287,119 @@ export class MidiManager {
     this.clockPulseActive['1/8'] = false;
     this.clockPulseActive['1/16'] = false;
     this.clockPulseActive['1/32'] = false;
+  }
+
+  private triggerImageCuePads(channel: number, note: number) {
+    const store = useEngineStore.getState();
+    Object.entries(store.layers).forEach(([layerId, layer]) => {
+      const triggerCuePad = (cue: any, padIdx: number) => {
+        const banks = cue.banks || [];
+        const curBank = banks[padIdx];
+        const updatedBanks = [...banks];
+        let nextUrl = cue.currentImageUrl;
+        if (curBank && curBank.images && curBank.images.length > 0) {
+          const count = curBank.images.length;
+          let imgIdx = curBank.activeImageIndex ?? 0;
+          if (cue.playbackMode === 'bank' && cue.activeBankIndex === padIdx && count > 1) {
+            if (curBank.playbackOrder === 'shuffle') {
+              imgIdx = (imgIdx + 1 + Math.floor(Math.random() * (count - 1))) % count;
+            } else {
+              imgIdx = imgIdx + 1 < count ? imgIdx + 1 : (curBank.loopMode === 'stop' ? count - 1 : 0);
+            }
+            updatedBanks[padIdx] = { ...curBank, activeImageIndex: imgIdx };
+          }
+          nextUrl = curBank.images[imgIdx];
+        }
+        const updates: any = {
+          playbackMode: 'bank',
+          activeBankIndex: padIdx,
+          banks: updatedBanks
+        };
+        if (nextUrl && nextUrl !== cue.currentImageUrl) {
+          updates.prevImageUrl = cue.currentImageUrl || nextUrl;
+          updates.currentImageUrl = nextUrl;
+          updates.transitionStartTime = Date.now();
+        }
+        return updates;
+      };
+
+      const triggerTextCuePad = (cue: any, padIdx: number) => {
+        const banks = cue.banks || [];
+        const curBank = banks[padIdx];
+        const updatedBanks = [...banks];
+        let nextText = cue.currentText ?? '';
+        if (curBank && curBank.cards && curBank.cards.length > 0) {
+          const count = curBank.cards.length;
+          let cardIdx = curBank.activeCardIndex ?? 0;
+          if (cue.activeBankIndex === padIdx && count > 1) {
+            const universalOrder = cue.cardPlaybackOrder ?? curBank.playbackOrder ?? 'in_order';
+            const universalLoop = cue.cardLoopMode ?? curBank.loopMode ?? 'loop';
+            if (universalOrder === 'shuffle') {
+              cardIdx = (cardIdx + 1 + Math.floor(Math.random() * (count - 1))) % count;
+            } else {
+              cardIdx = cardIdx + 1 < count ? cardIdx + 1 : (universalLoop === 'stop' ? count - 1 : 0);
+            }
+            updatedBanks[padIdx] = { ...curBank, activeCardIndex: cardIdx };
+          }
+          nextText = curBank.cards[cardIdx]?.text ?? '';
+        } else {
+          nextText = '';
+        }
+        return {
+          activeBankIndex: padIdx,
+          banks: updatedBanks,
+          prevText: cue.currentText ?? '',
+          currentText: nextText,
+          lastStepTime: Date.now(),
+          stepCount: (cue.stepCount ?? 0) + 1
+        };
+      };
+
+      if (layer.source?.type === 'ImageCue') {
+        const cue = layer.source as any;
+        const mappings = cue.midiPadMappings || {};
+        for (const [padKey, map] of Object.entries<any>(mappings)) {
+          if (map && map.note === note && (!map.channel || map.channel === channel)) {
+            const updates = triggerCuePad(cue, Number(padKey));
+            store.updateLayer(layerId, { source: { ...cue, ...updates } });
+            break;
+          }
+        }
+      } else if (layer.source?.type === 'TextCue') {
+        const cue = layer.source as any;
+        const mappings = cue.midiPadMappings || {};
+        for (const [padKey, map] of Object.entries<any>(mappings)) {
+          if (map && map.note === note && (!map.channel || map.channel === channel)) {
+            const updates = triggerTextCuePad(cue, Number(padKey));
+            store.updateLayer(layerId, { source: { ...cue, ...updates } });
+            break;
+          }
+        }
+      }
+
+      if (layer.effects) {
+        layer.effects.forEach((eff: any) => {
+          if (eff.type === 'ImageCue' && eff.id) {
+            const mappings = eff.midiPadMappings || {};
+            for (const [padKey, map] of Object.entries<any>(mappings)) {
+              if (map && map.note === note && (!map.channel || map.channel === channel)) {
+                const updates = triggerCuePad(eff, Number(padKey));
+                store.updateEffect(layerId, eff.id, updates);
+                break;
+              }
+            }
+          } else if (eff.type === 'TextCue' && eff.id) {
+            const mappings = eff.midiPadMappings || {};
+            for (const [padKey, map] of Object.entries<any>(mappings)) {
+              if (map && map.note === note && (!map.channel || map.channel === channel)) {
+                const updates = triggerTextCuePad(eff, Number(padKey));
+                store.updateEffect(layerId, eff.id, updates);
+                break;
+              }
+            }
+          }
+        });
+      }
+    });
   }
 }

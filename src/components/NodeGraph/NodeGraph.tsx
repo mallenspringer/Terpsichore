@@ -279,7 +279,14 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
 
   const handleSourceChange = useCallback((key: string, value: any) => {
     if (!layer) return;
-    updateLayer(layer.id, { source: { ...layer.source, [key]: value } as AnySource });
+    const latestSource = useEngineStore.getState().layers[layer.id]?.source || layer.source;
+    updateLayer(layer.id, { source: { ...latestSource, [key]: value } as AnySource });
+  }, [layer, updateLayer]);
+
+  const handleSourceUpdate = useCallback((updates: Partial<AnySource>) => {
+    if (!layer) return;
+    const latestSource = useEngineStore.getState().layers[layer.id]?.source || layer.source;
+    updateLayer(layer.id, { source: { ...latestSource, ...updates } as AnySource });
   }, [layer, updateLayer]);
 
   const handleNodeFileChange = useCallback((nodeId: string, e: React.ChangeEvent<HTMLInputElement>) => {
@@ -294,7 +301,8 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
     } else {
       const effect = layer.effects.find(ef => ef.id === nodeId) as (VideoFileSource | ImageFileSource);
       if (effect && effect.fileUrl && effect.fileUrl.startsWith('blob:')) URL.revokeObjectURL(effect.fileUrl);
-      const newEffects = layer.effects.map(ef => 
+      const latestEffects = useEngineStore.getState().layers[layer.id]?.effects || layer.effects;
+    const newEffects = latestEffects.map(ef => 
         ef.id === nodeId ? { ...ef, fileUrl: asset.fileUrl, fileName: asset.fileName, filePath: asset.filePath } as AnyEffect : ef
       );
       updateLayer(layer.id, { effects: newEffects });
@@ -307,7 +315,8 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
 
   const handleUpdateEffect = useCallback((effectId: string, updates: Partial<AnyEffect>) => {
     if (!layer) return;
-    const newEffects = layer.effects.map(ef =>
+    const latestEffects = useEngineStore.getState().layers[layer.id]?.effects || layer.effects;
+    const newEffects = latestEffects.map(ef =>
       ef.id === effectId ? { ...ef, ...updates } as AnyEffect : ef
     );
     updateLayer(layer.id, { effects: newEffects });
@@ -727,6 +736,7 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
     source: layer.source,
     layer: layer,
     onChange: handleSourceChange,
+    onUpdate: handleSourceUpdate,
     videoProgress: videoProgress['source'] || { currentTime: 0, duration: 0 },
     onSeek: (e) => handleNodeSeek('source', e),
     onSeekStart: () => onSeekStart?.('source'),

@@ -7,6 +7,7 @@ import { NodeGraph } from "./components/NodeGraph/NodeGraph";
 import { MidiMappingModal } from "./components/NodeGraph/MidiMappingModal";
 import { AudioEngine } from "./state/AudioEngine";
 import { ExternalWindowManager } from "./utils/ExternalWindowManager";
+import { stepTextCueCard, stepTextCueBank } from "./utils/textCueUtils";
 
 function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -109,12 +110,56 @@ function App() {
                 nextEffects[idx] = { ...eff, manualTriggerTime: Date.now() };
               }
               effChanged = true;
+            } else if (eff.type === 'TextMaker' && (eff as any).keyMapping === key) {
+              const textInEdge = layer.graph?.edges?.find(e => e.toNodeId === eff.id && e.toPort === 'text_in');
+              if (textInEdge) {
+                if (textInEdge.fromNodeId === 'source' && layer.source?.type === 'TextCue') {
+                  const patch = stepTextCueCard(layer.source as any);
+                  if (patch) {
+                    layer.source = { ...layer.source, ...patch };
+                  }
+                } else {
+                  const cueIdx = nextEffects.findIndex(e => e.id === textInEdge.fromNodeId && e.type === 'TextCue');
+                  if (cueIdx !== -1) {
+                    const patch = stepTextCueCard(nextEffects[cueIdx] as any);
+                    if (patch) {
+                      nextEffects[cueIdx] = { ...nextEffects[cueIdx], ...patch } as any;
+                    }
+                  }
+                }
+              }
+              nextEffects[idx] = { ...eff, manualTriggerTime: Date.now() };
+              effChanged = true;
+            } else if (eff.type === 'TextCue' && ((eff as any).keyMapping === key || (eff as any).bankKeyMapping === key)) {
+              let cue = eff as any;
+              let changed = false;
+              if (cue.keyMapping === key) {
+                const patch = stepTextCueCard(cue);
+                if (patch) {
+                  cue = { ...cue, ...patch };
+                  changed = true;
+                }
+              }
+              if (cue.bankKeyMapping === key) {
+                const patch = stepTextCueBank(cue);
+                if (patch) {
+                  cue = { ...cue, ...patch };
+                  changed = true;
+                }
+              }
+              if (changed) {
+                nextEffects[idx] = cue;
+                effChanged = true;
+              }
             } else if (eff.type === 'ImageCue' && (eff as any).keyMapping === key) {
               const cue = eff as any;
               if (cue.playbackMode === 'directory') {
                 const count = cue.files?.length || 0;
                 if (count > 0) {
-                  const nextIdx = ((cue.activeDirIndex ?? 0) + 1) % count;
+                  const curIdx = cue.activeDirIndex ?? 0;
+                const nextIdx = cue.dirPlaybackOrder === 'shuffle'
+                  ? (count > 1 ? ((curIdx + 1 + Math.floor(Math.random() * (count - 1))) % count) : 0)
+                  : (curIdx + 1 < count ? curIdx + 1 : (cue.dirLoopMode === 'stop' ? count - 1 : 0));
                   nextEffects[idx] = {
                     ...cue,
                     activeDirIndex: nextIdx,
@@ -128,7 +173,10 @@ function App() {
                 const b = cue.banks?.[cue.activeBankIndex ?? 0];
                 if (b && b.images && b.images.length > 0) {
                   const count = b.images.length;
-                  const nextImgIdx = ((b.activeImageIndex ?? 0) + 1) % count;
+                  const curImgIdx = b.activeImageIndex ?? 0;
+                  const nextImgIdx = b.playbackOrder === 'shuffle'
+                    ? (count > 1 ? ((curImgIdx + 1 + Math.floor(Math.random() * (count - 1))) % count) : 0)
+                    : (curImgIdx + 1 < count ? curImgIdx + 1 : (b.loopMode === 'stop' ? count - 1 : 0));
                   const newBanks = [...cue.banks];
                   newBanks[cue.activeBankIndex] = { ...b, activeImageIndex: nextImgIdx };
                   nextEffects[idx] = {
@@ -145,12 +193,36 @@ function App() {
           });
 
           // Also check if layer.source is ImageCue
+          if (layer.source?.type === 'TextCue' && ((layer.source as any).keyMapping === key || (layer.source as any).bankKeyMapping === key)) {
+            let cue = layer.source as any;
+            let changed = false;
+            if (cue.keyMapping === key) {
+              const patch = stepTextCueCard(cue);
+              if (patch) {
+                cue = { ...cue, ...patch };
+                changed = true;
+              }
+            }
+            if (cue.bankKeyMapping === key) {
+              const patch = stepTextCueBank(cue);
+              if (patch) {
+                cue = { ...cue, ...patch };
+                changed = true;
+              }
+            }
+            if (changed) {
+              updateLayer(layerId, { source: cue });
+            }
+          }
           if (layer.source?.type === 'ImageCue' && (layer.source as any).keyMapping === key) {
             const cue = layer.source as any;
             if (cue.playbackMode === 'directory') {
               const count = cue.files?.length || 0;
               if (count > 0) {
-                const nextIdx = ((cue.activeDirIndex ?? 0) + 1) % count;
+                const curIdx = cue.activeDirIndex ?? 0;
+                const nextIdx = cue.dirPlaybackOrder === 'shuffle'
+                  ? (count > 1 ? ((curIdx + 1 + Math.floor(Math.random() * (count - 1))) % count) : 0)
+                  : (curIdx + 1 < count ? curIdx + 1 : (cue.dirLoopMode === 'stop' ? count - 1 : 0));
                 updateLayer(layerId, {
                   source: {
                     ...cue,
@@ -165,7 +237,10 @@ function App() {
               const b = cue.banks?.[cue.activeBankIndex ?? 0];
               if (b && b.images && b.images.length > 0) {
                 const count = b.images.length;
-                const nextImgIdx = ((b.activeImageIndex ?? 0) + 1) % count;
+                const curImgIdx = b.activeImageIndex ?? 0;
+                const nextImgIdx = b.playbackOrder === 'shuffle'
+                  ? (count > 1 ? ((curImgIdx + 1 + Math.floor(Math.random() * (count - 1))) % count) : 0)
+                  : (curImgIdx + 1 < count ? curImgIdx + 1 : (b.loopMode === 'stop' ? count - 1 : 0));
                 const newBanks = [...cue.banks];
                 newBanks[cue.activeBankIndex] = { ...b, activeImageIndex: nextImgIdx };
                 updateLayer(layerId, {

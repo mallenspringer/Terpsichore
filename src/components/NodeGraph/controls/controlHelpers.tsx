@@ -70,6 +70,9 @@ export const KeyMappingRow = ({ label, value, onChange, ctx }: { label: string; 
     });
     (layer.effects || []).forEach((e: any) => {
       if (e.keyMapping && e.keyMapping !== 'none') usedKeys.add(e.keyMapping);
+      if (e.bankKeyMapping && e.bankKeyMapping !== 'none') usedKeys.add(e.bankKeyMapping);
+      if (layer.source?.keyMapping && layer.source.keyMapping !== 'none') usedKeys.add(layer.source.keyMapping);
+      if (layer.source?.bankKeyMapping && layer.source.bankKeyMapping !== 'none') usedKeys.add(layer.source.bankKeyMapping);
     });
   }
 

@@ -1,5 +1,7 @@
-import React, { useState, useRef } from 'react';
-import { ImageCueSource } from '../../../state/types';
+import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
+import { ImageCueSource, ImageCueBankSlot } from '../../../state/types';
+import { ImageCueManager } from '../../../renderer/ImageCueManager';
 import './ImageCueBankModal.css';
 
 interface ImageCueBankModalProps {
@@ -26,16 +28,54 @@ export function ImageCueBankModal({
   const [marqueeStart, setMarqueeStart] = useState<{ x: number; y: number } | null>(null);
   const [marqueeEnd, setMarqueeEnd] = useState<{ x: number; y: number } | null>(null);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const files = source.files || [];
+  const fileNames = source.fileNames || [];
   const banks = source.banks || [];
   const maxBanks = source.bankGridMode === '16' ? 16 : 8;
 
   // Filtered pool files with original indices preserved
   const filteredFiles = files
-    .map((url, idx) => ({ url, originalIdx: idx, name: url.split('/').pop()?.split('\\').pop() || `img_${idx}` }))
+    .map((url, idx) => ({
+      url,
+      originalIdx: idx,
+      name: fileNames[idx] || url.split('/').pop()?.split('\\').pop() || `img_${idx + 1}`
+    }))
     .filter(item => !filterText || item.name.toLowerCase().includes(filterText.toLowerCase()));
+
+  // Helper to sync currentImageUrl when active bank's images change
+  const buildBankUpdates = (newBanks: ImageCueBankSlot[], extraUpdates?: Partial<ImageCueSource>): Partial<ImageCueSource> => {
+    const updates: Partial<ImageCueSource> = {
+      banks: newBanks,
+      ...extraUpdates
+    };
+    const effectiveMode = extraUpdates?.playbackMode ?? source.playbackMode;
+    const effectiveBankIdx = extraUpdates?.activeBankIndex ?? source.activeBankIndex ?? 0;
+
+    if (effectiveMode === 'bank') {
+      const activeBank = newBanks[effectiveBankIdx];
+      const nextUrl = activeBank?.images?.[activeBank.activeImageIndex ?? 0];
+      if (nextUrl && nextUrl !== source.currentImageUrl) {
+        updates.prevImageUrl = source.currentImageUrl || nextUrl;
+        updates.currentImageUrl = nextUrl;
+        updates.transitionStartTime = Date.now();
+      }
+    }
+    return updates;
+  };
 
   // ── Multi-select handlers ──────────────────────────────────────────────────
   const handleItemClick = (idx: number, e: React.MouseEvent) => {
@@ -134,8 +174,11 @@ export function ImageCueBankModal({
   };
 
   // ── Drag & Drop Assignment ────────────────────────────────────────────────
-  const handleDragStartSelected = (e: React.DragEvent) => {
-    const urlsToDrag = Array.from(selectedIndices).map(i => files[i]).filter(Boolean);
+  const handleDragStartSelected = (e: React.DragEvent, draggedIdx: number) => {
+    const indices = selectedIndices.has(draggedIdx)
+      ? Array.from(selectedIndices)
+      : [draggedIdx];
+    const urlsToDrag = indices.map(i => files[i]).filter(Boolean);
     if (urlsToDrag.length === 0) return;
     e.dataTransfer.setData('application/json', JSON.stringify({ type: 'pool_images', urls: urlsToDrag }));
     e.dataTransfer.effectAllowed = 'copy';
@@ -166,7 +209,8 @@ export function ImageCueBankModal({
           images: [...target.images, ...data.urls]
         };
 
-        onUpdate({ banks: newBanks });
+        ImageCueManager.getInstance().prefetchBatch(data.urls.slice(0, 6));
+        onUpdate(buildBankUpdates(newBanks));
       } else if (data.type === 'bank_slot' && typeof data.bankIdx === 'number') {
         // Swap bank slots
         const fromIdx = data.bankIdx;
@@ -175,7 +219,7 @@ export function ImageCueBankModal({
           const temp = newBanks[fromIdx];
           newBanks[fromIdx] = newBanks[bankIdx];
           newBanks[bankIdx] = temp;
-          onUpdate({ banks: newBanks });
+          onUpdate(buildBankUpdates(newBanks));
         }
       }
     } catch (err) {
@@ -204,7 +248,8 @@ export function ImageCueBankModal({
       images: [...target.images, ...urlsToAdd]
     };
 
-    onUpdate({ banks: newBanks });
+    ImageCueManager.getInstance().prefetchBatch(urlsToAdd.slice(0, 6));
+    onUpdate(buildBankUpdates(newBanks));
   };
 
   const handleRemoveImageFromBank = (bankIdx: number, imgIdx: number) => {
@@ -220,19 +265,19 @@ export function ImageCueBankModal({
       images: newImages,
       activeImageIndex: newActiveIdx
     };
-    onUpdate({ banks: newBanks });
+    onUpdate(buildBankUpdates(newBanks));
   };
 
   const handleClearBank = (bankIdx: number) => {
     const newBanks = [...banks];
     if (!newBanks[bankIdx]) return;
     newBanks[bankIdx] = { ...newBanks[bankIdx], images: [], activeImageIndex: 0 };
-    onUpdate({ banks: newBanks });
+    onUpdate(buildBankUpdates(newBanks));
   };
 
   const handleClearAllBanks = () => {
     const newBanks = banks.map(b => ({ ...b, images: [], activeImageIndex: 0 }));
-    onUpdate({ banks: newBanks });
+    onUpdate(buildBankUpdates(newBanks));
   };
 
   // ── "Randomly Populate" Feature ───────────────────────────────────────────
@@ -265,7 +310,8 @@ export function ImageCueBankModal({
       };
     }
 
-    onUpdate({ banks: newBanks });
+    ImageCueManager.getInstance().prefetchBatch(shuffledPool.slice(0, 12));
+    onUpdate(buildBankUpdates(newBanks));
   };
 
   // ── Intra-bank reordering (drag thumbnail within slot) ─────────────────────
@@ -280,7 +326,7 @@ export function ImageCueBankModal({
     newImgs.splice(toImgIdx, 0, moved);
 
     newBanks[bankIdx] = { ...b, images: newImgs };
-    onUpdate({ banks: newBanks });
+    onUpdate(buildBankUpdates(newBanks));
   };
 
   // Compute marquee rect styles
@@ -291,8 +337,14 @@ export function ImageCueBankModal({
     height: Math.abs(marqueeEnd.y - marqueeStart.y),
   } : undefined;
 
-  return (
-    <div className="image-cue-modal-overlay" onClick={onClose}>
+  const modalContent = (
+    <div
+      className="image-cue-modal-overlay"
+      onClick={onClose}
+      onPointerDown={e => e.stopPropagation()}
+      onKeyDown={e => e.stopPropagation()}
+      onWheel={e => e.stopPropagation()}
+    >
       <div className="image-cue-modal-container" onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="image-cue-modal-header">
@@ -377,7 +429,7 @@ export function ImageCueBankModal({
 
               {selectedIndices.size > 0 && (
                 <div style={{ fontSize: 11, color: '#f5c518', fontWeight: 500 }}>
-                  Selected: {selectedIndices.size} image(s) (Drag to a bank slot or click [+])
+                  Selected: {selectedIndices.size} image(s) (Drag to a bank slot or click [+ Add])
                 </div>
               )}
             </div>
@@ -402,11 +454,11 @@ export function ImageCueBankModal({
                     data-idx={item.originalIdx}
                     className={`image-cue-pool-item ${isSelected ? 'selected' : ''}`}
                     onClick={e => handleItemClick(item.originalIdx, e)}
-                    draggable={isSelected}
-                    onDragStart={handleDragStartSelected}
+                    draggable
+                    onDragStart={e => handleDragStartSelected(e, item.originalIdx)}
                   >
                     <div className="image-cue-pool-thumb-wrapper">
-                      <img src={item.url} alt={item.name} className="image-cue-pool-thumb" />
+                      <img src={item.url} alt={item.name} loading="lazy" decoding="async" className="image-cue-pool-thumb" />
                     </div>
                     <div className="image-cue-pool-label" title={item.name}>
                       {item.name}
@@ -516,10 +568,13 @@ export function ImageCueBankModal({
                             onClick={() => {
                               const newBanks = [...banks];
                               newBanks[bIdx] = { ...bank, activeImageIndex: fIdx };
-                              onUpdate({ banks: newBanks, activeBankIndex: bIdx, playbackMode: 'bank' });
+                              onUpdate(buildBankUpdates(newBanks, {
+                                activeBankIndex: bIdx,
+                                playbackMode: 'bank'
+                              }));
                             }}
                           >
-                            <img src={imgUrl} alt={`frame ${fIdx}`} />
+                            <img src={imgUrl} alt={`frame ${fIdx}`} loading="lazy" decoding="async" />
                             <button
                               className="image-cue-slot-del-btn"
                               onClick={e => {
@@ -580,6 +635,33 @@ export function ImageCueBankModal({
                           />
                           Auto Step
                         </label>
+
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          Speed:
+                          <input
+                            type="number"
+                            min={0.1}
+                            max={10.0}
+                            step={0.1}
+                            value={bank.playbackSpeed ?? 1.0}
+                            onChange={e => {
+                              const val = Math.max(0.1, Math.min(10.0, parseFloat(e.target.value) || 1.0));
+                              const newBanks = [...banks];
+                              newBanks[bIdx] = { ...bank, playbackSpeed: val };
+                              onUpdate({ banks: newBanks });
+                            }}
+                            style={{
+                              width: 44,
+                              background: '#0f172a',
+                              color: '#e2e8f0',
+                              border: '1px solid #334155',
+                              borderRadius: 3,
+                              padding: '1px 4px',
+                              fontSize: 10
+                            }}
+                          />
+                          <span>s</span>
+                        </label>
                       </div>
                     )}
                   </div>
@@ -591,4 +673,6 @@ export function ImageCueBankModal({
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(modalContent, document.body) : modalContent;
 }

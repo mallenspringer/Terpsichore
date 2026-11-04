@@ -18,6 +18,7 @@ This document tracks planned features and architectural improvements to be addre
 - **Dedicated UV Displacement Module (`UVDisplace`)**: Standalone coordinate domain displacement warp with Cartesian (R/G), Radial, and Luma refraction modes, Clamp/Wrap/Mirror edge handling, and dynamic CV modulation.
 - **Dedicated Audio to CV Converter (`AudioToCV`)**: Real-time amplitude-to-modulation utility with Envelope Follower (exponential attack/release), RMS, Peak, and logarithmic dB detection, variable smoothing, bipolar scaling, and threshold gate trigger output.
 - **Tauri Native Media Stream Asset Manager (Tier 4)**: Persistent desktop project media rehydration via `convertFileSrc` and automatic web browser fallback.
+- **Image Cue Sampler & Bank Sequencer (`ImageCue`)**: Directory image queue, 8/16 bank pad matrix with 1-click MIDI Note Learn, pop-out drag-and-drop Bank Editor modal, bounded LRU GPU texture cache, and transition shaders.
 
 ---
 
@@ -47,6 +48,9 @@ Before adding more video synthesis effects, the development sequence is prioriti
   - **Inputs**: Video A, Video B, Gradient/Luma Mask In, Threshold CV, Softness CV.
   - **Functionality**: Compares mask luminance against a sweeping threshold slider/CV. Pixels above the threshold reveal Video A; pixels below reveal Video B. Configurable edge feathering (from hard razor cuts to smooth organic melts).
   - **Use Case**: Organic transitions driven by procedural noise, video files, or audio transients.
+- **`ImageCue` Extended Transition Modes & Frame Scrubbing (`image_select_cv`)**:
+  - **`image_select_cv` (Direct Frame Addressing / Scrubbing Input Port)**: 0.0–1.0 CV input that directly addresses the active frame index within a directory or active bank, allowing LFOs, `StepSequencer`, `AudioToCV` envelopes, or `VocalPitchTracker` to scrub through image sequences like a voltage-controlled flipbook or wavetable.
+  - **Additional `ImageCue` Shader Transition Modes**: Expand `ImageCueSourceWGSL` beyond `Hard Cut`, `Crossfade`, and `Fade Out/In` with **Luma Melt** (thresholded luminance reveal where brighter incoming pixels emerge first during transition progress), **Additive Flash** (exposure/bloom peak at $p = 0.5$), and **Directional / Radial Wipes**.
 
 ---
 

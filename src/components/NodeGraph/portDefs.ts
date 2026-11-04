@@ -1,4 +1,4 @@
-export type SignalType = 'video' | 'modulation' | 'trigger' | 'audio' | 'red' | 'green' | 'blue' | 'midi' | 'generic' | 'trajectory' | 'pitchHz' | 'palette';
+export type SignalType = 'video' | 'modulation' | 'trigger' | 'audio' | 'red' | 'green' | 'blue' | 'midi' | 'generic' | 'trajectory' | 'pitchHz' | 'palette' | 'text';
 
 export interface PortDef {
   id: string;
@@ -155,6 +155,16 @@ export const PORT_DEFS: Record<string, PortDef[]> = {
     { id: 'image_trig',     label: 'Image Trig',  direction: 'in',  signalType: 'trigger', priority: 2 },
     { id: 'bank_trig',      label: 'Bank Trig',   direction: 'in',  signalType: 'trigger', priority: 3 },
     { id: 'reset_trig',     label: 'Reset',       direction: 'in',  signalType: 'trigger', priority: 4 },
+    { id: 'speed_cv',       label: 'Speed CV',    direction: 'in',  signalType: 'modulation' },
+    { id: 'bank_select_cv', label: 'Bank CV',     direction: 'in',  signalType: 'modulation' },
+  ],
+  TextCue: [
+    { id: 'video_out',      label: 'Video Out',   direction: 'out', signalType: 'video', priority: 0 },
+    { id: 'text_out',       label: 'Text Out',    direction: 'out', signalType: 'text', priority: 1 },
+    { id: 'gate_out',       label: 'Gate Out',    direction: 'out', signalType: 'trigger', priority: 2 },
+    { id: 'card_trig',      label: 'Card Trig',   direction: 'in',  signalType: 'trigger', priority: 3 },
+    { id: 'bank_trig',      label: 'Bank Trig',   direction: 'in',  signalType: 'trigger', priority: 4 },
+    { id: 'reset_trig',     label: 'Reset',       direction: 'in',  signalType: 'trigger', priority: 5 },
     { id: 'speed_cv',       label: 'Speed CV',    direction: 'in',  signalType: 'modulation' },
     { id: 'bank_select_cv', label: 'Bank CV',     direction: 'in',  signalType: 'modulation' },
   ],
@@ -488,6 +498,21 @@ export const PORT_DEFS: Record<string, PortDef[]> = {
     { id: 'bypass_trig', label: 'Bypass', direction: 'in', signalType: 'trigger', enableLatch: true },
     { id: 'video_out', label: 'Video Out', direction: 'out', signalType: 'video', priority: 0 },
   ],
+  TextMaker: [
+    { id: 'text_in',    label: 'Text In',         direction: 'in',  signalType: 'text',       priority: 0, alwaysShow: true },
+    { id: 'video_in',   label: 'Video In',        direction: 'in',  signalType: 'video',      priority: 1, alwaysShow: true },
+    { id: 'palette_in', label: 'Palette In',      direction: 'in',  signalType: 'palette',    priority: 2 },
+    { id: 'glow_cv',    label: 'Glow CV',         direction: 'in',  signalType: 'modulation', priority: 3 },
+    { id: 'shadow_cv',  label: 'Shadow CV',       direction: 'in',  signalType: 'modulation', priority: 4 },
+    { id: 'extrude_cv', label: '3D Extrude CV',   direction: 'in',  signalType: 'modulation', priority: 5 },
+    { id: 'pos_x_cv',   label: 'Pos X CV',        direction: 'in',  signalType: 'modulation', priority: 6 },
+    { id: 'pos_y_cv',   label: 'Pos Y CV',        direction: 'in',  signalType: 'modulation', priority: 7 },
+    { id: 'color_cv',   label: 'Color Cycle CV',  direction: 'in',  signalType: 'modulation', priority: 8 },
+    { id: 'wipe_trig',  label: 'Transition Trig', direction: 'in',  signalType: 'trigger',    priority: 9, disableBipolar: true },
+    { id: 'video_out',  label: 'Video Out',       direction: 'out', signalType: 'video',      priority: 0 },
+    { id: 'matte_out',  label: 'Matte Out',       direction: 'out', signalType: 'video',      priority: 1 },
+    { id: 'text_out',   label: 'Text Out',        direction: 'out', signalType: 'text',       priority: 2 },
+  ],
   StepSequencer: [
     { id: 'global_out', label: 'Seq Out', direction: 'out', signalType: 'modulation', priority: 0 },
     { id: 'rate_cv',    label: 'Rate CV', direction: 'in',  signalType: 'modulation' },
@@ -516,6 +541,7 @@ export const SIGNAL_COLORS: Record<SignalType, string> = {
   palette:    '#f58c18', // Utility Orange (matches workspace utility color scheme)
   generic:    '#888888', // Gray
   pitchHz:    '#dc143c', // Crimson
+  text:       '#a3e635', // Lime Green (Text Data Bus)
 };
 
 export const SOURCE_WIRE_COLOR: Record<string, string> = {
@@ -525,6 +551,7 @@ export const SOURCE_WIRE_COLOR: Record<string, string> = {
   ShapeGenerator: '#d918f5',
   ImageFile:      '#f5c518',
   ImageCue:       '#f5c518',
+  TextCue:        '#f5c518',
   ImageLoader:    '#f5c518',
   NoiseSource:    '#f5c518',
   ColorNoise:     '#f5c518',
@@ -600,6 +627,18 @@ const SHORT_LABELS: Record<string, string> = {
   fatness_cv: 'Fat',
   prune_in: 'Prun',
   tuft_trig: 'Tuft',
+  text_out: 'T-Out',
+  text_in: 'T-In',
+  card_trig: 'Card',
+  bank_trig: 'Bank',
+  glow_cv: 'Glow',
+  shadow_cv: 'Shad',
+  extrude_cv: '3D',
+  pos_x_cv: 'Pos X',
+  pos_y_cv: 'Pos Y',
+  color_cv: 'ColCV',
+  wipe_trig: 'Wipe',
+  matte_out: 'Matte',
 };
 
 export function getShortLabel(portId: string, fullLabel: string): string {
@@ -623,6 +662,8 @@ export const MODULE_DISPLAY_NAMES: Record<string, string> = {
   WebcamCapture: 'Webcam',
   ImageFile: 'Img File',
   ImageCue: 'Image Cue',
+  TextCue: 'Text Bank',
+  TextMaker: 'TextMaker',
   ImageLoader: 'Img URL',
   AudioInput: 'Audio In',
   AudioFile: 'Audio File',

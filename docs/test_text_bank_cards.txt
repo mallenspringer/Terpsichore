@@ -1,0 +1,30 @@
+TERPSICHORE // SIGNAL BUS 01
+
+VOLTAGE CONTROLLED TYPOGRAPHY
+
+When the carrier oscillator locks to the horizontal sync pulse,
+the raster folds into a standing wave of pure luminance.
+
+PATCH NOTE 04:
+Patch LFO Square Out -> Card Trig
+Patch Step Sequencer -> Bank CV
+
+A single-line cue for rapid rhythmic stepping.
+
+Multi-line stanza test:
+Line 1 — Horizontal Scan
+Line 2 — Vertical Blank
+Line 3 — Subcarrier Phase
+
+Longer paragraph test to verify automatic word wrapping and responsive font scaling on the default WebGPU video output canvas: In analog video synthesis, keying and comparator circuits slice continuous waveforms into hard-edged geometric regions, turning audio-rate frequencies into scrolling bars and interference moiré.
+
+[ CUE 08 // STROBE MARKER ]
+
+01001101 01001111 01000100 01010101 01001100 01000001 01010010
+
+CHROMATIC ABERRATION & FEEDBACK DRIFT
+
+◊ ◈ ◊ GLYPH MAPPER CALIBRATION STRING ◊ ◈ ◊
+
+END OF SEQUENCE // LOOP TO CARD 01
+

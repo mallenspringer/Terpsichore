@@ -1,5 +1,5 @@
 // --- SOURCES ---
-export type SourceType = 'None' | 'ShapeGenerator' | 'VideoURL' | 'VideoFile' | 'WebcamCapture' | 'ImageLoader' | 'ImageFile' | 'ImageCue' | 'AudioInput' | 'AudioFile' | 'SystemAudio';
+export type SourceType = 'None' | 'ShapeGenerator' | 'VideoURL' | 'VideoFile' | 'WebcamCapture' | 'ImageLoader' | 'ImageFile' | 'ImageCue' | 'TextCue' | 'AudioInput' | 'AudioFile' | 'SystemAudio';
 
 export interface NoneSource {
   type: 'None';
@@ -102,6 +102,7 @@ export interface ImageCueSource {
   directoryPath?: string;
   directoryName?: string;
   files: string[];                 // All image file paths/URLs in folder
+  fileNames?: string[];            // Original filenames corresponding to files array
   
   // Top-Level Mode
   playbackMode: 'directory' | 'bank'; // 'directory' by default
@@ -118,6 +119,7 @@ export interface ImageCueSource {
   activeBankIndex: number;         // 0 to 15
   banks: ImageCueBankSlot[];       // Exactly 16 slots initialized empty
   bankAutoPlayback: boolean;       // auto rotate across banks
+  bankSkipEmpty?: boolean;         // skip empty banks during rotation (default true)
   bankPlaybackSpeed: number;       // seconds per bank
   bankLoopMode: ImageCueLoopMode;
   
@@ -128,13 +130,61 @@ export interface ImageCueSource {
   
   // Trigger & Modulation Controls
   triggerThreshold: number;        // 0.0 to 1.0 (default 0.5)
-  keyMapping?: string;             // manual trigger keystroke (none, 1..0)
+  keyMapping?: string;             // manual card step keystroke (none, 1..0)
+  bankKeyMapping?: string;         // manual bank step keystroke (none, 1..0)
   midiPadMappings?: Record<number, { note: number; channel: number }>; // Pad 1-16 MIDI bindings
   
   // Ephemeral Render / Transition State
   currentImageUrl?: string;
   prevImageUrl?: string;
   transitionStartTime?: number;    // timestamp for interpolation
+}
+
+export interface TextCueCard {
+  id: string;
+  text: string;
+}
+
+export interface TextCueBankSlot {
+  id: string;                      // e.g. "bank-1"
+  name: string;                    // e.g. "Bank 1"
+  cards: TextCueCard[];            // up to 64 text cards per bank
+  playbackOrder: 'in_order' | 'shuffle';
+  loopMode: 'loop' | 'stop' | 'bank';
+  autoPlayback: boolean;           // intra-bank auto step
+  playbackSpeed: number;           // intra-bank step interval (sec)
+  activeCardIndex: number;         // currently selected card in slot
+}
+
+export interface TextCueSource {
+  id?: string;
+  type: 'TextCue';
+
+  // Bank Grid Configuration
+  bankGridMode: '8' | '16' | '24'; // '8' by default (2x4), toggleable to '16' (4x4) or '24' (6x4)
+  activeBankIndex: number;         // 0 to 23
+  banks: TextCueBankSlot[];        // 24 slots initialized
+  bankAutoPlayback: boolean;       // auto rotate across banks
+  bankSkipEmpty?: boolean;         // skip empty banks during rotation (default true)
+  bankPlaybackSpeed: number;       // seconds per bank
+  bankPlaybackOrder: 'in_order' | 'shuffle'; // order for cycling across banks
+  bankLoopMode: 'loop' | 'stop';
+
+  // Universal Card Playback Settings (applied across all banks)
+  cardPlaybackOrder?: 'in_order' | 'shuffle'; // default 'in_order'
+  cardLoopMode?: 'loop' | 'stop' | 'bank';     // default 'loop'
+
+  // Trigger & Modulation Controls
+  triggerThreshold: number;        // 0.0 to 1.0 (default 0.5)
+  keyMapping?: string;             // manual card step keystroke (none, 1..0)
+  bankKeyMapping?: string;         // manual bank step keystroke (none, 1..0)
+  midiPadMappings?: Record<number, { note: number; channel: number }>; // Pad 1-24 MIDI bindings
+
+  // Active Text & Downstream Transition Metadata
+  currentText?: string;
+  prevText?: string;
+  lastStepTime?: number;           // timestamp of last card/bank change
+  stepCount?: number;              // monotonically increasing step counter for downstream transition detection
 }
 
 export interface AudioInputSource {
@@ -272,7 +322,7 @@ export interface MidiBinding {
   invert: boolean;
 }
 
-export type AnySource = NoneSource | ShapeGeneratorSource | VideoURLSource | VideoFileSource | WebcamCaptureSource | ImageLoaderSource | ImageFileSource | ImageCueSource | AudioInputSource | AudioFileSource | SystemAudioSource | LFOModulatorSource | TriggerPadSource | NoiseModulatorSource | NoiseVideoSource | ColorNoiseSource | MidiInputSource;
+export type AnySource = NoneSource | ShapeGeneratorSource | VideoURLSource | VideoFileSource | WebcamCaptureSource | ImageLoaderSource | ImageFileSource | ImageCueSource | TextCueSource | AudioInputSource | AudioFileSource | SystemAudioSource | LFOModulatorSource | TriggerPadSource | NoiseModulatorSource | NoiseVideoSource | ColorNoiseSource | MidiInputSource;
 
 // --- EFFECTS ---
 
@@ -595,7 +645,7 @@ export interface SpokenWordVisualizerEffect {
   colorPalette: string;
 }
 
-export type SignalType = 'video' | 'audio' | 'modulation' | 'trigger' | 'midi' | 'generic' | 'trajectory' | 'palette';
+export type SignalType = 'video' | 'audio' | 'modulation' | 'trigger' | 'midi' | 'generic' | 'trajectory' | 'palette' | 'text';
 
 export interface InterLayerEdge {
   id: string;
@@ -796,6 +846,93 @@ export interface GrassFieldEffect {
   colorPreset: 'meadow' | 'bioluminescent' | 'golden' | 'neon';
 }
 
+export type TextMakerFontFamily = 'broadcast_sans' | 'slab_serif' | 'vcr_osd' | 'brush_script' | 'lcd_digital';
+export type TextMakerStretchMode = '1x' | '2x_wide' | '2x_tall';
+export type TextMakerColorFillMode = 'solid' | 'gradient' | 'color_cycle' | 'line_step';
+export type TextMakerGradientDir = 'line_vertical' | 'block_vertical' | 'horizontal';
+export type TextMakerBackdropMode = 'none' | 'tight_box' | 'full_banner' | 'line_strips';
+export type TextMakerBgMode = 'transparent' | 'solid' | 'gradient' | 'color_bars';
+export type TextMakerLayoutMode = 'page' | 'lower_third' | 'roll' | 'crawl';
+export type TextMakerTransitionMode = 'cut' | 'crossfade' | 'fade_out_in' | 'typewriter' | 'wipe_lr' | 'venetian' | 'slide_up';
+
+export interface TextMakerEffect {
+  id: string;
+  type: 'TextMaker';
+  // Text content & source
+  localText: string;
+  allCaps: boolean;
+  // Typography & stretch
+  fontFamily: TextMakerFontFamily;
+  fontSize: number;           // 16..120, default 52
+  stretchMode: TextMakerStretchMode;
+  textAlign: 'left' | 'center' | 'right';
+  letterSpacing: number;      // -2..20, default 1
+  lineHeight: number;         // 0.9..2.2, default 1.25
+  // Header Line 1 Override
+  headerOverrideEnabled: boolean;
+  headerScale: number;        // 1.0..2.5, default 1.4
+  headerColor: [number, number, number, number];
+  // Color & palette_in normalization
+  textColor: [number, number, number, number];
+  textColorB: [number, number, number, number];
+  colorFillMode: TextMakerColorFillMode;
+  gradientDirection: TextMakerGradientDir;
+  colorCycleSpeed: number;    // 0.0..5.0 Hz, default 0.5
+  // Character Edge Effects (GPU-accelerated & CV-modulated)
+  outlineEnabled: boolean;
+  outlineWidth: number;       // 0.0..1.0, default 0.25
+  outlineColor: [number, number, number, number];
+  shadowEnabled: boolean;
+  shadowAmount: number;       // 0.0..1.0, default 0.45
+  shadowAngle: number;        // 0..360 deg, default 135
+  shadowColor: [number, number, number, number];
+  extrudeEnabled: boolean;
+  extrudeAmount: number;      // 0.0..1.0, default 0.35
+  extrudeAngle: number;       // 0..360 deg, default 135
+  extrudeColor: [number, number, number, number];
+  glowEnabled: boolean;
+  glowAmount: number;         // 0.0..1.0, default 0.4
+  glowColor: [number, number, number, number];
+  glowMatchTextColor?: boolean; // match glow color to text fill color
+  // Backdrop Box / Ribbon & Internal Background
+  backdropMode: TextMakerBackdropMode;
+  backdropColor: [number, number, number, number];
+  backdropBorderWidth: number;// 0.0..1.0, default 0.3
+  backdropBorderColor: [number, number, number, number];
+  bgMode: TextMakerBgMode;    // defaults to 'transparent'
+  bgColorA: [number, number, number, number];
+  bgColorB: [number, number, number, number];
+  // Layout, Motion & Transitions
+  layoutMode: TextMakerLayoutMode;
+  snapZone: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8; // default 4 (center)
+  posX: number;               // -1.0..1.0, default 0.0
+  posY: number;               // -1.0..1.0, default 0.0
+  scrollSpeed: number;        // -2.0..2.0, default 0.4
+  transitionMode: TextMakerTransitionMode;
+  transitionDuration: number; // 0.1..5.0 sec, default 0.6
+  typewriterCursor: 'block' | 'underscore' | 'none';
+  manualTriggerTime?: number;
+  keyMapping?: string;
+  // Analog Video / CRT Degradation Suite
+  analogFxMaster: boolean;    // Master On/Off toggle on main node body
+  pixelateEnabled: boolean;
+  pixelateAmount: number;     // 0.0..1.0, default 0.3
+  chromaBleedEnabled: boolean;
+  chromaBleedAmount: number;  // 0.0..1.0, default 0.35
+  scanlinesEnabled: boolean;
+  scanlinesAmount: number;    // 0.0..1.0, default 0.25
+  jitterEnabled: boolean;
+  jitterAmount: number;       // 0.0..1.0, default 0.2
+  noiseEnabled: boolean;
+  noiseAmount: number;        // 0.0..1.0, default 0.15
+  // Runtime transition metadata (for text_out forwarding)
+  currentText?: string;
+  prevText?: string;
+  lastStepTime?: number;
+  stepCount?: number;
+  // Omit curly brace here since original line had } right below it
+}
+
 export type AnyEffect = 
   | Transform2DEffect | ColorAdjustEffect | LumaKeyEffect | SimpleFeedbackEffect
   | InterLayerOutputEffect | InterLayerInputEffect | ColorRGBEffect | LumaSplitterEffect 
@@ -805,9 +942,9 @@ export type AnyEffect =
   | SignalMathEffect | SampleAndHoldEffect | StepSequencerEffect | PixelProcessorEffect
   | AudioSourceEffect | OscilloscopeEffect | SpectralSplitterEffect | WaterfallSpectrogramEffect | AudioTransformerEffect | AudioModulatorEffect | AudioGateEffect | AudioToCVEffect
   | SpeechEnvelopeTrackerEffect | VocalPitchTrackerEffect | VowelFormantTrackerEffect | SpokenWordVisualizerEffect
-  | CanvasBackgroundEffect | ParticleCloudEffect | ColorPaletteEffect | GrassFieldEffect
+  | CanvasBackgroundEffect | ParticleCloudEffect | ColorPaletteEffect | GrassFieldEffect | TextMakerEffect
   | ShapeGeneratorSource | VideoURLSource | VideoFileSource | WebcamCaptureSource | NoiseVideoSource | ColorNoiseSource
-  | AudioInputSource | AudioFileSource | SystemAudioSource | ImageLoaderSource | ImageFileSource | ImageCueSource;
+  | AudioInputSource | AudioFileSource | SystemAudioSource | ImageLoaderSource | ImageFileSource | ImageCueSource | TextCueSource;
 
 export type EffectType = 
   | 'Transform2D' | 'ColorAdjust' | 'LumaKey' | 'SimpleFeedback' 
@@ -816,8 +953,8 @@ export type EffectType =
   | 'KeyMixer' | 'VideoMath' | 'UVDisplace'
   | 'LogicGate' | 'TriggeredGate' | 'Pattern' | 'Kaleidoscope' | 'SignalMath' | 'SampleAndHold' | 'StepSequencer' | 'AudioSource' | 'Oscilloscope' | 'SpectralSplitter' | 'WaterfallSpectrogram' | 'PixelProcessor' | 'AudioTransformer' | 'AudioModulator' | 'AudioGate' | 'AudioToCV'
   | 'SpeechEnvelopeTracker' | 'VocalPitchTracker' | 'VowelFormantTracker' | 'SpokenWordVisualizer'
-  | 'CanvasBackground' | 'ParticleCloud' | 'ColorPalette' | 'GrassField'
-  | 'ShapeGenerator' | 'VideoURL' | 'VideoFile' | 'WebcamCapture' | 'NoiseSource' | 'ColorNoise' | 'AudioInput' | 'AudioFile' | 'SystemAudio' | 'ImageLoader' | 'ImageFile' | 'ImageCue';
+  | 'CanvasBackground' | 'ParticleCloud' | 'ColorPalette' | 'GrassField' | 'TextMaker'
+  | 'ShapeGenerator' | 'VideoURL' | 'VideoFile' | 'WebcamCapture' | 'NoiseSource' | 'ColorNoise' | 'AudioInput' | 'AudioFile' | 'SystemAudio' | 'ImageLoader' | 'ImageFile' | 'ImageCue' | 'TextCue';
 
 export type GraphNode = AnyEffect;
 

@@ -28,6 +28,8 @@ const MODULE_PARAMS: Record<string, string[]> = {
   ImageLoader: ['objectFit'],
   ImageFile: ['objectFit'],
   ImageCue: ['dirPlaybackSpeed', 'bankPlaybackSpeed', 'triggerThreshold', 'transitionDuration', 'objectFit'],
+  TextCue: ['bankPlaybackSpeed', 'triggerThreshold'],
+  TextMaker: ['fontSize', 'shadowAmount', 'extrudeAmount', 'glowAmount', 'posX', 'posY', 'scrollSpeed', 'colorCycleSpeed', 'transitionDuration', 'pixelateAmount', 'chromaBleedAmount', 'scanlinesAmount', 'jitterAmount', 'noiseAmount'],
   
   // Effects / Utilities / Modulators
   LFO: ['frequency', 'amplitude', 'offset', 'bipolar'],
