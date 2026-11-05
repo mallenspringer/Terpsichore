@@ -100,14 +100,30 @@ export const TextMakerNodeUI: React.FC<TextMakerNodeUIProps> = ({
           {effect.keyMapping && effect.keyMapping !== 'none' ? ` [${effect.keyMapping}]` : ''}
         </button>
 
-        <button
-          type="button"
-          className={`tm-node-btn ${effect.analogFxMaster !== false ? 'fx-active' : ''}`}
-          onClick={() => handleUpdate({ analogFxMaster: !(effect.analogFxMaster !== false) })}
-          title="Master Toggle for Analog CRT / NTSC Shaders"
-        >
-          📺 FX: {effect.analogFxMaster !== false ? 'ON' : 'OFF'}
-        </button>
+        {(() => {
+          const fxMode = effect.analogFxMode ?? (effect.analogFxMaster === false ? 'off' : 'on');
+          const isFull = fxMode === 'on';
+          const isText = fxMode === 'text_only';
+          const btnClass = isFull ? 'fx-active' : (isText ? 'fx-text-only' : '');
+          const label = isFull ? 'ON' : (isText ? 'TEXT' : 'OFF');
+          const handleCycle = () => {
+            const nextMode = isFull ? 'text_only' : (isText ? 'off' : 'on');
+            handleUpdate({
+              analogFxMode: nextMode,
+              analogFxMaster: nextMode !== 'off'
+            });
+          };
+          return (
+            <button
+              type="button"
+              className={`tm-node-btn ${btnClass}`}
+              onClick={handleCycle}
+              title="Analog CRT / NTSC FX: Full (Video+Text) -> Text Only -> Off"
+            >
+              📺 FX: {label}
+            </button>
+          );
+        })()}
 
         <button
           type="button"

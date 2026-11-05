@@ -915,6 +915,7 @@ export interface TextMakerEffect {
   keyMapping?: string;
   // Analog Video / CRT Degradation Suite
   analogFxMaster: boolean;    // Master On/Off toggle on main node body
+  analogFxMode?: 'on' | 'text_only' | 'off'; // 'on' (full video+text), 'text_only', 'off'
   pixelateEnabled: boolean;
   pixelateAmount: number;     // 0.0..1.0, default 0.3
   chromaBleedEnabled: boolean;

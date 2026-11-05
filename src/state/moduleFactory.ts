@@ -484,6 +484,7 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
         typewriterCursor: 'block',
         keyMapping: 'none',
         analogFxMaster: true,
+        analogFxMode: 'on',
         pixelateEnabled: true,
         pixelateAmount: 0.3,
         chromaBleedEnabled: true,

@@ -87,6 +87,7 @@ export const TextMakerModal: React.FC<TextMakerModalProps> = ({
   onUpdate,
   onClose
 }) => {
+  const currentFxMode = effect.analogFxMode ?? (effect.analogFxMaster === false ? 'off' : 'on');
   const [activeChannel, setActiveChannel] = useState<ColorChannelKey>('textColor');
   const [showSafeGuides, setShowSafeGuides] = useState(true);
   const monitorRef = useRef<HTMLDivElement>(null);
@@ -190,7 +191,7 @@ export const TextMakerModal: React.FC<TextMakerModalProps> = ({
     const effectiveGlow = effect.glowMatchTextColor ? (effect.textColor || [1, 1, 1, 1]) : (effect.glowColor || [0.2, 0.7, 1.0, 1.0]);
     textShadowParts.push(`0 0 ${blur}px ${rgbaToCss(effectiveGlow)}`);
   }
-  if (effect.analogFxMaster !== false && effect.chromaBleedEnabled !== false) {
+  if ((effect.analogFxMode ? effect.analogFxMode !== 'off' : effect.analogFxMaster !== false) && effect.chromaBleedEnabled !== false) {
     const bleedPx = Math.max(1, Math.round((effect.chromaBleedAmount ?? 0.35) * 6));
     textShadowParts.push(`-${bleedPx}px 0 0 rgba(255, 40, 40, 0.65)`, `${bleedPx}px 0 0 rgba(40, 180, 255, 0.65)`);
   }
@@ -239,14 +240,29 @@ export const TextMakerModal: React.FC<TextMakerModalProps> = ({
             >
               ⚡ Trigger Transition
             </button>
-            <button
-              type="button"
-              className={`tm-header-btn ${effect.analogFxMaster !== false ? 'active' : ''}`}
-              onClick={() => onUpdate({ analogFxMaster: !(effect.analogFxMaster !== false) })}
-              title="Master Bypass for Analog NTSC / CRT Shaders"
-            >
-              📺 Analog CRT FX: {effect.analogFxMaster !== false ? 'ON' : 'OFF'}
-            </button>
+            {(() => {
+              const isFull = currentFxMode === 'on';
+              const isText = currentFxMode === 'text_only';
+              const btnClass = isFull ? 'active' : (isText ? 'text-only' : '');
+              const label = isFull ? 'ON' : (isText ? 'TEXT ONLY' : 'OFF');
+              const handleCycle = () => {
+                const nextMode = isFull ? 'text_only' : (isText ? 'off' : 'on');
+                onUpdate({
+                  analogFxMode: nextMode,
+                  analogFxMaster: nextMode !== 'off'
+                });
+              };
+              return (
+                <button
+                  type="button"
+                  className={`tm-header-btn ${btnClass}`}
+                  onClick={handleCycle}
+                  title="Cycle Analog CRT FX: On (Full) -> Text Only -> Off"
+                >
+                  📺 Analog CRT FX: {label}
+                </button>
+              );
+            })()}
             <button type="button" className="tm-close-btn" onClick={onClose} title="Close Studio">
               ✕
             </button>
@@ -307,11 +323,11 @@ export const TextMakerModal: React.FC<TextMakerModalProps> = ({
                     pointerEvents: 'none',
                     maxWidth: effect.backdropMode === 'full_banner' ? '100%' : '88%',
                     filter:
-                      effect.analogFxMaster !== false && effect.pixelateEnabled !== false && (effect.pixelateAmount ?? 0.3) > 0.05
+                      currentFxMode !== 'off' && effect.pixelateEnabled !== false && (effect.pixelateAmount ?? 0.3) > 0.05
                         ? `blur(${Math.max(0.5, (effect.pixelateAmount ?? 0.3) * 1.8)}px)`
                         : 'none',
                     animation:
-                      effect.analogFxMaster !== false && effect.jitterEnabled !== false && (effect.jitterAmount ?? 0.2) > 0.05
+                      currentFxMode !== 'off' && effect.jitterEnabled !== false && (effect.jitterAmount ?? 0.2) > 0.05
                         ? 'tm-crt-jitter 0.12s infinite alternate'
                         : 'none'
                   }}
@@ -342,7 +358,7 @@ export const TextMakerModal: React.FC<TextMakerModalProps> = ({
                 </div>
 
                 {/* Degradation Overlays */}
-                {effect.analogFxMaster !== false && (
+                {currentFxMode === 'on' && (
                   <>
                     {effect.scanlinesEnabled !== false && (
                       <div
@@ -1069,14 +1085,32 @@ export const TextMakerModal: React.FC<TextMakerModalProps> = ({
             <div className="tm-panel">
               <div className="tm-panel-header">
                 <span>Analog Video / NTSC Character Degradation Rack</span>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 5, color: '#a3e635', cursor: 'pointer' }}>
-                  <input
-                    type="checkbox"
-                    checked={effect.analogFxMaster !== false}
-                    onChange={e => onUpdate({ analogFxMaster: e.target.checked })}
-                  />
-                  Master Active
-                </label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <button
+                    type="button"
+                    className={`tm-seg-pill ${currentFxMode === 'on' ? 'active-full' : ''}`}
+                    onClick={() => onUpdate({ analogFxMode: 'on', analogFxMaster: true })}
+                    title="Apply shaders to both incoming video and title text"
+                  >
+                    On (Full)
+                  </button>
+                  <button
+                    type="button"
+                    className={`tm-seg-pill ${currentFxMode === 'text_only' ? 'active-text' : ''}`}
+                    onClick={() => onUpdate({ analogFxMode: 'text_only', analogFxMaster: true })}
+                    title="Apply shaders to Title Text only (incoming video stays clean)"
+                  >
+                    Text Only
+                  </button>
+                  <button
+                    type="button"
+                    className={`tm-seg-pill ${currentFxMode === 'off' ? 'active-off' : ''}`}
+                    onClick={() => onUpdate({ analogFxMode: 'off', analogFxMaster: false })}
+                    title="Bypass all analog degradation effects"
+                  >
+                    Off
+                  </button>
+                </div>
               </div>
 
               <div className="tm-fx-grid">
@@ -1099,7 +1133,7 @@ export const TextMakerModal: React.FC<TextMakerModalProps> = ({
                     min={0}
                     max={1}
                     step={0.02}
-                    disabled={effect.analogFxMaster === false || effect.pixelateEnabled === false}
+                    disabled={currentFxMode === 'off' || effect.pixelateEnabled === false}
                     value={effect.pixelateAmount ?? 0.3}
                     onDoubleClick={() => onUpdate({ pixelateAmount: 0.3 })}
                     onChange={e => onUpdate({ pixelateAmount: parseFloat(e.target.value) })}
@@ -1125,7 +1159,7 @@ export const TextMakerModal: React.FC<TextMakerModalProps> = ({
                     min={0}
                     max={1}
                     step={0.02}
-                    disabled={effect.analogFxMaster === false || effect.chromaBleedEnabled === false}
+                    disabled={currentFxMode === 'off' || effect.chromaBleedEnabled === false}
                     value={effect.chromaBleedAmount ?? 0.35}
                     onDoubleClick={() => onUpdate({ chromaBleedAmount: 0.35 })}
                     onChange={e => onUpdate({ chromaBleedAmount: parseFloat(e.target.value) })}
@@ -1151,7 +1185,7 @@ export const TextMakerModal: React.FC<TextMakerModalProps> = ({
                     min={0}
                     max={1}
                     step={0.02}
-                    disabled={effect.analogFxMaster === false || effect.scanlinesEnabled === false}
+                    disabled={currentFxMode === 'off' || effect.scanlinesEnabled === false}
                     value={effect.scanlinesAmount ?? 0.25}
                     onDoubleClick={() => onUpdate({ scanlinesAmount: 0.25 })}
                     onChange={e => onUpdate({ scanlinesAmount: parseFloat(e.target.value) })}
@@ -1177,7 +1211,7 @@ export const TextMakerModal: React.FC<TextMakerModalProps> = ({
                     min={0}
                     max={1}
                     step={0.02}
-                    disabled={effect.analogFxMaster === false || !effect.jitterEnabled}
+                    disabled={currentFxMode === 'off' || !effect.jitterEnabled}
                     value={effect.jitterAmount ?? 0.2}
                     onDoubleClick={() => onUpdate({ jitterAmount: 0.2 })}
                     onChange={e => onUpdate({ jitterAmount: parseFloat(e.target.value) })}
@@ -1203,7 +1237,7 @@ export const TextMakerModal: React.FC<TextMakerModalProps> = ({
                     min={0}
                     max={1}
                     step={0.02}
-                    disabled={effect.analogFxMaster === false || !effect.noiseEnabled}
+                    disabled={currentFxMode === 'off' || !effect.noiseEnabled}
                     value={effect.noiseAmount ?? 0.15}
                     onDoubleClick={() => onUpdate({ noiseAmount: 0.15 })}
                     onChange={e => onUpdate({ noiseAmount: parseFloat(e.target.value) })}

@@ -56,6 +56,12 @@
   color: #d9f99d;
 }
 
+.tm-node-btn.fx-text-only {
+  background: rgba(56, 189, 248, 0.16);
+  border-color: #38bdf8;
+  color: #bae6fd;
+}
+
 .tm-node-btn.studio {
   background: rgba(245, 158, 11, 0.16);
   border-color: #d97706;

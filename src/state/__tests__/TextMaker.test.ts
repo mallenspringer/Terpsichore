@@ -66,6 +66,7 @@ describe('TextMaker (Analog Video Character Generator) Module', () => {
     expect(tm.type).toBe('TextMaker');
     expect(tm.bgMode).toBe('transparent');
     expect(tm.analogFxMaster).toBe(true);
+    expect(tm.analogFxMode).toBe('on');
     expect(tm.transitionMode).toBe('crossfade');
     expect(tm.layoutMode).toBe('page');
     expect(tm.keyMapping).toBe('none');
@@ -194,5 +195,32 @@ describe('TextMaker (Analog Video Character Generator) Module', () => {
     // Deactivating glowMatchTextColor immediately returns to manual glowColor
     tm.glowMatchTextColor = false;
     expect(getEffectiveGlow(tm)).toEqual([0.8, 0.2, 0.4, 1.0]);
+  });
+  it('supports 3 analogFxModes: on, text_only, and off', () => {
+    const tm = createDefaultEffect('TextMaker', 'tm-modes') as TextMakerEffect;
+    expect(tm.analogFxMode).toBe('on');
+
+    // Cycle to text_only
+    const mode1: 'on' | 'text_only' | 'off' = 'text_only';
+    tm.analogFxMode = mode1;
+    expect(tm.analogFxMode).toBe('text_only');
+
+    // Cycle to off
+    const mode2: 'on' | 'text_only' | 'off' = 'off';
+    tm.analogFxMode = mode2;
+    expect(tm.analogFxMode).toBe('off');
+
+    // Helper to compute uniform flag
+    const getFxModeUniform = (ef: TextMakerEffect) => {
+      const mode = ef.analogFxMode ?? (ef.analogFxMaster === false ? 'off' : 'on');
+      return mode === 'off' ? 0.0 : (mode === 'text_only' ? 2.0 : 1.0);
+    };
+
+    expect(getFxModeUniform({ ...tm, analogFxMode: 'on' })).toBe(1.0);
+    expect(getFxModeUniform({ ...tm, analogFxMode: 'text_only' })).toBe(2.0);
+    expect(getFxModeUniform({ ...tm, analogFxMode: 'off' })).toBe(0.0);
+    // Legacy boolean fallback
+    expect(getFxModeUniform({ ...tm, analogFxMode: undefined, analogFxMaster: false })).toBe(0.0);
+    expect(getFxModeUniform({ ...tm, analogFxMode: undefined, analogFxMaster: true })).toBe(1.0);
   });
 });

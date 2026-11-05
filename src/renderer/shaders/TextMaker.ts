@@ -460,7 +460,11 @@ fn sampleTitleForeground(screenUV: vec2<f32>) -> vec4<f32> {
 
 @fragment
 fn fs_main(@location(0) uv: vec2<f32>) -> Stage2Output {
-  let masterFx = u.analogFlags.x > 0.5;
+  let fxMode = i32(round(u.analogFlags.x)); // 0 = off, 1 = on (full video+text), 2 = text_only
+  let masterFx = fxMode > 0;
+  let isFullFx = fxMode == 1;
+  let isTextOnly = fxMode == 2;
+
   let pixOn = masterFx && (u.analogFlags.y > 0.5) && (u.analogAmounts.x > 0.005);
   let bleedOn = masterFx && (u.analogFlags.z > 0.5) && (u.analogAmounts.y > 0.005);
   let scanOn = masterFx && (u.analogFlags.w > 0.5) && (u.analogAmounts.z > 0.005);
@@ -501,26 +505,46 @@ fn fs_main(@location(0) uv: vec2<f32>) -> Stage2Output {
     fg = vec4<f32>(smearedR, fg.g, smearedB, smearedA);
   }
 
+  // If in Text Only mode, apply scanlines and noise specifically to the text foreground
+  if (isTextOnly) {
+    if (scanOn && fg.a > 0.001) {
+      let sAmt = u.analogAmounts.z;
+      let scanWave = 0.5 + 0.5 * sin(workUV.y * 480.0 * 3.14159265);
+      let scanFactor = mix(1.0, 0.65 + 0.35 * scanWave, sAmt);
+      fg = vec4<f32>(fg.rgb * scanFactor, fg.a);
+    }
+    if (noiseOn && fg.a > 0.001) {
+      let nAmt = u.analogExtra.z;
+      let grain = (hash12(workUV * 512.0 + vec2<f32>(timeSec * 71.3, timeSec * 19.7)) - 0.5) * 0.28 * nAmt;
+      fg = vec4<f32>(clamp(fg.rgb + vec3<f32>(grain * fg.a), vec3<f32>(0.0), vec3<f32>(1.0)), fg.a);
+    }
+  }
+
   // 4. Composite over External Video (Genlock) or Internal Background
-  var bg = renderInternalBg(uv);
+  // If isFullFx (mode 1), the background video is also affected by downsample/jitter (workUV).
+  // If isTextOnly or off, the video background uses pristine undistorted UV!
+  let bgUV = select(uv, workUV, isFullFx);
+  var bg = renderInternalBg(bgUV);
   if (u.bgParams.z > 0.5) {
-    bg = textureSampleLevel(videoInTex, smp, uv, 0.0);
+    bg = textureSampleLevel(videoInTex, smp, bgUV, 0.0);
   }
 
   var comp = overPremult(bg, fg);
 
-  // 5. CRT Scanlines & Analog Luma Snow (applied where composite has visibility)
-  if (scanOn && comp.a > 0.001) {
-    let sAmt = u.analogAmounts.z;
-    let scanWave = 0.5 + 0.5 * sin(uv.y * 480.0 * 3.14159265);
-    let scanFactor = mix(1.0, 0.65 + 0.35 * scanWave, sAmt);
-    comp = vec4<f32>(comp.rgb * scanFactor, comp.a);
-  }
+  // 5. If isFullFx (mode 1), CRT Scanlines & Analog Luma Snow apply across the entire composite screen
+  if (isFullFx) {
+    if (scanOn && comp.a > 0.001) {
+      let sAmt = u.analogAmounts.z;
+      let scanWave = 0.5 + 0.5 * sin(uv.y * 480.0 * 3.14159265);
+      let scanFactor = mix(1.0, 0.65 + 0.35 * scanWave, sAmt);
+      comp = vec4<f32>(comp.rgb * scanFactor, comp.a);
+    }
 
-  if (noiseOn && comp.a > 0.001) {
-    let nAmt = u.analogExtra.z;
-    let grain = (hash12(uv * 512.0 + vec2<f32>(timeSec * 71.3, timeSec * 19.7)) - 0.5) * 0.28 * nAmt;
-    comp = vec4<f32>(clamp(comp.rgb + vec3<f32>(grain * comp.a), vec3<f32>(0.0), vec3<f32>(1.0)), comp.a);
+    if (noiseOn && comp.a > 0.001) {
+      let nAmt = u.analogExtra.z;
+      let grain = (hash12(uv * 512.0 + vec2<f32>(timeSec * 71.3, timeSec * 19.7)) - 0.5) * 0.28 * nAmt;
+      comp = vec4<f32>(clamp(comp.rgb + vec3<f32>(grain * comp.a), vec3<f32>(0.0), vec3<f32>(1.0)), comp.a);
+    }
   }
 
   let matteVal = clamp(fg.a, 0.0, 1.0);
@@ -530,4 +554,3 @@ fn fs_main(@location(0) uv: vec2<f32>) -> Stage2Output {
   return out;
 }
 `;
-

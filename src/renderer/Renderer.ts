@@ -3068,8 +3068,17 @@ export class Renderer {
     s2.set(ef.bgColorA || [0.06, 0.08, 0.22, 1.0], 24);
     s2.set(ef.bgColorB || [0.02, 0.02, 0.06, 1.0], 28);
 
-    // analogFlags: [analogFxMaster, pixelateEnabled, chromaBleedEnabled, scanlinesEnabled]
-    s2[32] = ef.analogFxMaster !== false ? 1.0 : 0.0;
+    // analogFlags: [analogFxMode (0=off, 1=on/all, 2=text_only), pixelateEnabled, chromaBleedEnabled, scanlinesEnabled]
+    const fxMode = ef.analogFxMode ?? (ef.analogFxMaster === false ? 'off' : 'on');
+    let fxModeVal = 1.0;
+    if (fxMode === 'off') {
+      fxModeVal = 0.0;
+    } else if (fxMode === 'text_only') {
+      fxModeVal = 2.0;
+    } else {
+      fxModeVal = 1.0;
+    }
+    s2[32] = fxModeVal;
     s2[33] = ef.pixelateEnabled !== false ? 1.0 : 0.0;
     s2[34] = ef.chromaBleedEnabled !== false ? 1.0 : 0.0;
     s2[35] = ef.scanlinesEnabled !== false ? 1.0 : 0.0;
