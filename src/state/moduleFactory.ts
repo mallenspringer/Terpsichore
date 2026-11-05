@@ -1,4 +1,4 @@
-import { AnySource, AnyEffect } from './types';
+import { AnySource, AnyEffect, GlyphTemplatePack } from './types';
 
 export function createDefaultSource(type: string): AnySource {
   switch (type) {
@@ -514,6 +514,42 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
         outlineColor: [0.0, 0.0, 0.0, 1.0]
       };
 
+    case 'GlyphMap':
+      return {
+        id,
+        type: 'GlyphMap',
+        bands: [
+          { id: 'gb-0', threshold: 64, color: [0.15, 0.40, 0.20, 1.0], glyphText: ' ' },
+          { id: 'gb-1', threshold: 128, color: [0.20, 0.75, 0.35, 1.0], glyphText: '.' },
+          { id: 'gb-2', threshold: 192, color: [0.40, 0.95, 0.60, 1.0], glyphText: '+' },
+          { id: 'gb-3', threshold: 255, color: [0.95, 1.00, 0.95, 1.0], glyphText: '#' }
+        ],
+        mapMode: 'luma',
+        spatialSmoothing: 0.2,
+        chromaGate: 0.02,
+        chromaSensitivity: 1.5,
+        hueShift: 0,
+        outlineEnabled: false,
+        outlineWidth: 2,
+        outlineOpacity: 1.0,
+        outlineColor: [0.0, 0.0, 0.0, 1.0],
+        cellSize: 16,
+        fontFamily: 'VT323',
+        fontWeight: 'normal',
+        textGlowColor: '#00ff66',
+        textGlowRadius: 0,
+        textShadowColor: 'transparent',
+        sourceMode: 'templates',
+        templatePack: 'density',
+        wrapMode: 'raw_char',
+        autoScroll: false,
+        scrollDirection: 'left',
+        scrollSpeed: 1.0,
+        colorMode: 'layer_palette',
+        bgMode: 'black',
+        dimmedVideoOpacity: 0.2
+      };
+
     case 'ChromaBands':
       return {
         id,
@@ -677,3 +713,13 @@ export function cascadeChromaThresholds<T extends { threshold: number }>(
   nextBands[N - 1].threshold = 360;
   return nextBands;
 }
+
+
+export const GLYPH_TEMPLATE_PACKS: Record<GlyphTemplatePack, string[]> = {
+  density: [' ', '.', ':', '-', '=', '+', '#', '@'],
+  directional: ['\\', '/', '|', '-', '^', 'v', '<', '>'],
+  alpha: ['A', 'E', 'I', 'O', 'U', 'X', 'Y', 'Z'],
+  numeric: ['0', '1', '2', '3', '4', '5', '6', '7'],
+  symbols: ['$', '%', '&', '*', '#', '§', '¶', '©'],
+  punctuation: ['.', ',', ':', ';', '!', '?', '"', '~']
+};

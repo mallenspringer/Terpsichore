@@ -957,6 +957,61 @@ export interface ChromaBand {
   threshold: number; // 0..360 hue ceiling angle
 }
 
+
+export interface GlyphBand {
+  id: string;
+  threshold: number; // 0..255 (luma) or 0..360 (chroma)
+  color: [number, number, number, number];
+  glyphText: string; // Manual char or phrase for this layer
+}
+
+export type GlyphWrapMode = 'raw_char' | 'word' | 'preserve_lines';
+export type GlyphTemplatePack = 'density' | 'directional' | 'alpha' | 'numeric' | 'symbols' | 'punctuation';
+export type GlyphColorMode = 'layer_palette' | 'source_video' | 'matrix_green' | 'amber_crt' | 'monochrome' | 'inherit_style';
+export type GlyphBgMode = 'transparent' | 'black' | 'video_dimmed';
+
+export interface GlyphMapEffect {
+  id: string;
+  type: 'GlyphMap';
+  bands: GlyphBand[];
+
+  // Band source & thresholding
+  mapMode: 'luma' | 'chroma'; // Used when bands_in is disconnected
+  spatialSmoothing: number;
+  chromaGate?: number;
+  chromaSensitivity?: number;
+  hueShift?: number;
+
+  // Outline
+  outlineEnabled: boolean;
+  outlineWidth: number;
+  outlineOpacity: number;
+  outlineColor: [number, number, number, number];
+
+  // Grid & Typography
+  cellSize: number; // 6..64 px
+  fontFamily: string;
+  fontWeight: string;
+  textGlowColor?: string;
+  textGlowRadius?: number;
+  textShadowColor?: string;
+
+  // Text Source & Flow
+  sourceMode: 'textbank' | 'templates' | 'manual';
+  templatePack: GlyphTemplatePack;
+  wrapMode: GlyphWrapMode;
+
+  // Kinetic Auto-Scroll
+  autoScroll: boolean;
+  scrollDirection: 'left' | 'right' | 'up' | 'down';
+  scrollSpeed: number; // 0.1..10.0
+
+  // Color & Blend
+  colorMode: GlyphColorMode;
+  bgMode: GlyphBgMode;
+  dimmedVideoOpacity: number; // 0..1
+}
+
 export interface ChromaBandsEffect {
   id: string;
   type: 'ChromaBands';
@@ -983,7 +1038,7 @@ export type AnyEffect =
   | SignalMathEffect | SampleAndHoldEffect | StepSequencerEffect | PixelProcessorEffect
   | AudioSourceEffect | OscilloscopeEffect | SpectralSplitterEffect | WaterfallSpectrogramEffect | AudioTransformerEffect | AudioModulatorEffect | AudioGateEffect | AudioToCVEffect
   | SpeechEnvelopeTrackerEffect | VocalPitchTrackerEffect | VowelFormantTrackerEffect | SpokenWordVisualizerEffect
-  | CanvasBackgroundEffect | ParticleCloudEffect | ColorPaletteEffect | GrassFieldEffect | TextMakerEffect | LumaBandsEffect | ChromaBandsEffect
+  | CanvasBackgroundEffect | ParticleCloudEffect | ColorPaletteEffect | GrassFieldEffect | TextMakerEffect | LumaBandsEffect | ChromaBandsEffect | GlyphMapEffect
   | ShapeGeneratorSource | VideoURLSource | VideoFileSource | WebcamCaptureSource | NoiseVideoSource | ColorNoiseSource
   | AudioInputSource | AudioFileSource | SystemAudioSource | ImageLoaderSource | ImageFileSource | ImageCueSource | TextCueSource;
 
@@ -994,7 +1049,7 @@ export type EffectType =
   | 'KeyMixer' | 'VideoMath' | 'UVDisplace'
   | 'LogicGate' | 'TriggeredGate' | 'Pattern' | 'Kaleidoscope' | 'SignalMath' | 'SampleAndHold' | 'StepSequencer' | 'AudioSource' | 'Oscilloscope' | 'SpectralSplitter' | 'WaterfallSpectrogram' | 'PixelProcessor' | 'AudioTransformer' | 'AudioModulator' | 'AudioGate' | 'AudioToCV'
   | 'SpeechEnvelopeTracker' | 'VocalPitchTracker' | 'VowelFormantTracker' | 'SpokenWordVisualizer'
-  | 'CanvasBackground' | 'ParticleCloud' | 'ColorPalette' | 'GrassField' | 'TextMaker' | 'LumaBands' | 'ChromaBands'
+  | 'CanvasBackground' | 'ParticleCloud' | 'ColorPalette' | 'GrassField' | 'TextMaker' | 'LumaBands' | 'ChromaBands' | 'GlyphMap'
   | 'ShapeGenerator' | 'VideoURL' | 'VideoFile' | 'WebcamCapture' | 'NoiseSource' | 'ColorNoise' | 'AudioInput' | 'AudioFile' | 'SystemAudio' | 'ImageLoader' | 'ImageFile' | 'ImageCue' | 'TextCue';
 
 export type GraphNode = AnyEffect;

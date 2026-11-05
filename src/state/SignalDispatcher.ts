@@ -314,6 +314,24 @@ export class SignalDispatcher {
               ctx.signalValues[`${nodeId}.matte_out`] = 1.0;
               ctx.signalValues[`${nodeId}.text_out`] = 1.0;
             });
+          } else if (effect.type === 'GlyphMap') {
+            pipeline.push((ctx: DispatchContext) => {
+              ctx.signalValues[`${nodeId}.video_out`] = 1.0;
+              ctx.signalValues[`${nodeId}.matte_out`] = 1.0;
+              const bankTrigVal = ctx.signalValues[`${nodeId}.bank_trig`] ?? 0;
+              const stateKey = `${ctx.layer.id}.${nodeId}`;
+              const lastTrig = this.lastTriggerVals.get(`${stateKey}.bank_trig`) ?? 0;
+              const isRising = bankTrigVal >= 0.5 && lastTrig < 0.5;
+              this.lastTriggerVals.set(`${stateKey}.bank_trig`, bankTrigVal);
+              if (isRising) {
+                const edges = ctx.layer.graph?.edges || [];
+                const textEdge = edges.find(e => e.toNodeId === nodeId && (e.toPort === 'text_in' || e.toPort === 'bank_trig'));
+                const targetTextCueId = textEdge ? textEdge.fromNodeId : (ctx.layer.source?.type === 'TextCue' ? 'source' : null);
+                if (targetTextCueId) {
+                  ctx.signalValues[`${targetTextCueId}.bank_trig`] = 1.0;
+                }
+              }
+            });
           } else if (effect.type === 'LumaBands' || effect.type === 'ChromaBands') {
             pipeline.push((ctx: DispatchContext) => {
               ctx.signalValues[`${nodeId}.video_out`] = 1.0;

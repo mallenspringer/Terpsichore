@@ -330,7 +330,16 @@ export const ALL_MODULES: ModuleEntry[] = [
     category: 'Effects',
     moduleType: 'effect:LumaBands',
     tags: ['effect', 'luma', 'posterize', 'bands', 'color', 'cel', 'shading', 'threshold', 'contour', 'outline']
-  },
+  },    {
+      id: 'GlyphMap',
+      glyph: '🔤',
+      label: 'Glyph Map',
+      tooltip: 'ASCII Synthesis, Concrete Poetry & Typographic Cel-Shading',
+      category: 'Effects',
+      moduleType: 'effect:GlyphMap',
+      tags: ['effect', 'glyph', 'ascii', 'text', 'matrix', 'typography', 'bands', 'cel', 'shading', 'terminal', 'poetry']
+    },
+
   {
     id: 'ChromaBands',
     glyph: '🎨',

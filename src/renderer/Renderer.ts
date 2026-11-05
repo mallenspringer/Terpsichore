@@ -15,6 +15,7 @@ import { TextCueRenderer } from './TextCueRenderer';
 import { TextMakerRenderer } from './TextMakerRenderer';
 import { TextMakerStage1WGSL, TextMakerStage2WGSL } from './shaders/TextMaker';
 import { AudioEngine } from '../state/AudioEngine';
+import { GLYPH_TEMPLATE_PACKS } from '../state/moduleFactory';
 import { LumaSplitterWGSL } from './shaders/LumaSplitter';
 import { SpawnWGSL, SpawnVertexWGSL } from './shaders/Spawn';
 import { NoiseSourceVertexWGSL, NoiseSourceFragmentWGSL, ColorNoiseFragmentWGSL } from './shaders/NoiseSource';
@@ -37,6 +38,8 @@ import { ParticleComputeWGSL, ParticleRenderWGSL } from './shaders/ParticleCloud
 import { GrassComputeWGSL, GrassRenderWGSL } from './shaders/GrassField';
 import { LumaBandsWGSL } from './shaders/LumaBands';
 import { ChromaBandsWGSL } from './shaders/ChromaBands';
+import { GlyphMapWGSL } from './shaders/GlyphMap';
+import { GlyphMapRenderer } from './GlyphMapRenderer';
 import { DEFAULT_LUMA_PALETTE, DEFAULT_CHROMA_PALETTE } from '../state/moduleFactory';
 
 import { PORT_DEFS } from '../components/NodeGraph/portDefs';
@@ -49,7 +52,7 @@ import {
   NoiseVideoSource, ColorNoiseSource, InverterEffect, PixelProcessorEffect,
   PatternEffect, KaleidoscopeEffect, SampleAndHoldEffect, OscilloscopeEffect, SpectralSplitterEffect, WaterfallSpectrogramEffect,
   SpokenWordVisualizerEffect,
-  LayerState, AnySource, ImageCueSource, TextCueSource, TextMakerEffect, LumaBandsEffect, ChromaBandsEffect
+  LayerState, AnySource, ImageCueSource, TextCueSource, TextMakerEffect, LumaBandsEffect, ChromaBandsEffect, GlyphMapEffect
 } from '../state/types';
 
 export class Renderer {
@@ -127,6 +130,8 @@ export class Renderer {
   private textMakerStage2Pipeline!: GPURenderPipeline;
   private lumaBandsPipeline!: GPURenderPipeline;
   private chromaBandsPipeline!: GPURenderPipeline;
+  private glyphMapPipeline!: GPURenderPipeline;
+  private glyphMapAtlasTex: GPUTexture | null = null;
   private textMakerCurrGlyphTex: Record<string, GPUTexture> = {};
   private textMakerPrevGlyphTex: Record<string, GPUTexture> = {};
   private textMakerRuntime = new Map<string, {
@@ -799,6 +804,34 @@ export class Renderer {
       primitive
     });
     this.effectLayouts.set('ChromaBands', this.chromaBandsPipeline.getBindGroupLayout(0));
+    const glyphMapBindGroupLayout = this.device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+        { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+        { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+        { binding: 4, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
+        { binding: 5, visibility: GPUShaderStage.FRAGMENT, sampler: {} }
+      ]
+    });
+
+    this.glyphMapPipeline = this.device.createRenderPipeline({
+      layout: this.device.createPipelineLayout({
+        bindGroupLayouts: [glyphMapBindGroupLayout]
+      }),
+      vertex,
+      fragment: {
+        module: this.device.createShaderModule({ code: GlyphMapWGSL }),
+        entryPoint: 'fs_main',
+        targets: [
+          { format: this.format },
+          { format: this.format }
+        ]
+      },
+      primitive
+    });
+    this.effectLayouts.set('GlyphMap', glyphMapBindGroupLayout);
+
 
 
     this.grassComputePipeline = this.device.createComputePipeline({
@@ -1694,6 +1727,220 @@ export class Renderer {
               const bg = this.device.createBindGroup({ layout, entries });
               pass.setPipeline(pipeline); pass.setBindGroup(0, bg); pass.draw(3); pass.end();
             pipeline = null;
+          } else if (effect.type === 'GlyphMap') {
+              pipeline = this.glyphMapPipeline;
+              const ef = effect as GlyphMapEffect;
+              const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 384);
+
+              // 1. Upstream bands_in detection
+              const bandsEdge = layer?.graph?.edges.find(e => e.toNodeId === nodeId && e.toPort === 'bands_in');
+              const hasBandsIn = !!bandsEdge;
+              let bandsInTex = this.blankTexture;
+              if (hasBandsIn) {
+                const srcPort = bandsEdge.fromPort || 'matte_out';
+                bandsInTex = this.nodeTextures.get(`${bandsEdge.fromNodeId}.${srcPort}`) || this.blankTexture;
+              }
+
+              // 2. Text Source detection (TextCue via text_in or layer source)
+              const textEdge = layer?.graph?.edges.find(e => e.toNodeId === nodeId && e.toPort === 'text_in');
+              let textCueSrc: TextCueSource | null = null;
+              if (textEdge) {
+                if (textEdge.fromNodeId === 'source' && layer.source.type === 'TextCue') {
+                  textCueSrc = layer.source as TextCueSource;
+                } else {
+                  const fe = layer.effects.find(e => e.id === textEdge.fromNodeId);
+                  if (fe && fe.type === 'TextCue') textCueSrc = fe as unknown as TextCueSource;
+                }
+              } else if (layer.source.type === 'TextCue') {
+                textCueSrc = layer.source as TextCueSource;
+              }
+
+              // Extract 8 layer strings:
+              const layerStrings: string[] = [];
+              const templatePack = GLYPH_TEMPLATE_PACKS[ef.templatePack ?? 'density'] || GLYPH_TEMPLATE_PACKS.density;
+
+              for (let i = 0; i < 8; i++) {
+                let s = '';
+                if (ef.sourceMode === 'textbank' && textCueSrc) {
+                  const b = textCueSrc.banks?.[textCueSrc.activeBankIndex ?? 0];
+                  s = b?.cards?.[i]?.text || '';
+                } else if (ef.sourceMode === 'manual') {
+                  s = ef.bands?.[i]?.glyphText ?? templatePack[i % templatePack.length];
+                } else {
+                  s = ef.bands?.[i]?.glyphText || templatePack[i % templatePack.length] || ' ';
+                }
+                if (!s) s = ' ';
+                layerStrings.push(s);
+              }
+
+              // 3. Style detection (TextMaker via style_in)
+              const styleEdge = layer?.graph?.edges.find(e => e.toNodeId === nodeId && e.toPort === 'style_in');
+              let textMakerSrc: TextMakerEffect | null = null;
+              if (styleEdge) {
+                const fe = layer.effects.find(e => e.id === styleEdge.fromNodeId);
+                if (fe && fe.type === 'TextMaker') textMakerSrc = fe as TextMakerEffect;
+              }
+
+              const activeFont = textMakerSrc ? textMakerSrc.fontFamily : (ef.fontFamily || 'VT323');
+              const activeWeight = ef.fontWeight || 'normal';
+              const textRgba = textMakerSrc?.textColor ? `rgba(${Math.round(textMakerSrc.textColor[0]*255)},${Math.round(textMakerSrc.textColor[1]*255)},${Math.round(textMakerSrc.textColor[2]*255)},${textMakerSrc.textColor[3] ?? 1})` : undefined;
+              const shadowRgba = textMakerSrc?.shadowColor ? `rgba(${Math.round(textMakerSrc.shadowColor[0]*255)},${Math.round(textMakerSrc.shadowColor[1]*255)},${Math.round(textMakerSrc.shadowColor[2]*255)},${textMakerSrc.shadowColor[3] ?? 1})` : undefined;
+              const activeGlowColor = textRgba || ef.textGlowColor || '#00ff66';
+              const activeGlowRadius = textMakerSrc ? (textMakerSrc.outlineEnabled ? 2 : 0) : (ef.textGlowRadius ?? 0);
+              const activeShadowColor = shadowRgba || ef.textShadowColor || 'transparent';
+
+              // 4. Font Atlas Texture
+              const atlasObj = GlyphMapRenderer.getInstance().getOrCreateAtlas(
+                activeFont,
+                activeWeight,
+                activeGlowColor,
+                activeGlowRadius,
+                activeShadowColor
+              );
+
+              if (!this.glyphMapAtlasTex || atlasObj.dirty) {
+                if (this.glyphMapAtlasTex) this.glyphMapAtlasTex.destroy();
+                this.glyphMapAtlasTex = this.device.createTexture({
+                  size: [1024, 1024],
+                  format: 'rgba8unorm',
+                  usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT
+                });
+                this.device.queue.copyExternalImageToTexture(
+                  { source: atlasObj.canvas },
+                  { texture: this.glyphMapAtlasTex },
+                  [1024, 1024]
+                );
+              }
+
+              // 5. Grid Dimensions & Kinetic Scroll
+              const baseCell = ef.cellSize ?? 16;
+              const cellSize = Math.max(6, Math.min(64, this.getEffectiveParam(layer, ef.id, 'cell_cv', baseCell, timeSec)));
+              const gridCols = Math.max(1, Math.floor(target.width / cellSize));
+              const gridRows = Math.max(1, Math.floor(target.height / cellSize));
+
+              let scrollX = 0;
+              let scrollY = 0;
+              if (ef.autoScroll) {
+                const baseSpeed = ef.scrollSpeed ?? 1.0;
+                const spd = Math.max(0.1, this.getEffectiveParam(layer, ef.id, 'scroll_cv', baseSpeed, timeSec));
+                const dist = timeSec * spd * 8.0;
+                if (ef.scrollDirection === 'left') scrollX = -dist;
+                else if (ef.scrollDirection === 'right') scrollX = dist;
+                else if (ef.scrollDirection === 'up') scrollY = -dist;
+                else if (ef.scrollDirection === 'down') scrollY = dist;
+              }
+
+              // 6. Build and upload Grid Storage Buffer
+              const gridData = GlyphMapRenderer.getInstance().buildLayerGrid(
+                layerStrings,
+                ef.wrapMode ?? 'raw_char',
+                gridCols,
+                gridRows
+              );
+              const storageBuf = this.getStorageBuffer(`${nodeId}.grid_storage`, gridData.byteLength);
+              this.device.queue.writeBuffer(storageBuf, 0, gridData as any);
+
+              // 7. Uniforms Float32Array(96)
+              const f32 = new Float32Array(96);
+              const bandCount = Math.max(2, Math.min(8, ef.bands ? ef.bands.length : 2));
+              const mapModeVal = hasBandsIn ? 2.0 : (ef.mapMode === 'chroma' ? 1.0 : 0.0);
+              const smoothing = Math.max(0, Math.min(1, ef.spatialSmoothing ?? 0.2));
+
+              // params0: [bandCount, mapMode, spatialSmoothing, cellSize]
+              f32[0] = bandCount;
+              f32[1] = mapModeVal;
+              f32[2] = smoothing;
+              f32[3] = cellSize;
+
+              // params1: [colorMode, bgMode, dimmedVideoOpacity, aspect]
+              let colorModeVal = 0;
+              if (ef.colorMode === 'source_video') colorModeVal = 1;
+              else if (ef.colorMode === 'matrix_green') colorModeVal = 2;
+              else if (ef.colorMode === 'amber_crt') colorModeVal = 3;
+              else if (ef.colorMode === 'monochrome') colorModeVal = 4;
+              else if (ef.colorMode === 'inherit_style') colorModeVal = 5;
+
+              let bgModeVal = 0;
+              if (ef.bgMode === 'black') bgModeVal = 1;
+              else if (ef.bgMode === 'video_dimmed') bgModeVal = 2;
+
+              f32[4] = colorModeVal;
+              f32[5] = bgModeVal;
+              f32[6] = ef.dimmedVideoOpacity ?? 0.2;
+              f32[7] = target.width / Math.max(1, target.height);
+
+              // params2: [chromaGate, chromaSensitivity, hueShift, unused]
+              f32[8] = Math.max(0, Math.min(0.5, ef.chromaGate ?? 0.02));
+              f32[9] = Math.max(0.1, Math.min(10.0, ef.chromaSensitivity ?? 1.5));
+              f32[10] = (ef.hueShift ?? 0) / 360.0;
+              f32[11] = 0;
+
+              // params3: [gridCols, gridRows, scrollX, scrollY]
+              f32[12] = gridCols;
+              f32[13] = gridRows;
+              f32[14] = scrollX;
+              f32[15] = scrollY;
+
+              // params4: [outlineEnabled, outlineWidth, outlineOpacity, timeSec]
+              f32[16] = ef.outlineEnabled ? 1.0 : 0.0;
+              f32[17] = ef.outlineWidth ?? 2.0;
+              f32[18] = ef.outlineOpacity ?? 1.0;
+              f32[19] = timeSec;
+
+              // outlineColor: RGBA (offset 20..23)
+              const outCol = ef.outlineColor || [0, 0, 0, 1];
+              f32[20] = outCol[0]; f32[21] = outCol[1]; f32[22] = outCol[2]; f32[23] = outCol[3] ?? 1.0;
+
+              // monochromeColor: RGBA (offset 24..27)
+              let monoCol: [number, number, number, number] = [0.95, 0.95, 0.95, 1.0];
+              if (ef.colorMode === 'inherit_style' && textMakerSrc?.textColor) {
+                monoCol = [textMakerSrc.textColor[0], textMakerSrc.textColor[1], textMakerSrc.textColor[2], textMakerSrc.textColor[3] ?? 1.0];
+              }
+              f32[24] = monoCol[0]; f32[25] = monoCol[1]; f32[26] = monoCol[2]; f32[27] = monoCol[3];
+
+              // thresholds0 (28..31) & thresholds1 (32..35)
+              for (let i = 0; i < 8; i++) {
+                let t = 1.0;
+                if (ef.bands && i < ef.bands.length) {
+                  const rawThresh = ef.bands[i].threshold ?? 255;
+                  t = ef.mapMode === 'chroma' ? (rawThresh / 360.0) : (rawThresh / 255.0);
+                }
+                const offset = (i < 4) ? (28 + i) : (32 + (i - 4));
+                f32[offset] = Math.max(0, Math.min(1, t));
+              }
+
+              // band colors 0..7 (offset 36..67)
+              for (let i = 0; i < 8; i++) {
+                let c = [0.2, 0.8, 0.4, 1.0];
+                if (ef.bands && i < ef.bands.length && ef.bands[i].color) {
+                  c = ef.bands[i].color;
+                }
+                const base = 36 + i * 4;
+                f32[base] = c[0]; f32[base + 1] = c[1]; f32[base + 2] = c[2]; f32[base + 3] = c[3] ?? 1.0;
+              }
+
+              this.device.queue.writeBuffer(uniformBuffer, 0, f32);
+
+              entries = [
+                { binding: 0, resource: { buffer: uniformBuffer } },
+                { binding: 1, resource: tex.createView() },
+                { binding: 2, resource: bandsInTex.createView() },
+                { binding: 3, resource: this.glyphMapAtlasTex.createView() },
+                { binding: 4, resource: { buffer: storageBuf } },
+                { binding: 5, resource: this.sampler }
+              ];
+
+              const matteTex = this.ensureTexture(nodeId, 'matte_out');
+              const pass = commandEncoder.beginRenderPass({
+                colorAttachments: [
+                  { view: target.createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' },
+                  { view: matteTex.createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' }
+                ]
+              });
+              const layout = this.effectLayouts.get(effect.type) || pipeline.getBindGroupLayout(0);
+              const bg = this.device.createBindGroup({ layout, entries });
+              pass.setPipeline(pipeline); pass.setBindGroup(0, bg); pass.draw(3); pass.end();
+              pipeline = null;
           } else if (effect.type === 'ChromaBands') {
               pipeline = this.chromaBandsPipeline;
               const ef = effect as ChromaBandsEffect;

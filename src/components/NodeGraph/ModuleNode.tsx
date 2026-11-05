@@ -4,7 +4,7 @@ import { ControlRowDef, RowCtx, EffectCtx } from './moduleControls';
 import { 
   SpawnEffect, StepSequencerEffect, AudioSourceEffect, OscilloscopeEffect, SpectralSplitterEffect, WaterfallSpectrogramEffect,
   SpeechEnvelopeTrackerEffect, VocalPitchTrackerEffect, VowelFormantTrackerEffect, SpokenWordVisualizerEffect,
-  AudioGateEffect, ImageCueSource, TextCueSource, TextMakerEffect, LumaBandsEffect, ChromaBandsEffect
+  AudioGateEffect, ImageCueSource, TextCueSource, TextMakerEffect, LumaBandsEffect, ChromaBandsEffect, GlyphMapEffect
 } from '../../state/types';
 import { useEngineStore } from '../../state/store';
 import { OscilloscopeVisualizer, AudioSourceVisualizer, SpectralVisualizer, WaterfallVisualizer } from './AudioVisualizers';
@@ -22,6 +22,7 @@ import {
   TextMakerNodeUI,
   LumaBandsNodeUI,
   ChromaBandsNodeUI,
+  GlyphMapNodeUI,
 } from './customNodes';
 
 
@@ -726,7 +727,15 @@ export function ModuleNode({
               rowCtx={rowCtx}
             />
           )}
-                    {moduleType === 'ChromaBands' && (
+                                {moduleType === 'GlyphMap' && (
+              <GlyphMapNodeUI
+                nodeId={nodeId}
+                layerId={layerId}
+                effect={((rowCtx as any).effect || (rowCtx as any).source) as GlyphMapEffect}
+                rowCtx={rowCtx}
+              />
+            )}
+            {moduleType === 'ChromaBands' && (
             <ChromaBandsNodeUI
               nodeId={nodeId}
               layerId={layerId}
