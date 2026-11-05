@@ -336,11 +336,12 @@ export const GlyphMapModal: React.FC<GlyphMapModalProps> = ({
               <div className="gm-seg-group">
                 {[
                   { id: 'layer_palette', label: 'Layer Palette' },
+                  { id: 'invert_video', label: 'Invert Video' },
                   { id: 'source_video', label: 'Video Sampled' },
                   { id: 'matrix_green', label: 'Matrix Phosphor' },
                   { id: 'amber_crt', label: 'Amber CRT' },
                   { id: 'monochrome', label: 'Monochrome' },
-                  { id: 'inherit_style', label: 'Inherit Style (TextMaker)' }
+                  { id: 'inherit_style', label: 'Inherit Style' }
                 ].map(m => (
                   <button
                     key={m.id}
@@ -358,9 +359,10 @@ export const GlyphMapModal: React.FC<GlyphMapModalProps> = ({
               </div>
               <div className="gm-seg-group">
                 {[
-                  { id: 'transparent', label: 'Transparent (Alpha)' },
+                  { id: 'video', label: 'Superimposed Video (100%)' },
+                  { id: 'video_dimmed', label: 'Video Dimmed' },
                   { id: 'black', label: 'Solid Black' },
-                  { id: 'video_dimmed', label: 'Video Dimmed' }
+                  { id: 'transparent', label: 'Transparent (Alpha)' }
                 ].map(bg => (
                   <button
                     key={bg.id}

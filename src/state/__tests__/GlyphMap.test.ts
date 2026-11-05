@@ -46,7 +46,8 @@ describe('GlyphMap (ASCII Synthesis & Typographic Cel-Shading) Module', () => {
     expect(ef.fontFamily).toBe('VT323');
     expect(ef.autoScroll).toBe(false);
     expect(ef.colorMode).toBe('layer_palette');
-    expect(ef.bgMode).toBe('black');
+    expect(ef.bgMode).toBe('video');
+    expect(ef.usePaletteIn).toBe(true);
   });
 
   it('supports 2 to 8 layers with autoDistributeLumaThresholds and autoDistributeChromaThresholds', () => {
@@ -89,6 +90,7 @@ describe('GlyphMap (ASCII Synthesis & Typographic Cel-Shading) Module', () => {
     const portIds = ports.map(p => p.id);
     expect(portIds).toContain('video_in');
     expect(portIds).toContain('bands_in');
+    expect(portIds).toContain('palette_in');
     expect(portIds).toContain('text_in');
     expect(portIds).toContain('style_in');
     expect(portIds).toContain('bank_trig');

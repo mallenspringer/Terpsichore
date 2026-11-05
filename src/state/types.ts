@@ -967,8 +967,8 @@ export interface GlyphBand {
 
 export type GlyphWrapMode = 'raw_char' | 'word' | 'preserve_lines';
 export type GlyphTemplatePack = 'density' | 'directional' | 'alpha' | 'numeric' | 'symbols' | 'punctuation';
-export type GlyphColorMode = 'layer_palette' | 'source_video' | 'matrix_green' | 'amber_crt' | 'monochrome' | 'inherit_style';
-export type GlyphBgMode = 'transparent' | 'black' | 'video_dimmed';
+export type GlyphColorMode = 'layer_palette' | 'source_video' | 'invert_video' | 'matrix_green' | 'amber_crt' | 'monochrome' | 'inherit_style';
+export type GlyphBgMode = 'video' | 'transparent' | 'black' | 'video_dimmed';
 
 export interface GlyphMapEffect {
   id: string;
@@ -977,6 +977,7 @@ export interface GlyphMapEffect {
 
   // Band source & thresholding
   mapMode: 'luma' | 'chroma'; // Used when bands_in is disconnected
+  usePaletteIn?: boolean;
   spatialSmoothing: number;
   chromaGate?: number;
   chromaSensitivity?: number;

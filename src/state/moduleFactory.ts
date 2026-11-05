@@ -546,8 +546,9 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
         scrollDirection: 'left',
         scrollSpeed: 1.0,
         colorMode: 'layer_palette',
-        bgMode: 'black',
-        dimmedVideoOpacity: 0.2
+        bgMode: 'video',
+        dimmedVideoOpacity: 0.2,
+        usePaletteIn: true
       };
 
     case 'ChromaBands':

@@ -53,7 +53,16 @@ export const GlyphMapNodeUI: React.FC<GlyphMapNodeUIProps> = ({
     { id: 'gb-1', threshold: 255, color: DEFAULT_LUMA_PALETTE[7], glyphText: '#' }
   ];
 
-  const hasBandsIn = layer?.graph?.edges?.some(e => e.toNodeId === nodeId && e.toPort === 'bands_in') ?? false;
+  // Upstream detection: video_in from LumaBands or ChromaBands, OR bands_in
+  const videoInEdge = layer?.graph?.edges?.find(e => e.toNodeId === nodeId && e.toPort === 'video_in');
+  const upstreamEffect = videoInEdge ? layer?.effects?.find(e => e.id === videoInEdge.fromNodeId) : null;
+  const isUpstreamBands = upstreamEffect?.type === 'LumaBands' || upstreamEffect?.type === 'ChromaBands';
+  const hasBandsInEdge = layer?.graph?.edges?.some(e => e.toNodeId === nodeId && e.toPort === 'bands_in') ?? false;
+  const hasBandsIn = isUpstreamBands || hasBandsInEdge;
+  const upstreamType = upstreamEffect?.type || (hasBandsInEdge ? 'Bands' : null);
+
+  // Palette In detection
+  const hasPaletteIn = layer?.graph?.edges?.some(e => e.toNodeId === nodeId && e.toPort === 'palette_in') ?? false;
 
   // TextCue upstream detection
   const textInEdge = layer?.graph?.edges?.find(e => e.toNodeId === nodeId && e.toPort === 'text_in');
@@ -235,7 +244,7 @@ export const GlyphMapNodeUI: React.FC<GlyphMapNodeUIProps> = ({
       {/* Upstream Status Banner */}
       {hasBandsIn ? (
         <div className="gm-locked-badge">
-          🔗 Locked to Upstream Bands (100% Aligned)
+          🔗 Locked to Upstream {upstreamType} (Superimposed)
         </div>
       ) : (
         <div className="gm-row">
@@ -271,6 +280,13 @@ export const GlyphMapNodeUI: React.FC<GlyphMapNodeUIProps> = ({
           >
             ⏩ Next Bank
           </button>
+        </div>
+      )}
+
+      {/* Palette In Badge */}
+      {hasPaletteIn && (
+        <div className="gm-textcue-badge" style={{ background: 'rgba(255, 180, 0, 0.12)', borderColor: 'rgba(255, 180, 0, 0.3)', color: '#ffb000' }}>
+          <span>🎨 Connected to Color Palette</span>
         </div>
       )}
 
@@ -366,6 +382,35 @@ export const GlyphMapNodeUI: React.FC<GlyphMapNodeUIProps> = ({
 
       {/* Quick Controls: Templates & Cell Size */}
       <div className="gm-controls-panel">
+        <div className="gm-row">
+          <span style={{ color: '#aaa', fontSize: 10 }}>Background:</span>
+          <select
+            className="gm-select"
+            value={effect.bgMode ?? 'video'}
+            onChange={e => handleUpdate({ bgMode: e.target.value as any })}
+          >
+            <option value="video">Superimposed Video (100%)</option>
+            <option value="video_dimmed">Video Dimmed (20%)</option>
+            <option value="black">Solid Black</option>
+            <option value="transparent">Transparent Alpha</option>
+          </select>
+        </div>
+
+        <div className="gm-row">
+          <span style={{ color: '#aaa', fontSize: 10 }}>Glyph Color:</span>
+          <select
+            className="gm-select"
+            value={effect.colorMode ?? 'layer_palette'}
+            onChange={e => handleUpdate({ colorMode: e.target.value as any })}
+          >
+            <option value="layer_palette">Layer Palette / Palette In</option>
+            <option value="invert_video">Invert Video Color</option>
+            <option value="source_video">Sampled Video</option>
+            <option value="matrix_green">Matrix Phosphor</option>
+            <option value="amber_crt">Amber CRT</option>
+            <option value="monochrome">Monochrome</option>
+          </select>
+        </div>
         {(!isTextBankLinked || effect.sourceMode !== 'textbank') && (
           <div className="gm-row">
             <span style={{ color: '#aaa', fontSize: 10 }}>Template:</span>

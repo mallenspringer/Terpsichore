@@ -1732,14 +1732,29 @@ export class Renderer {
               const ef = effect as GlyphMapEffect;
               const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 384);
 
-              // 1. Upstream bands_in detection
-              const bandsEdge = layer?.graph?.edges.find(e => e.toNodeId === nodeId && e.toPort === 'bands_in');
-              const hasBandsIn = !!bandsEdge;
-              let bandsInTex = this.blankTexture;
-              if (hasBandsIn) {
-                const srcPort = bandsEdge.fromPort || 'matte_out';
-                bandsInTex = this.nodeTextures.get(`${bandsEdge.fromNodeId}.${srcPort}`) || this.blankTexture;
+              // 1. Upstream bands detection (via video_in OR bands_in)
+              let upstreamBandEffect: any = null;
+              const videoInEdge = layer?.graph?.edges?.find(e => e.toNodeId === nodeId && e.toPort === 'video_in');
+              if (videoInEdge) {
+                const fe = layer.effects.find(e => e.id === videoInEdge.fromNodeId);
+                if (fe && (fe.type === 'LumaBands' || fe.type === 'ChromaBands')) {
+                  upstreamBandEffect = fe;
+                }
               }
+              const bandsEdge = layer?.graph?.edges?.find(e => e.toNodeId === nodeId && e.toPort === 'bands_in');
+              if (bandsEdge) {
+                const fe = layer.effects.find(e => e.id === bandsEdge.fromNodeId);
+                if (fe) upstreamBandEffect = fe;
+              }
+
+              const hasBandsIn = !!upstreamBandEffect;
+              let bandsInTex = this.blankTexture;
+              if (upstreamBandEffect) {
+                bandsInTex = this.nodeTextures.get(`${upstreamBandEffect.id}.matte_out`) || this.blankTexture;
+              }
+
+              // Connect to palette_in if wired
+              const pal = this.getConnectedPalette(layer, nodeId, 'palette_in');
 
               // 2. Text Source detection (TextCue via text_in or layer source)
               const textEdge = layer?.graph?.edges.find(e => e.toNodeId === nodeId && e.toPort === 'text_in');
@@ -1842,7 +1857,7 @@ export class Renderer {
 
               // 7. Uniforms Float32Array(96)
               const f32 = new Float32Array(96);
-              const bandCount = Math.max(2, Math.min(8, ef.bands ? ef.bands.length : 2));
+              const bandCount = upstreamBandEffect?.bands?.length ?? Math.max(2, Math.min(8, ef.bands ? ef.bands.length : 2));
               const mapModeVal = hasBandsIn ? 2.0 : (ef.mapMode === 'chroma' ? 1.0 : 0.0);
               const smoothing = Math.max(0, Math.min(1, ef.spatialSmoothing ?? 0.2));
 
@@ -1859,10 +1874,14 @@ export class Renderer {
               else if (ef.colorMode === 'amber_crt') colorModeVal = 3;
               else if (ef.colorMode === 'monochrome') colorModeVal = 4;
               else if (ef.colorMode === 'inherit_style') colorModeVal = 5;
+              else if (ef.colorMode === 'invert_video') colorModeVal = 6;
 
+              // bgMode: 0 = video (100% full superimposed), 1 = black, 2 = video_dimmed, 3 = transparent
               let bgModeVal = 0;
               if (ef.bgMode === 'black') bgModeVal = 1;
               else if (ef.bgMode === 'video_dimmed') bgModeVal = 2;
+              else if (ef.bgMode === 'transparent') bgModeVal = 3;
+              else if (ef.bgMode === 'video') bgModeVal = 0;
 
               f32[4] = colorModeVal;
               f32[5] = bgModeVal;
@@ -1912,7 +1931,10 @@ export class Renderer {
               // band colors 0..7 (offset 36..67)
               for (let i = 0; i < 8; i++) {
                 let c = [0.2, 0.8, 0.4, 1.0];
-                if (ef.bands && i < ef.bands.length && ef.bands[i].color) {
+                if (pal && ef.usePaletteIn !== false && pal.colors.length > 0) {
+                  const pc = pal.colors[i % pal.colors.length];
+                  c = [pc[0], pc[1], pc[2], pc[3] ?? 1.0];
+                } else if (ef.bands && i < ef.bands.length && ef.bands[i].color) {
                   c = ef.bands[i].color;
                 }
                 const base = 36 + i * 4;

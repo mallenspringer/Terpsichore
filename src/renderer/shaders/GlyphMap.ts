@@ -191,19 +191,34 @@ fn fs_main(@location(0) uv: vec2<f32>) -> GlyphMapOutput {
   } else if (colorMode == 3) {
     // Amber CRT
     glyphColor = vec4<f32>(1.0, 0.70, 0.05, 1.0);
-  } else {
-    // Monochrome / Inherited Style
+  } else if (colorMode == 4) {
+    // Monochrome
     glyphColor = u.monochromeColor;
+  } else if (colorMode == 5) {
+    // Inherited Style
+    glyphColor = u.monochromeColor;
+  } else if (colorMode == 6) {
+    // Invert Video (high-contrast punch against background bands)
+    let vidUnder = textureSampleLevel(videoTex, smp, cellCenterUV, 0.0).rgb;
+    glyphColor = vec4<f32>(vec3<f32>(1.0) - vidUnder, 1.0);
   }
 
   // Background Compositing
   let bgMode = i32(round(u.params1.y));
   var bgColor = vec4<f32>(0.0, 0.0, 0.0, 0.0);
-  if (bgMode == 1) {
+  if (bgMode == 0) {
+    // Full Upstream Video / Bands (100% Superimposed)
+    bgColor = textureSampleLevel(videoTex, smp, uv, 0.0);
+  } else if (bgMode == 1) {
+    // Solid Black
     bgColor = vec4<f32>(0.0, 0.0, 0.0, 1.0);
   } else if (bgMode == 2) {
+    // Dimmed Video
     let rawVid = textureSampleLevel(videoTex, smp, uv, 0.0);
     bgColor = vec4<f32>(rawVid.rgb * u.params1.z, 1.0);
+  } else {
+    // Transparent (Alpha 0)
+    bgColor = vec4<f32>(0.0, 0.0, 0.0, 0.0);
   }
 
   var finalColor = mix(bgColor, glyphColor, glyphAlpha);
