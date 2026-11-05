@@ -1900,15 +1900,34 @@ export class Renderer {
               f32[14] = scrollX;
               f32[15] = scrollY;
 
+              // Outline settings (inherit from upstream band module if present)
+              let outlineEnabled = ef.outlineEnabled === true;
+              let outlineWidth = ef.outlineWidth ?? 2.0;
+              let outlineOpacity = ef.outlineOpacity ?? 1.0;
+              let outlineColor = ef.outlineColor || [0, 0, 0, 1];
+
+              if (upstreamBandEffect) {
+                outlineEnabled = upstreamBandEffect.outlineEnabled !== false;
+                outlineWidth = upstreamBandEffect.outlineWidth ?? outlineWidth;
+                outlineOpacity = upstreamBandEffect.outlineOpacity ?? outlineOpacity;
+                outlineColor = upstreamBandEffect.outlineColor || outlineColor;
+              }
+
+              const baseWidth = outlineWidth;
+              const widthMod = this.getEffectiveParam(layer, ef.id, 'width_cv', baseWidth, timeSec);
+              outlineWidth = Math.max(0.0, Math.min(8.0, widthMod));
+
               // params4: [outlineEnabled, outlineWidth, outlineOpacity, timeSec]
-              f32[16] = ef.outlineEnabled ? 1.0 : 0.0;
-              f32[17] = ef.outlineWidth ?? 2.0;
-              f32[18] = ef.outlineOpacity ?? 1.0;
+              f32[16] = outlineEnabled ? 1.0 : 0.0;
+              f32[17] = outlineWidth;
+              f32[18] = outlineOpacity;
               f32[19] = timeSec;
 
               // outlineColor: RGBA (offset 20..23)
-              const outCol = ef.outlineColor || [0, 0, 0, 1];
-              f32[20] = outCol[0]; f32[21] = outCol[1]; f32[22] = outCol[2]; f32[23] = outCol[3] ?? 1.0;
+              f32[20] = outlineColor[0];
+              f32[21] = outlineColor[1];
+              f32[22] = outlineColor[2];
+              f32[23] = outlineColor[3] ?? 1.0;
 
               // monochromeColor: RGBA (offset 24..27)
               let monoCol: [number, number, number, number] = [0.95, 0.95, 0.95, 1.0];

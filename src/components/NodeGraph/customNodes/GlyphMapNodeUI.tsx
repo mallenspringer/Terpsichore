@@ -448,6 +448,75 @@ export const GlyphMapNodeUI: React.FC<GlyphMapNodeUIProps> = ({
         </div>
       </div>
 
+      {/* Ink Boundary Outlines (parity with LumaBands & ChromaBands) */}
+      <div className="gm-controls-panel">
+        <div className="gm-row">
+          <label style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: isUpstreamBands ? 'default' : 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={isUpstreamBands ? ((upstreamEffect as any)?.outlineEnabled !== false) : (effect.outlineEnabled === true)}
+              disabled={isUpstreamBands}
+              onChange={e => handleUpdate({ outlineEnabled: e.target.checked })}
+            />
+            <span style={{ fontWeight: 'bold' }}>Ink Outline</span>
+            {isUpstreamBands && <span style={{ fontSize: 9, color: '#00ff88' }}>(Inherited)</span>}
+          </label>
+          <input
+            type="color"
+            className="gm-color-picker"
+            value={rgbaToHex(isUpstreamBands ? ((upstreamEffect as any)?.outlineColor ?? [0, 0, 0, 1]) : (effect.outlineColor ?? [0, 0, 0, 1]))}
+            disabled={isUpstreamBands || (isUpstreamBands ? ((upstreamEffect as any)?.outlineEnabled === false) : !effect.outlineEnabled)}
+            onChange={e => {
+              const currentAlpha = effect.outlineColor?.[3] ?? 1.0;
+              handleUpdate({ outlineColor: hexToRgba(e.target.value, currentAlpha) });
+            }}
+            title="Outline Ink Color"
+          />
+        </div>
+
+        {(isUpstreamBands ? ((upstreamEffect as any)?.outlineEnabled !== false) : (effect.outlineEnabled === true)) && (
+          <>
+            <div className="gm-row">
+              <span style={{ color: '#aaa', fontSize: 10 }}>Width:</span>
+              <span className="gm-val-badge">{(isUpstreamBands ? ((upstreamEffect as any)?.outlineWidth ?? 2) : (effect.outlineWidth ?? 2)).toFixed(1)}px</span>
+            </div>
+            <div className="gm-slider-row">
+              <input
+                type="range"
+                min={1}
+                max={8}
+                step={0.5}
+                disabled={isUpstreamBands}
+                value={isUpstreamBands ? ((upstreamEffect as any)?.outlineWidth ?? 2) : (effect.outlineWidth ?? 2)}
+                onChange={e => handleUpdate({ outlineWidth: parseFloat(e.target.value) })}
+                onDoubleClick={() => !isUpstreamBands && handleUpdate({ outlineWidth: 2 })}
+                title={isUpstreamBands ? "Inherited from upstream module" : "Outline Width"}
+                className={isUpstreamBands ? 'gm-slider-disabled' : undefined}
+              />
+            </div>
+
+            <div className="gm-row">
+              <span style={{ color: '#aaa', fontSize: 10 }}>Opacity:</span>
+              <span className="gm-val-badge">{Math.round((isUpstreamBands ? ((upstreamEffect as any)?.outlineOpacity ?? 1) : (effect.outlineOpacity ?? 1)) * 100)}%</span>
+            </div>
+            <div className="gm-slider-row">
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                disabled={isUpstreamBands}
+                value={isUpstreamBands ? ((upstreamEffect as any)?.outlineOpacity ?? 1) : (effect.outlineOpacity ?? 1)}
+                onChange={e => handleUpdate({ outlineOpacity: parseFloat(e.target.value) })}
+                onDoubleClick={() => !isUpstreamBands && handleUpdate({ outlineOpacity: 1.0 })}
+                title={isUpstreamBands ? "Inherited from upstream module" : "Outline Opacity"}
+                className={isUpstreamBands ? 'gm-slider-disabled' : undefined}
+              />
+            </div>
+          </>
+        )}
+      </div>
+
       {/* Studio Pop-out Modal */}
       {showStudio && (
         <GlyphMapModal
@@ -456,6 +525,7 @@ export const GlyphMapNodeUI: React.FC<GlyphMapNodeUIProps> = ({
           effect={effect}
           isTextBankLinked={isTextBankLinked}
           hasBandsIn={hasBandsIn}
+          upstreamEffect={upstreamEffect}
           onClose={() => setShowStudio(false)}
         />
       )}

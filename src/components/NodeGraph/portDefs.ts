@@ -531,6 +531,7 @@ export const PORT_DEFS: Record<string, PortDef[]> = {
     { id: 'bank_trig',     label: 'Bank Trig',     direction: 'in',  signalType: 'trigger',    priority: 5 },
     { id: 'cell_cv',       label: 'Cell CV',       direction: 'in',  signalType: 'modulation', priority: 6, bipolar: true },
     { id: 'scroll_cv',     label: 'Scroll CV',     direction: 'in',  signalType: 'modulation', priority: 7, bipolar: true },
+    { id: 'width_cv',      label: 'Width CV',      direction: 'in',  signalType: 'modulation', priority: 8, bipolar: true },
     { id: 'video_out',     label: 'Video Out',     direction: 'out', signalType: 'video',      priority: 0 },
     { id: 'matte_out',     label: 'Matte Out',     direction: 'out', signalType: 'video',      priority: 1 },
   ],

@@ -223,14 +223,63 @@ fn fs_main(@location(0) uv: vec2<f32>) -> GlyphMapOutput {
 
   var finalColor = mix(bgColor, glyphColor, glyphAlpha);
 
-  // Optional Cell Outlines
+  // Ink Boundary Outlines (parity with LumaBands & ChromaBands)
   let outlineEnabled = u.params4.x > 0.5;
   let outlineWidth = u.params4.y;
   let outlineOpacity = clamp(u.params4.z, 0.0, 1.0);
-  if (outlineEnabled && outlineWidth > 0.1 && outlineOpacity > 0.01) {
-    let borderNorm = (outlineWidth * 0.5) / cellSize;
-    if (cellU < borderNorm || cellU > 1.0 - borderNorm || cellV < borderNorm || cellV > 1.0 - borderNorm) {
-      finalColor = mix(finalColor, u.outlineColor, outlineOpacity * u.outlineColor.a);
+  let aspect = max(0.1, u.params1.w);
+
+  if (outlineEnabled && outlineWidth > 0.05 && outlineOpacity > 0.005) {
+    let rad = outlineWidth * 0.0016;
+    let dx = rad / aspect;
+    let dy = rad;
+
+    var isEdge = 0.0;
+    if (mapMode == 2) {
+      let mL = textureSampleLevel(bandsTex, smp, uv + vec2<f32>(-dx, 0.0), 0.0).r;
+      let mR = textureSampleLevel(bandsTex, smp, uv + vec2<f32>(dx, 0.0), 0.0).r;
+      let mU = textureSampleLevel(bandsTex, smp, uv + vec2<f32>(0.0, -dy), 0.0).r;
+      let mD = textureSampleLevel(bandsTex, smp, uv + vec2<f32>(0.0, dy), 0.0).r;
+
+      let bL = clamp(i32(round(mL * f32(bandCount - 1))), 0, bandCount - 1);
+      let bR = clamp(i32(round(mR * f32(bandCount - 1))), 0, bandCount - 1);
+      let bU = clamp(i32(round(mU * f32(bandCount - 1))), 0, bandCount - 1);
+      let bD = clamp(i32(round(mD * f32(bandCount - 1))), 0, bandCount - 1);
+
+      let mCenter = textureSampleLevel(bandsTex, smp, uv, 0.0).r;
+      let bCenter = clamp(i32(round(mCenter * f32(bandCount - 1))), 0, bandCount - 1);
+
+      if (bL != bCenter || bR != bCenter || bU != bCenter || bD != bCenter) {
+        isEdge = 1.0;
+      }
+    } else if (mapMode == 1) {
+      let cCenter = classifyChromaBand(rgbToHsv(textureSampleLevel(videoTex, smp, uv, 0.0).rgb), bandCount);
+      let cL = classifyChromaBand(rgbToHsv(textureSampleLevel(videoTex, smp, uv + vec2<f32>(-dx, 0.0), 0.0).rgb), bandCount);
+      let cR = classifyChromaBand(rgbToHsv(textureSampleLevel(videoTex, smp, uv + vec2<f32>(dx, 0.0), 0.0).rgb), bandCount);
+      let cU = classifyChromaBand(rgbToHsv(textureSampleLevel(videoTex, smp, uv + vec2<f32>(0.0, -dy), 0.0).rgb), bandCount);
+      let cD = classifyChromaBand(rgbToHsv(textureSampleLevel(videoTex, smp, uv + vec2<f32>(0.0, dy), 0.0).rgb), bandCount);
+
+      if (cL != cCenter || cR != cCenter || cU != cCenter || cD != cCenter) {
+        isEdge = 1.0;
+      }
+    } else {
+      let lCenter = classifyLumaBand(rgbToLuma(textureSampleLevel(videoTex, smp, uv, 0.0).rgb), bandCount);
+      let lL = classifyLumaBand(rgbToLuma(textureSampleLevel(videoTex, smp, uv + vec2<f32>(-dx, 0.0), 0.0).rgb), bandCount);
+      let lR = classifyLumaBand(rgbToLuma(textureSampleLevel(videoTex, smp, uv + vec2<f32>(dx, 0.0), 0.0).rgb), bandCount);
+      let lU = classifyLumaBand(rgbToLuma(textureSampleLevel(videoTex, smp, uv + vec2<f32>(0.0, -dy), 0.0).rgb), bandCount);
+      let lD = classifyLumaBand(rgbToLuma(textureSampleLevel(videoTex, smp, uv + vec2<f32>(0.0, dy), 0.0).rgb), bandCount);
+
+      if (lL != lCenter || lR != lCenter || lU != lCenter || lD != lCenter) {
+        isEdge = 1.0;
+      }
+    }
+
+    if (isEdge > 0.5) {
+      let inkAlpha = outlineOpacity * u.outlineColor.a;
+      let inkRgb = u.outlineColor.rgb;
+      let blendedRgb = mix(finalColor.rgb, inkRgb, inkAlpha);
+      let blendedA = max(finalColor.a, inkAlpha);
+      finalColor = vec4<f32>(blendedRgb, blendedA);
     }
   }
 

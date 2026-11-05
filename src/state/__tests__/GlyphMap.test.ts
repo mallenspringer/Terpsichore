@@ -48,6 +48,9 @@ describe('GlyphMap (ASCII Synthesis & Typographic Cel-Shading) Module', () => {
     expect(ef.colorMode).toBe('layer_palette');
     expect(ef.bgMode).toBe('video');
     expect(ef.usePaletteIn).toBe(true);
+    expect(ef.outlineEnabled).toBe(false);
+    expect(ef.outlineWidth).toBe(2);
+    expect(ef.outlineOpacity).toBe(1.0);
   });
 
   it('supports 2 to 8 layers with autoDistributeLumaThresholds and autoDistributeChromaThresholds', () => {
@@ -96,6 +99,7 @@ describe('GlyphMap (ASCII Synthesis & Typographic Cel-Shading) Module', () => {
     expect(portIds).toContain('bank_trig');
     expect(portIds).toContain('cell_cv');
     expect(portIds).toContain('scroll_cv');
+    expect(portIds).toContain('width_cv');
     expect(portIds).toContain('video_out');
     expect(portIds).toContain('matte_out');
   });

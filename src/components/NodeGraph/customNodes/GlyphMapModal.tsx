@@ -13,6 +13,7 @@ interface GlyphMapModalProps {
   effect: GlyphMapEffect;
   isTextBankLinked: boolean;
   hasBandsIn: boolean;
+  upstreamEffect?: any;
   onClose: () => void;
 }
 
@@ -24,6 +25,7 @@ export const GlyphMapModal: React.FC<GlyphMapModalProps> = ({
   effect,
   isTextBankLinked,
   hasBandsIn,
+  upstreamEffect,
   onClose
 }) => {
   const [activeTab, setActiveTab] = useState<TabKey>('matrix');
@@ -391,6 +393,60 @@ export const GlyphMapModal: React.FC<GlyphMapModalProps> = ({
                       step={0.02}
                       value={effect.dimmedVideoOpacity ?? 0.2}
                       onChange={e => handleUpdate({ dimmedVideoOpacity: parseFloat(e.target.value) })}
+                    />
+                  </div>
+                </>
+              )}
+
+              {/* Ink Boundary Outlines */}
+              <div className="gm-section-title" style={{ marginTop: 16 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: upstreamEffect ? 'default' : 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={upstreamEffect ? (upstreamEffect.outlineEnabled !== false) : (effect.outlineEnabled === true)}
+                    disabled={!!upstreamEffect}
+                    onChange={e => handleUpdate({ outlineEnabled: e.target.checked })}
+                  />
+                  <span>Ink Boundary Outlines</span>
+                  {upstreamEffect && <span style={{ fontSize: 10, color: '#00ff88' }}>(Inherited from Upstream)</span>}
+                </label>
+              </div>
+
+              {(upstreamEffect ? (upstreamEffect.outlineEnabled !== false) : (effect.outlineEnabled === true)) && (
+                <>
+                  <div className="gm-section-title" style={{ marginTop: 8 }}>
+                    <span>Outline Width</span>
+                    <span style={{ color: '#00ff88' }}>
+                      {(upstreamEffect ? (upstreamEffect.outlineWidth ?? 2) : (effect.outlineWidth ?? 2)).toFixed(1)}px
+                    </span>
+                  </div>
+                  <div className="gm-slider-row">
+                    <input
+                      type="range"
+                      min={1}
+                      max={8}
+                      step={0.5}
+                      disabled={!!upstreamEffect}
+                      value={upstreamEffect ? (upstreamEffect.outlineWidth ?? 2) : (effect.outlineWidth ?? 2)}
+                      onChange={e => handleUpdate({ outlineWidth: parseFloat(e.target.value) })}
+                    />
+                  </div>
+
+                  <div className="gm-section-title" style={{ marginTop: 8 }}>
+                    <span>Outline Opacity</span>
+                    <span style={{ color: '#00ff88' }}>
+                      {Math.round((upstreamEffect ? (upstreamEffect.outlineOpacity ?? 1) : (effect.outlineOpacity ?? 1)) * 100)}%
+                    </span>
+                  </div>
+                  <div className="gm-slider-row">
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      disabled={!!upstreamEffect}
+                      value={upstreamEffect ? (upstreamEffect.outlineOpacity ?? 1) : (effect.outlineOpacity ?? 1)}
+                      onChange={e => handleUpdate({ outlineOpacity: parseFloat(e.target.value) })}
                     />
                   </div>
                 </>
