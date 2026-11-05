@@ -318,19 +318,6 @@ export class SignalDispatcher {
             pipeline.push((ctx: DispatchContext) => {
               ctx.signalValues[`${nodeId}.video_out`] = 1.0;
               ctx.signalValues[`${nodeId}.matte_out`] = 1.0;
-              const bankTrigVal = ctx.signalValues[`${nodeId}.bank_trig`] ?? 0;
-              const stateKey = `${ctx.layer.id}.${nodeId}`;
-              const lastTrig = this.lastTriggerVals.get(`${stateKey}.bank_trig`) ?? 0;
-              const isRising = bankTrigVal >= 0.5 && lastTrig < 0.5;
-              this.lastTriggerVals.set(`${stateKey}.bank_trig`, bankTrigVal);
-              if (isRising) {
-                const edges = ctx.layer.graph?.edges || [];
-                const textEdge = edges.find(e => e.toNodeId === nodeId && (e.toPort === 'text_in' || e.toPort === 'bank_trig'));
-                const targetTextCueId = textEdge ? textEdge.fromNodeId : (ctx.layer.source?.type === 'TextCue' ? 'source' : null);
-                if (targetTextCueId) {
-                  ctx.signalValues[`${targetTextCueId}.bank_trig`] = 1.0;
-                }
-              }
             });
           } else if (effect.type === 'LumaBands' || effect.type === 'ChromaBands') {
             pipeline.push((ctx: DispatchContext) => {
@@ -1834,8 +1821,42 @@ export class SignalDispatcher {
 
     const bankTrigVal = ctx.signalValues[`${nodeId}.bank_trig`] ?? 0;
     const lastBankTrig = this.lastTriggerVals.get(`${stateKey}.bank_trig`) ?? 0;
-    const isBankTrigRising = bankTrigVal >= thresh && lastBankTrig < thresh;
+    let isBankTrigRising = bankTrigVal >= thresh && lastBankTrig < thresh;
     this.lastTriggerVals.set(`${stateKey}.bank_trig`, bankTrigVal);
+
+    // Also listen for bank trigger from any connected downstream GlyphMap
+    const downstreamGmEdges = ctx.layer.graph?.edges.filter(
+      e => e.fromNodeId === nodeId && (e.fromPort === 'text_out' || e.fromPort === 'video_out')
+    ) || [];
+    for (const e of downstreamGmEdges) {
+      const targetEffect = ctx.layer.effects.find(eff => eff.id === e.toNodeId);
+      if (targetEffect?.type === 'GlyphMap') {
+        const gmBankTrigVal = ctx.signalValues[`${targetEffect.id}.bank_trig`] ?? 0;
+        const lastGmBankTrig = this.lastTriggerVals.get(`${stateKey}.${targetEffect.id}.bank_trig`) ?? 0;
+        if (gmBankTrigVal >= thresh && lastGmBankTrig < thresh) {
+          isBankTrigRising = true;
+        }
+        this.lastTriggerVals.set(`${stateKey}.${targetEffect.id}.bank_trig`, gmBankTrigVal);
+      }
+    }
+
+    if (isSource) {
+      for (const eff of ctx.layer.effects) {
+        if (eff.type === 'GlyphMap') {
+          const hasExplicitOtherTextIn = ctx.layer.graph?.edges.some(
+            e => e.toNodeId === eff.id && e.toPort === 'text_in' && e.fromNodeId !== 'source'
+          );
+          if (!hasExplicitOtherTextIn) {
+            const gmBankTrigVal = ctx.signalValues[`${eff.id}.bank_trig`] ?? 0;
+            const lastGmBankTrig = this.lastTriggerVals.get(`${stateKey}.${eff.id}.bank_trig`) ?? 0;
+            if (gmBankTrigVal >= thresh && lastGmBankTrig < thresh) {
+              isBankTrigRising = true;
+            }
+            this.lastTriggerVals.set(`${stateKey}.${eff.id}.bank_trig`, gmBankTrigVal);
+          }
+        }
+      }
+    }
 
     const resetTrigVal = ctx.signalValues[`${nodeId}.reset_trig`] ?? 0;
     const lastResetTrig = this.lastTriggerVals.get(`${stateKey}.reset_trig`) ?? 0;

@@ -1776,13 +1776,21 @@ export class Renderer {
 
               for (let i = 0; i < 8; i++) {
                 let s = '';
-                if (ef.sourceMode === 'textbank' && textCueSrc) {
+                // 1. Text Bank input (takes precedence when connected, unless user explicitly selected manual)
+                if (textCueSrc && ef.sourceMode !== 'manual') {
                   const b = textCueSrc.banks?.[textCueSrc.activeBankIndex ?? 0];
                   s = b?.cards?.[i]?.text || '';
-                } else if (ef.sourceMode === 'manual') {
-                  s = ef.bands?.[i]?.glyphText ?? templatePack[i % templatePack.length];
-                } else {
-                  s = ef.bands?.[i]?.glyphText || templatePack[i % templatePack.length] || ' ';
+                }
+
+                // 2. If no text bank string, check per-layer custom string override
+                if (!s) {
+                  const custom = ef.bands?.[i]?.glyphText;
+                  if (custom !== undefined && custom !== null && custom.length > 0) {
+                    s = custom;
+                  } else {
+                    // 3. Fall back to active template pack character
+                    s = templatePack[i % templatePack.length] || ' ';
+                  }
                 }
                 if (!s) s = ' ';
                 layerStrings.push(s);

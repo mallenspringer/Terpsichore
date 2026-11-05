@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
   createDefaultEffect,
+  createDefaultSource,
   autoDistributeLumaThresholds,
   autoDistributeChromaThresholds,
   cascadeLumaThresholds,
@@ -46,7 +47,7 @@ describe('GlyphMap (ASCII Synthesis & Typographic Cel-Shading) Module', () => {
     expect(ef.fontFamily).toBe('VT323');
     expect(ef.autoScroll).toBe(false);
     expect(ef.colorMode).toBe('layer_palette');
-    expect(ef.bgMode).toBe('video');
+    expect(ef.bgMode).toBe('transparent');
     expect(ef.usePaletteIn).toBe(true);
     expect(ef.outlineEnabled).toBe(false);
     expect(ef.outlineWidth).toBe(2);
@@ -213,5 +214,57 @@ describe('GlyphMap (ASCII Synthesis & Typographic Cel-Shading) Module', () => {
 
     expect(signalValues['glyph-test.video_out']).toBe(1.0);
     expect(signalValues['glyph-test.matte_out']).toBe(1.0);
+  });
+
+  it('syncs bank_trig to connected TextCue and skips empty banks', () => {
+    const dispatcher = SignalDispatcher.getInstance();
+    const gmEffect = createDefaultEffect('GlyphMap', 'glyph-test') as GlyphMapEffect;
+    const textCueSource = createDefaultSource('TextCue') as any;
+
+    // Set bank 0 populated, bank 1 empty, bank 2 populated
+    textCueSource.banks = [
+      { id: 'b0', name: 'Bank 1', cards: [{ id: 'c0', text: 'CARD0' }], autoPlayback: false, playbackSpeed: 1, activeCardIndex: 0 },
+      { id: 'b1', name: 'Bank 2 (Empty)', cards: [], autoPlayback: false, playbackSpeed: 1, activeCardIndex: 0 },
+      { id: 'b2', name: 'Bank 3', cards: [{ id: 'c2', text: 'CARD2' }], autoPlayback: false, playbackSpeed: 1, activeCardIndex: 0 }
+    ];
+    textCueSource.activeBankIndex = 0;
+    textCueSource.bankSkipEmpty = true;
+
+    const layer = {
+      id: 'layer-cue',
+      name: 'Layer Cue',
+      source: textCueSource,
+      effects: [gmEffect],
+      modulators: {},
+      opacity: 1,
+      blendMode: 'normal' as const,
+      visible: true,
+      muted: false,
+      solo: false,
+      graph: {
+        edges: [
+          { id: 'e1', fromNodeId: 'source', fromPort: 'text_out', toNodeId: 'glyph-test', toPort: 'text_in' }
+        ]
+      }
+    };
+
+    useEngineStore.setState({
+      layers: {
+        'layer-cue': layer
+      }
+    });
+
+    dispatcher.compileLayer(layer as any);
+    const fns = (dispatcher as any).pipelines['layer-cue'] || [];
+
+    // Trigger pulse on glyph-test.bank_trig
+    const signalValues: Record<string, number> = {
+      'glyph-test.bank_trig': 1.0
+    };
+    fns.forEach((fn: any) => fn({ layer, signalValues, audioEngine: mockAudioEngine }, 0.016));
+
+    // Verify it skipped bank 1 (which is empty) and landed on bank 2 in the store
+    const updatedSource = useEngineStore.getState().layers['layer-cue']?.source as any;
+    expect(updatedSource.activeBankIndex).toBe(2);
   });
 });

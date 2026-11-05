@@ -519,10 +519,10 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
         id,
         type: 'GlyphMap',
         bands: [
-          { id: 'gb-0', threshold: 64, color: [0.15, 0.40, 0.20, 1.0], glyphText: ' ' },
-          { id: 'gb-1', threshold: 128, color: [0.20, 0.75, 0.35, 1.0], glyphText: '.' },
-          { id: 'gb-2', threshold: 192, color: [0.40, 0.95, 0.60, 1.0], glyphText: '+' },
-          { id: 'gb-3', threshold: 255, color: [0.95, 1.00, 0.95, 1.0], glyphText: '#' }
+          { id: 'gb-0', threshold: 64, color: [0.15, 0.40, 0.20, 1.0], glyphText: '' },
+          { id: 'gb-1', threshold: 128, color: [0.20, 0.75, 0.35, 1.0], glyphText: '' },
+          { id: 'gb-2', threshold: 192, color: [0.40, 0.95, 0.60, 1.0], glyphText: '' },
+          { id: 'gb-3', threshold: 255, color: [0.95, 1.00, 0.95, 1.0], glyphText: '' }
         ],
         mapMode: 'luma',
         spatialSmoothing: 0.2,
@@ -546,7 +546,7 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
         scrollDirection: 'left',
         scrollSpeed: 1.0,
         colorMode: 'layer_palette',
-        bgMode: 'video',
+        bgMode: 'transparent',
         dimmedVideoOpacity: 0.2,
         usePaletteIn: true
       };

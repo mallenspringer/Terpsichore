@@ -1,5 +1,9 @@
 /* GlyphMap Node UI Styling */
 
+.module-node.module-type-GlyphMap .module-body {
+  width: 270px;
+}
+
 .glyphmap-node-ui {
   display: flex;
   flex-direction: column;
@@ -120,12 +124,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-}
-
-.gm-band-title-left {
-  display: flex;
-  align-items: center;
-  gap: 5px;
+  gap: 4px;
 }
 
 .gm-color-picker {
@@ -138,6 +137,7 @@
   cursor: pointer;
   background: transparent;
   padding: 0;
+  flex-shrink: 0;
 }
 
 .gm-color-picker::-webkit-color-swatch-wrapper {
@@ -149,39 +149,44 @@
   border-radius: 3px;
 }
 
-.gm-band-name {
-  font-weight: bold;
-  color: #ffffff;
-  font-size: 10px;
-}
-
-.gm-glyph-input {
+.gm-layer-string-input {
+  flex: 1;
+  min-width: 0;
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.18);
   color: #00ff88;
   font-family: inherit;
   font-size: 11px;
   font-weight: bold;
-  padding: 1px 4px;
+  padding: 2px 6px;
   border-radius: 3px;
-  width: 60px;
-  text-align: center;
 }
 
-.gm-glyph-input:focus {
+.gm-layer-string-input:focus {
   outline: none;
   border-color: #00ff88;
   background: rgba(0, 255, 136, 0.15);
 }
 
-.gm-card-preview {
-  color: #00d4ff;
-  font-size: 10px;
-  max-width: 90px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.gm-layer-string-input::placeholder {
+  color: rgba(255, 255, 255, 0.35);
   font-style: italic;
+  font-weight: normal;
+}
+
+.gm-layer-string-input.gm-linked-input {
+  color: #00d4ff;
+  border-color: rgba(0, 212, 255, 0.3);
+  background: rgba(0, 212, 255, 0.08);
+  cursor: default;
+}
+
+.gm-range-badge {
+  font-size: 9px;
+  color: #888;
+  white-space: nowrap;
+  padding: 0 2px;
+  flex-shrink: 0;
 }
 
 .gm-slider-row {

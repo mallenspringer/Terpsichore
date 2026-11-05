@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useEngineStore } from '../../../state/store';
 import { GlyphMapEffect, GlyphBand, GlyphTemplatePack, TextCueSource } from '../../../state/types';
 import {
@@ -10,6 +10,7 @@ import {
   cascadeLumaThresholds,
   cascadeChromaThresholds
 } from '../../../state/moduleFactory';
+import { stepTextCueBank } from '../../../utils/textCueUtils';
 import { GlyphMapModal } from './GlyphMapModal';
 import './GlyphMapNodeUI.css';
 
@@ -89,23 +90,15 @@ export const GlyphMapNodeUI: React.FC<GlyphMapNodeUIProps> = ({
   const activeBankIdx = textCueSrc?.activeBankIndex ?? 0;
   const activeBank = textCueSrc?.banks?.[activeBankIdx];
 
+  useEffect(() => {
+    if (isTextBankLinked && effect.sourceMode === 'templates') {
+      handleUpdate({ sourceMode: 'textbank' });
+    }
+  }, [isTextBankLinked, effect.sourceMode]);
+
   const handleStepBank = () => {
     if (!textCueSrc || !textCueNodeId) return;
-    const banks = textCueSrc.banks || [];
-    if (banks.length === 0) return;
-    const maxBanks = textCueSrc.bankGridMode === '24' ? 24 : textCueSrc.bankGridMode === '16' ? 16 : 8;
-    const nextBankIdx = (activeBankIdx + 1) % maxBanks;
-    const nextBank = banks[nextBankIdx];
-    const nextText = nextBank?.cards?.[nextBank?.activeCardIndex ?? 0]?.text ?? '';
-
-    const updates: Partial<TextCueSource> = {
-      activeBankIndex: nextBankIdx,
-      prevText: textCueSrc.currentText ?? '',
-      currentText: nextText,
-      lastStepTime: Date.now(),
-      stepCount: (textCueSrc.stepCount ?? 0) + 1
-    };
-
+    const updates = stepTextCueBank(textCueSrc);
     if (textCueNodeId === 'source' && layer?.source) {
       updateLayer(layerId, { source: { ...(layer.source as any), ...updates } });
     } else if (textCueNodeId) {
@@ -190,12 +183,7 @@ export const GlyphMapNodeUI: React.FC<GlyphMapNodeUIProps> = ({
   };
 
   const handleTemplatePackChange = (pack: GlyphTemplatePack) => {
-    const chars = GLYPH_TEMPLATE_PACKS[pack] || GLYPH_TEMPLATE_PACKS.density;
-    const updated = bands.map((b, idx) => ({
-      ...b,
-      glyphText: chars[idx % chars.length] || '#'
-    }));
-    handleUpdate({ templatePack: pack, sourceMode: 'templates', bands: updated });
+    handleUpdate({ templatePack: pack, sourceMode: 'templates' });
   };
 
   const isChroma = effect.mapMode === 'chroma';
@@ -303,44 +291,44 @@ export const GlyphMapNodeUI: React.FC<GlyphMapNodeUIProps> = ({
             const maxThresh = isTop ? maxVal : band.threshold;
 
             const cardText = activeBank?.cards?.[idx]?.text;
+            const templateChars = GLYPH_TEMPLATE_PACKS[effect.templatePack ?? 'density'] || GLYPH_TEMPLATE_PACKS.density;
+            const templateChar = templateChars[idx % templateChars.length] || '#';
 
             return (
               <div key={band.id || `gb-${idx}`} className="gm-band-card">
                 <div className="gm-band-card-header">
-                  <div className="gm-band-title-left">
-                    <input
-                      type="color"
-                      className="gm-color-picker"
-                      value={rgbaToHex(band.color)}
-                      onChange={e => handleBandColorChange(idx, e.target.value)}
-                      title={`Band ${idx + 1} Color`}
-                    />
-                    <span className="gm-band-name">
-                      L{idx + 1}
-                      {isTop && ' (Top)'}
-                      {isBase && ' (Base)'}
-                    </span>
-                    {!hasBandsIn && (
-                      <span style={{ fontSize: 9, color: '#888' }}>
-                        {minThresh}→{maxThresh}{isChroma ? '°' : ''}
-                      </span>
-                    )}
-                  </div>
+                  <input
+                    type="color"
+                    className="gm-color-picker"
+                    value={rgbaToHex(band.color)}
+                    onChange={e => handleBandColorChange(idx, e.target.value)}
+                    title={`Layer ${idx + 1} Color Swatch`}
+                  />
 
-                  {/* Right side: Glyph text input or Card preview */}
-                  {isTextBankLinked && effect.sourceMode === 'textbank' ? (
-                    <span className="gm-card-preview" title={cardText || '(empty)'}>
-                      {cardText ? `"${cardText}"` : '(empty)'}
-                    </span>
+                  {/* Layer String Input (overrides template characters for this layer) */}
+                  {isTextBankLinked ? (
+                    <input
+                      type="text"
+                      className="gm-layer-string-input gm-linked-input"
+                      value={cardText ? `"${cardText}"` : '(empty card)'}
+                      readOnly
+                      title={`Card ${idx + 1} from Text Bank: "${cardText || ''}"`}
+                    />
                   ) : (
                     <input
                       type="text"
-                      className="gm-glyph-input"
+                      className="gm-layer-string-input"
                       value={band.glyphText ?? ''}
                       onChange={e => handleLayerGlyphChange(idx, e.target.value)}
-                      placeholder="#"
-                      title="Character or repeating phrase for this layer"
+                      placeholder={templateChar}
+                      title={`Layer ${idx + 1} string override (default template: '${templateChar}')`}
                     />
+                  )}
+
+                  {!hasBandsIn && (
+                    <span className="gm-range-badge" title={`Threshold range: ${minThresh} to ${maxThresh}`}>
+                      {minThresh}→{maxThresh}{isChroma ? '°' : ''}
+                    </span>
                   )}
 
                   {!hasBandsIn && (
@@ -386,7 +374,7 @@ export const GlyphMapNodeUI: React.FC<GlyphMapNodeUIProps> = ({
           <span style={{ color: '#aaa', fontSize: 10 }}>Background:</span>
           <select
             className="gm-select"
-            value={effect.bgMode ?? 'video'}
+            value={effect.bgMode ?? 'transparent'}
             onChange={e => handleUpdate({ bgMode: e.target.value as any })}
           >
             <option value="video">Superimposed Video (100%)</option>
