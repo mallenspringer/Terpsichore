@@ -29,9 +29,7 @@ describe('GlyphMap (ASCII Synthesis & Typographic Cel-Shading) Module', () => {
   beforeEach(() => {
     useEngineStore.setState({
       layers: {},
-      activeLayerId: 'layer-1',
-      bpm: 120,
-      transport: 'stop'
+      activeLayerId: 'layer-1'
     });
   });
 
@@ -187,7 +185,7 @@ describe('GlyphMap (ASCII Synthesis & Typographic Cel-Shading) Module', () => {
       effects: [gmEffect],
       modulators: {},
       opacity: 1,
-      blendMode: 'source-over' as const,
+      blendMode: 'normal' as const,
       visible: true,
       muted: false,
       solo: false,
