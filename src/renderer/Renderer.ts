@@ -39,6 +39,7 @@ import { GrassComputeWGSL, GrassRenderWGSL } from './shaders/GrassField';
 import { LumaBandsWGSL } from './shaders/LumaBands';
 import { ChromaBandsWGSL } from './shaders/ChromaBands';
 import { GlyphMapWGSL } from './shaders/GlyphMap';
+import { OutlineWGSL } from './shaders/Outline';
 import { GlyphMapRenderer } from './GlyphMapRenderer';
 import { DEFAULT_LUMA_PALETTE, DEFAULT_CHROMA_PALETTE } from '../state/moduleFactory';
 
@@ -52,7 +53,7 @@ import {
   NoiseVideoSource, ColorNoiseSource, InverterEffect, PixelProcessorEffect,
   PatternEffect, KaleidoscopeEffect, SampleAndHoldEffect, OscilloscopeEffect, SpectralSplitterEffect, WaterfallSpectrogramEffect,
   SpokenWordVisualizerEffect,
-  LayerState, AnySource, ImageCueSource, TextCueSource, TextMakerEffect, LumaBandsEffect, ChromaBandsEffect, GlyphMapEffect
+  LayerState, AnySource, ImageCueSource, TextCueSource, TextMakerEffect, LumaBandsEffect, ChromaBandsEffect, GlyphMapEffect, OutlineEffect
 } from '../state/types';
 
 export class Renderer {
@@ -131,6 +132,7 @@ export class Renderer {
   private lumaBandsPipeline!: GPURenderPipeline;
   private chromaBandsPipeline!: GPURenderPipeline;
   private glyphMapPipeline!: GPURenderPipeline;
+  private outlinePipeline!: GPURenderPipeline;
   private glyphMapAtlasTex: GPUTexture | null = null;
   private textMakerCurrGlyphTex: Record<string, GPUTexture> = {};
   private textMakerPrevGlyphTex: Record<string, GPUTexture> = {};
@@ -855,6 +857,21 @@ export class Renderer {
       primitive
     });
     this.effectLayouts.set('GlyphMap', glyphMapBindGroupLayout);
+
+    this.outlinePipeline = this.device.createRenderPipeline({
+      layout,
+      vertex,
+      fragment: {
+        module: this.device.createShaderModule({ code: OutlineWGSL }),
+        entryPoint: 'fs_main',
+        targets: [
+          { format: this.format },
+          { format: this.format }
+        ]
+      },
+      primitive
+    });
+    this.effectLayouts.set('Outline', this.outlinePipeline.getBindGroupLayout(0));
 
 
 
@@ -2097,6 +2114,93 @@ export class Renderer {
                 f32[base + 1] = c[1];
                 f32[base + 2] = c[2];
                 f32[base + 3] = c[3] ?? 1.0;
+              }
+
+              this.device.queue.writeBuffer(uniformBuffer, 0, f32);
+              entries = [
+                { binding: 0, resource: { buffer: uniformBuffer } },
+                { binding: 1, resource: tex.createView() },
+                { binding: 2, resource: this.sampler }
+              ];
+
+              const isMatteConnected = (layer.graph?.edges || []).some(c => c.fromNodeId === nodeId && c.fromPort === 'matte_out');
+              const matteTex = this.ensureTexture(nodeId, 'matte_out');
+              const pass = commandEncoder.beginRenderPass({
+                colorAttachments: [
+                  { view: target.createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' },
+                  { view: matteTex.createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: isMatteConnected ? 'store' : 'discard' }
+                ]
+              });
+              const layout = this.effectLayouts.get(effect.type) || pipeline.getBindGroupLayout(0);
+              const bg = this.device.createBindGroup({ layout, entries });
+              pass.setPipeline(pipeline); pass.setBindGroup(0, bg); pass.draw(3); pass.end();
+              pipeline = null;
+          } else if (effect.type === 'Outline') {
+              pipeline = this.outlinePipeline;
+              const ef = effect as OutlineEffect;
+              const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 192);
+              const pal = this.getConnectedPalette(layer, nodeId, 'palette_in');
+
+              const f32 = new Float32Array(48);
+
+              let edgeModeVal = 0; // luma_bands
+              if (ef.edgeMode === 'chroma_bands') edgeModeVal = 1;
+              else if (ef.edgeMode === 'focus_peaking') edgeModeVal = 2;
+              else if (ef.edgeMode === 'manga_dog') edgeModeVal = 3;
+              else if (ef.edgeMode === 'analog_diff') edgeModeVal = 4;
+
+              const bandCount = Math.max(2, Math.min(8, ef.bandCount ?? 4));
+              const baseWidth = ef.lineWidth ?? 2.0;
+              const lineWidth = Math.max(0.5, Math.min(16.0, this.getEffectiveParam(layer, ef.id, 'width_cv', baseWidth, timeSec)));
+              const lineOpacity = Math.max(0, Math.min(1.0, ef.lineOpacity ?? 1.0));
+
+              // params0: [edgeMode, bandCount, lineWidth, lineOpacity]
+              f32[0] = edgeModeVal;
+              f32[1] = bandCount;
+              f32[2] = lineWidth;
+              f32[3] = lineOpacity;
+
+              let bgModeVal = 0; // over_video_ink
+              if (ef.bgMode === 'over_video_neon') bgModeVal = 1;
+              else if (ef.bgMode === 'lines_transparent') bgModeVal = 2;
+              else if (ef.bgMode === 'lines_black') bgModeVal = 3;
+
+              let colorModeVal = 0; // custom
+              if (ef.colorMode === 'palette_in') colorModeVal = 1;
+              else if (ef.colorMode === 'sample_video') colorModeVal = 2;
+
+              const baseThresh = ef.threshold ?? 0.25;
+              const threshold = Math.max(0.01, Math.min(1.0, this.getEffectiveParam(layer, ef.id, 'thresh_cv', baseThresh, timeSec)));
+              const aspect = target.width / Math.max(1, target.height);
+
+              // params1: [bgMode, colorMode, threshold, aspect]
+              f32[4] = bgModeVal;
+              f32[5] = colorModeVal;
+              f32[6] = threshold;
+              f32[7] = aspect;
+
+              const smoothing = Math.max(0, Math.min(1.0, this.getEffectiveParam(layer, ef.id, 'smooth_cv', ef.spatialSmoothing ?? 0.2, timeSec)));
+              const analogDirVal = ef.analogDirection === 'vertical' ? 1.0 : 0.0;
+
+              // params2: [timeSec, spatialSmoothing, analogDirection, unused]
+              f32[8] = timeSec;
+              f32[9] = smoothing;
+              f32[10] = analogDirVal;
+              f32[11] = 0.0;
+
+              // lineColor: RGBA (offset 12..15)
+              const lc = ef.lineColor || [0, 0, 0, 1];
+              f32[12] = lc[0]; f32[13] = lc[1]; f32[14] = lc[2]; f32[15] = lc[3] ?? 1.0;
+
+              // 8 Palette Colors (offset 16..47)
+              for (let i = 0; i < 8; i++) {
+                let c = DEFAULT_LUMA_PALETTE[i];
+                if (pal && ef.usePaletteIn !== false && pal.colors.length > 0) {
+                  const pc = pal.colors[i % pal.colors.length];
+                  c = [pc[0], pc[1], pc[2], pc[3] ?? 1.0];
+                }
+                const base = 16 + i * 4;
+                f32[base] = c[0]; f32[base + 1] = c[1]; f32[base + 2] = c[2]; f32[base + 3] = c[3] ?? 1.0;
               }
 
               this.device.queue.writeBuffer(uniformBuffer, 0, f32);

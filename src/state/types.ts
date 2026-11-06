@@ -1029,6 +1029,26 @@ export interface ChromaBandsEffect {
   outlineColor: [number, number, number, number];
 }
 
+export type OutlineEdgeMode = 'luma_bands' | 'chroma_bands' | 'focus_peaking' | 'manga_dog' | 'analog_diff';
+export type OutlineBgMode = 'over_video_ink' | 'over_video_neon' | 'lines_transparent' | 'lines_black';
+export type OutlineColorMode = 'custom' | 'palette_in' | 'sample_video';
+
+export interface OutlineEffect {
+  id: string;
+  type: 'Outline';
+  edgeMode: OutlineEdgeMode;
+  bandCount: number; // 2..8 (hard cap)
+  threshold: number; // 0..1 (peaking sensitivity / gradient threshold)
+  lineWidth: number; // 1..16 px
+  lineOpacity: number; // 0..1
+  lineColor: [number, number, number, number]; // RGBA
+  colorMode: OutlineColorMode;
+  bgMode: OutlineBgMode;
+  spatialSmoothing: number; // 0..1
+  analogDirection?: 'horizontal' | 'vertical';
+  usePaletteIn?: boolean;
+}
+
 
 export type AnyEffect = 
   | Transform2DEffect | ColorAdjustEffect | LumaKeyEffect | SimpleFeedbackEffect
@@ -1039,7 +1059,7 @@ export type AnyEffect =
   | SignalMathEffect | SampleAndHoldEffect | StepSequencerEffect | PixelProcessorEffect
   | AudioSourceEffect | OscilloscopeEffect | SpectralSplitterEffect | WaterfallSpectrogramEffect | AudioTransformerEffect | AudioModulatorEffect | AudioGateEffect | AudioToCVEffect
   | SpeechEnvelopeTrackerEffect | VocalPitchTrackerEffect | VowelFormantTrackerEffect | SpokenWordVisualizerEffect
-  | CanvasBackgroundEffect | ParticleCloudEffect | ColorPaletteEffect | GrassFieldEffect | TextMakerEffect | LumaBandsEffect | ChromaBandsEffect | GlyphMapEffect
+  | CanvasBackgroundEffect | ParticleCloudEffect | ColorPaletteEffect | GrassFieldEffect | TextMakerEffect | LumaBandsEffect | ChromaBandsEffect | GlyphMapEffect | OutlineEffect
   | ShapeGeneratorSource | VideoURLSource | VideoFileSource | WebcamCaptureSource | NoiseVideoSource | ColorNoiseSource
   | AudioInputSource | AudioFileSource | SystemAudioSource | ImageLoaderSource | ImageFileSource | ImageCueSource | TextCueSource;
 
@@ -1050,7 +1070,7 @@ export type EffectType =
   | 'KeyMixer' | 'VideoMath' | 'UVDisplace'
   | 'LogicGate' | 'TriggeredGate' | 'Pattern' | 'Kaleidoscope' | 'SignalMath' | 'SampleAndHold' | 'StepSequencer' | 'AudioSource' | 'Oscilloscope' | 'SpectralSplitter' | 'WaterfallSpectrogram' | 'PixelProcessor' | 'AudioTransformer' | 'AudioModulator' | 'AudioGate' | 'AudioToCV'
   | 'SpeechEnvelopeTracker' | 'VocalPitchTracker' | 'VowelFormantTracker' | 'SpokenWordVisualizer'
-  | 'CanvasBackground' | 'ParticleCloud' | 'ColorPalette' | 'GrassField' | 'TextMaker' | 'LumaBands' | 'ChromaBands' | 'GlyphMap'
+  | 'CanvasBackground' | 'ParticleCloud' | 'ColorPalette' | 'GrassField' | 'TextMaker' | 'LumaBands' | 'ChromaBands' | 'GlyphMap' | 'Outline'
   | 'ShapeGenerator' | 'VideoURL' | 'VideoFile' | 'WebcamCapture' | 'NoiseSource' | 'ColorNoise' | 'AudioInput' | 'AudioFile' | 'SystemAudio' | 'ImageLoader' | 'ImageFile' | 'ImageCue' | 'TextCue';
 
 export type GraphNode = AnyEffect;

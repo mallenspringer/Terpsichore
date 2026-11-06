@@ -350,6 +350,15 @@ export const ALL_MODULES: ModuleEntry[] = [
     tags: ['effect', 'chroma', 'hue', 'posterize', 'bands', 'color', 'cel', 'shading', 'threshold', 'contour', 'outline']
   },
   {
+    id: 'Outline',
+    glyph: '✒️',
+    label: 'Outline',
+    tooltip: 'Contour & Edge Synthesizer (Luma/Chroma Bands, Focus Peaking, Manga DoG & Analog Derivative)',
+    category: 'Effects',
+    moduleType: 'effect:Outline',
+    tags: ['outline', 'edge', 'contour', 'focus', 'peaking', 'manga', 'ink', 'neon', 'analog', 'differentiator', 'sobel', 'effect']
+  },
+  {
     id: 'GrassField',
     glyph: '🌱',
     label: 'Grass Field',

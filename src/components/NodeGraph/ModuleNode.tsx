@@ -23,6 +23,7 @@ import {
   LumaBandsNodeUI,
   ChromaBandsNodeUI,
   GlyphMapNodeUI,
+  OutlineNodeUI,
 } from './customNodes';
 
 
@@ -751,6 +752,14 @@ export function ModuleNode({
               rowCtx={rowCtx}
             />
           )}
+          {moduleType === 'Outline' && (
+            <OutlineNodeUI
+              nodeId={nodeId}
+              layerId={layerId}
+              effect={((rowCtx as any).effect || (rowCtx as any).source) as any}
+              rowCtx={rowCtx}
+            />
+          )}
           {moduleType === 'TextCue' && (
             <TextCueNodeUI
               nodeId={nodeId}
@@ -790,6 +799,10 @@ export function ModuleNode({
            moduleType !== 'ImageCue' &&
            moduleType !== 'TextCue' &&
            moduleType !== 'TextMaker' &&
+           moduleType !== 'LumaBands' &&
+           moduleType !== 'ChromaBands' &&
+           moduleType !== 'GlyphMap' &&
+           moduleType !== 'Outline' &&
            orderedRows.slice(0, visibleRows).map((row, index) => (
               <div
                 key={row.id}
@@ -815,6 +828,10 @@ export function ModuleNode({
            moduleType !== 'ImageCue' &&
            moduleType !== 'TextCue' &&
            moduleType !== 'TextMaker' &&
+           moduleType !== 'LumaBands' &&
+           moduleType !== 'ChromaBands' &&
+           moduleType !== 'GlyphMap' &&
+           moduleType !== 'Outline' &&
            (hiddenCount > 0 || nodeState.expanded) ? (
             <div className="node-collapse-footer"
               onClick={() => onLayoutChange({ expanded: !nodeState.expanded })}>

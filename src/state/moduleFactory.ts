@@ -571,6 +571,22 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
         outlineColor: [0.0, 0.0, 0.0, 1.0]
       };
 
+    case 'Outline':
+      return {
+        id,
+        type: 'Outline',
+        edgeMode: 'luma_bands',
+        bandCount: 4,
+        threshold: 0.25,
+        lineWidth: 2.0,
+        lineOpacity: 1.0,
+        lineColor: [0.0, 0.0, 0.0, 1.0],
+        colorMode: 'custom',
+        bgMode: 'over_video_ink',
+        spatialSmoothing: 0.2,
+        analogDirection: 'horizontal',
+        usePaletteIn: true
+      };
 
     default:
       return { id, type: 'SimpleFeedback', feedbackAmount: 0.9, zoom: 0.95, angle: 0.05 } as any;
