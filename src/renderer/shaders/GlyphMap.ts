@@ -166,13 +166,13 @@ fn fs_main(@location(0) uv: vec2<f32>) -> GlyphMapOutput {
   let totalCells = i32(gridCols * gridRows);
   let charCode = gridData[bandIdx * totalCells + cellIndex];
 
-  // Sample Font Atlas: 16 cols x 6 rows (95 chars, ASCII 32..126)
+  // Sample Font Atlas: 16 cols x 16 rows (1024x1024 texture with 64x64 px cells, ASCII 32..126)
   let charIdx = clamp(i32(charCode) - 32, 0, 94);
   let atlasCol = f32(charIdx % 16);
   let atlasRow = f32(charIdx / 16);
   let atlasUV = vec2<f32>(
     (atlasCol + cellU) / 16.0,
-    (atlasRow + cellV) / 6.0
+    (atlasRow + cellV) / 16.0
   );
 
   let atlasSample = textureSampleLevel(atlasTex, smp, atlasUV, 0.0);

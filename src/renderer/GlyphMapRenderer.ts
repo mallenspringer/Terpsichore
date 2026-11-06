@@ -17,7 +17,7 @@ export class GlyphMapRenderer {
 
   /**
    * Generates or retrieves the 1024x1024 ASCII font atlas texture.
-   * 16 columns x 6 rows = 96 cells of 64x64 px (chars 32..126).
+   * 16 columns x 16 rows of 64x64 px cells (chars 32..126 occupy rows 0..5).
    */
   public getOrCreateAtlas(
     fontFamily = 'VT323',
