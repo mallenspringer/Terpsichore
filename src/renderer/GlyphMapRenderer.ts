@@ -7,6 +7,7 @@ export class GlyphMapRenderer {
   private atlasCanvas: HTMLCanvasElement | null = null;
   private atlasCtx: CanvasRenderingContext2D | null = null;
   private lastAtlasKey = '';
+  private gridCache = new Map<string, { buffer: Uint32Array; key: string }>();
 
   public static getInstance(): GlyphMapRenderer {
     if (!GlyphMapRenderer.instance) {
@@ -77,6 +78,39 @@ export class GlyphMapRenderer {
     }
 
     return { canvas: this.atlasCanvas!, dirty };
+  }
+
+  /**
+   * Pre-computes the 2D character codes for all 8 layers formatted by wrapMode with caching.
+   * Returns { buffer, dirty } so callers only upload to GPU memory when contents change.
+   */
+  public getOrCreateLayerGrid(
+    nodeId: string,
+    layerStrings: string[],
+    wrapMode: GlyphWrapMode,
+    gridCols: number,
+    gridRows: number
+  ): { buffer: Uint32Array; dirty: boolean } {
+    const cols = Math.max(1, Math.floor(gridCols));
+    const rows = Math.max(1, Math.floor(gridRows));
+    const key = `${layerStrings.join('\0')}__${wrapMode}__${cols}__${rows}`;
+
+    const existing = this.gridCache.get(nodeId);
+    if (existing && existing.key === key) {
+      return { buffer: existing.buffer, dirty: false };
+    }
+
+    const buffer = this.buildLayerGrid(layerStrings, wrapMode, cols, rows);
+    this.gridCache.set(nodeId, { buffer, key });
+    return { buffer, dirty: true };
+  }
+
+  public clearGridCache(nodeId?: string) {
+    if (nodeId) {
+      this.gridCache.delete(nodeId);
+    } else {
+      this.gridCache.clear();
+    }
   }
 
   /**

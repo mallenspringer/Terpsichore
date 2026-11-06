@@ -6,6 +6,7 @@
 
 export interface RendererDualCanvas {
   setExternalCanvas(canvas: HTMLCanvasElement | null): boolean;
+  setAnimationHost?(host: Window | null): void;
 }
 
 export class ExternalWindowManager {
@@ -157,6 +158,9 @@ export class ExternalWindowManager {
     if (this.renderer && typeof this.renderer.setExternalCanvas === 'function') {
       try {
         webgpuConfigured = this.renderer.setExternalCanvas(canvasEl);
+        if (webgpuConfigured && typeof this.renderer.setAnimationHost === 'function') {
+          this.renderer.setAnimationHost(popup);
+        }
       } catch (err) {
         console.warn('[ExternalWindowManager] WebGPU dual-canvas init error:', err);
       }
@@ -211,6 +215,9 @@ export class ExternalWindowManager {
     }
     if (this.renderer) {
       try {
+        if (typeof this.renderer.setAnimationHost === 'function') {
+          this.renderer.setAnimationHost(null);
+        }
         this.renderer.setExternalCanvas(null);
       } catch (e) {}
       this.renderer = null;

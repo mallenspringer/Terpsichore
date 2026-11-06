@@ -159,11 +159,35 @@ export class Renderer {
 
   private externalCanvas: HTMLCanvasElement | null = null;
   private externalContext: GPUCanvasContext | null = null;
+  private animationHost: Window | null = null;
+
+  public setAnimationHost(host: Window | null): void {
+    if (this.animationHost === host) return;
+
+    if (this.animationFrameId) {
+      try {
+        if (this.animationHost && !this.animationHost.closed && typeof this.animationHost.cancelAnimationFrame === 'function') {
+          this.animationHost.cancelAnimationFrame(this.animationFrameId);
+        } else if (typeof window.cancelAnimationFrame === 'function') {
+          window.cancelAnimationFrame(this.animationFrameId);
+        }
+      } catch (e) {}
+      this.animationFrameId = 0;
+    }
+
+    this.animationHost = host;
+
+    if (this.isRunning) {
+      const sched = (this.animationHost && !this.animationHost.closed) ? this.animationHost : window;
+      this.animationFrameId = sched.requestAnimationFrame(this.renderLoop);
+    }
+  }
 
   public setExternalCanvas(canvas: HTMLCanvasElement | null): boolean {
     if (!canvas) {
       this.externalCanvas = null;
       this.externalContext = null;
+      this.setAnimationHost(null);
       return true;
     }
 
@@ -866,6 +890,9 @@ export class Renderer {
     });
   }
 
+  private storageBufferGenerations = new Map<string, number>();
+  private glyphGridUploadedGenerations = new Map<string, number>();
+
   private getStorageBuffer(key: string, size: number): GPUBuffer {
     let buf = this.storageBuffers.get(key);
     if (!buf || buf.size < size) {
@@ -875,6 +902,7 @@ export class Renderer {
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
       });
       this.storageBuffers.set(key, buf);
+      this.storageBufferGenerations.set(key, (this.storageBufferGenerations.get(key) || 0) + 1);
     }
     return buf;
   }
@@ -1022,7 +1050,8 @@ export class Renderer {
   private renderLoop = () => {
     if (!this.isRunning) return;
     this.render();
-    this.animationFrameId = requestAnimationFrame(this.renderLoop);
+    const sched = (this.animationHost && !this.animationHost.closed) ? this.animationHost : window;
+    this.animationFrameId = sched.requestAnimationFrame(this.renderLoop);
   }
 
   private frameCount = 0;
@@ -1716,11 +1745,12 @@ export class Renderer {
                 { binding: 2, resource: this.sampler }
               ];
 
+              const isMatteConnected = (layer.graph?.edges || []).some(c => c.fromNodeId === nodeId && c.fromPort === 'matte_out');
               const matteTex = this.ensureTexture(nodeId, 'matte_out');
               const pass = commandEncoder.beginRenderPass({
                 colorAttachments: [
                   { view: target.createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' },
-                  { view: matteTex.createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' }
+                  { view: matteTex.createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: isMatteConnected ? 'store' : 'discard' }
                 ]
               });
               const layout = this.effectLayouts.get(effect.type) || pipeline.getBindGroupLayout(0);
@@ -1853,15 +1883,23 @@ export class Renderer {
                 else if (ef.scrollDirection === 'down') scrollY = dist;
               }
 
-              // 6. Build and upload Grid Storage Buffer
-              const gridData = GlyphMapRenderer.getInstance().buildLayerGrid(
+              // 6. Build and upload Grid Storage Buffer (memoized & cached)
+              const { buffer: gridData, dirty: gridDirty } = GlyphMapRenderer.getInstance().getOrCreateLayerGrid(
+                nodeId,
                 layerStrings,
                 ef.wrapMode ?? 'raw_char',
                 gridCols,
                 gridRows
               );
-              const storageBuf = this.getStorageBuffer(`${nodeId}.grid_storage`, gridData.byteLength);
-              this.device.queue.writeBuffer(storageBuf, 0, gridData as any);
+              const storageBufKey = `${nodeId}.grid_storage`;
+              const storageBuf = this.getStorageBuffer(storageBufKey, gridData.byteLength);
+              const currentGen = this.storageBufferGenerations.get(storageBufKey) || 0;
+              const lastGen = this.glyphGridUploadedGenerations.get(nodeId);
+
+              if (gridDirty || lastGen !== currentGen) {
+                this.device.queue.writeBuffer(storageBuf, 0, gridData as any);
+                this.glyphGridUploadedGenerations.set(nodeId, currentGen);
+              }
 
               // 7. Uniforms Float32Array(96)
               const f32 = new Float32Array(96);
@@ -1979,11 +2017,12 @@ export class Renderer {
                 { binding: 5, resource: this.sampler }
               ];
 
+              const isMatteConnected = (layer.graph?.edges || []).some(c => c.fromNodeId === nodeId && c.fromPort === 'matte_out');
               const matteTex = this.ensureTexture(nodeId, 'matte_out');
               const pass = commandEncoder.beginRenderPass({
                 colorAttachments: [
                   { view: target.createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' },
-                  { view: matteTex.createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' }
+                  { view: matteTex.createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: isMatteConnected ? 'store' : 'discard' }
                 ]
               });
               const layout = this.effectLayouts.get(effect.type) || pipeline.getBindGroupLayout(0);
@@ -2067,11 +2106,12 @@ export class Renderer {
                 { binding: 2, resource: this.sampler }
               ];
 
+              const isMatteConnected = (layer.graph?.edges || []).some(c => c.fromNodeId === nodeId && c.fromPort === 'matte_out');
               const matteTex = this.ensureTexture(nodeId, 'matte_out');
               const pass = commandEncoder.beginRenderPass({
                 colorAttachments: [
                   { view: target.createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' },
-                  { view: matteTex.createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' }
+                  { view: matteTex.createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: isMatteConnected ? 'store' : 'discard' }
                 ]
               });
               const layout = this.effectLayouts.get(effect.type) || pipeline.getBindGroupLayout(0);
@@ -2622,11 +2662,17 @@ export class Renderer {
       });
     });
 
-    const canvasPass = commandEncoder.beginRenderPass({ colorAttachments: [{ view: this.context.getCurrentTexture().createView(), clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 }, loadOp: 'clear', storeOp: 'store' }] });
-    const finalBlitBindGroup = this.device.createBindGroup({ layout: this.blitPipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: this.masterFBO.createView() }, { binding: 1, resource: this.sampler }] });
-    canvasPass.setPipeline(this.blitPipeline); canvasPass.setBindGroup(0, finalBlitBindGroup); canvasPass.draw(3); canvasPass.end();
+    const finalBlitBindGroup = this.device.createBindGroup({
+      layout: this.blitPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: this.masterFBO.createView() },
+        { binding: 1, resource: this.sampler }
+      ]
+    });
 
     if (this.externalContext && this.externalCanvas) {
+      // Priority 1: External Show Output (Projector / Secondary Device)
+      // Rendered directly from masterFBO and submitted to GPU queue immediately with highest priority.
       try {
         const extCanvasPass = commandEncoder.beginRenderPass({
           colorAttachments: [{
@@ -2643,9 +2689,47 @@ export class Renderer {
       } catch (err) {
         // External canvas may be resizing or detached
       }
-    }
 
-    this.device.queue.submit([commandEncoder.finish()]);
+      this.device.queue.submit([commandEncoder.finish()]);
+
+      // Priority 2: Workspace Preview
+      // Rendered on an independent command buffer so DXGI presentation locks between monitors
+      // are completely decoupled. The workspace preview never stalls the external show output.
+      try {
+        const previewEncoder = this.device.createCommandEncoder();
+        const canvasPass = previewEncoder.beginRenderPass({
+          colorAttachments: [{
+            view: this.context.getCurrentTexture().createView(),
+            clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
+            loadOp: 'clear',
+            storeOp: 'store'
+          }]
+        });
+        canvasPass.setPipeline(this.blitPipeline);
+        canvasPass.setBindGroup(0, finalBlitBindGroup);
+        canvasPass.draw(3);
+        canvasPass.end();
+        this.device.queue.submit([previewEncoder.finish()]);
+      } catch (err) {
+        // Main canvas error or resizing
+      }
+    } else {
+      // Standard Single-Display Presentation
+      const canvasPass = commandEncoder.beginRenderPass({
+        colorAttachments: [{
+          view: this.context.getCurrentTexture().createView(),
+          clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
+          loadOp: 'clear',
+          storeOp: 'store'
+        }]
+      });
+      canvasPass.setPipeline(this.blitPipeline);
+      canvasPass.setBindGroup(0, finalBlitBindGroup);
+      canvasPass.draw(3);
+      canvasPass.end();
+
+      this.device.queue.submit([commandEncoder.finish()]);
+    }
 
     // Defer mapAsync until AFTER queue submission to prevent GPU pipeline stall
     pendingReadbacks.forEach(({ buf, key }) => {
@@ -2666,7 +2750,12 @@ export class Renderer {
     this.isRunning = false;
     this.externalCanvas = null;
     this.externalContext = null;
-    cancelAnimationFrame(this.animationFrameId);
+    if (this.animationHost && !this.animationHost.closed && typeof this.animationHost.cancelAnimationFrame === 'function') {
+      try { this.animationHost.cancelAnimationFrame(this.animationFrameId); } catch (e) {}
+    } else if (typeof cancelAnimationFrame === 'function') {
+      try { cancelAnimationFrame(this.animationFrameId); } catch (e) {}
+    }
+    this.animationHost = null;
     if (this.masterFBO) this.masterFBO.destroy();
     if (this.layerFBO_A) this.layerFBO_A.destroy();
     if (this.layerFBO_B) this.layerFBO_B.destroy();

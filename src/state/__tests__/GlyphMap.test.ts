@@ -181,6 +181,39 @@ describe('GlyphMap (ASCII Synthesis & Typographic Cel-Shading) Module', () => {
     expect(grid[11]).toBe('D'.charCodeAt(0));
   });
 
+  it('getOrCreateLayerGrid caches grid buffers and flags dirty only when contents change', () => {
+    const renderer = GlyphMapRenderer.getInstance();
+    renderer.clearGridCache('test-node-1');
+
+    const strings = ['ABC', 'DEF'];
+    const r1 = renderer.getOrCreateLayerGrid('test-node-1', strings, 'raw_char', 10, 5);
+    expect(r1.dirty).toBe(true);
+    expect(r1.buffer).toBeInstanceOf(Uint32Array);
+
+    // Identical parameters -> dirty: false and returns identical buffer reference without re-allocating
+    const r2 = renderer.getOrCreateLayerGrid('test-node-1', strings, 'raw_char', 10, 5);
+    expect(r2.dirty).toBe(false);
+    expect(r2.buffer).toBe(r1.buffer);
+
+    // Changed strings -> dirty: true
+    const r3 = renderer.getOrCreateLayerGrid('test-node-1', ['XYZ'], 'raw_char', 10, 5);
+    expect(r3.dirty).toBe(true);
+    expect(r3.buffer).not.toBe(r1.buffer);
+
+    // Changed wrapMode -> dirty: true
+    const r4 = renderer.getOrCreateLayerGrid('test-node-1', ['XYZ'], 'word', 10, 5);
+    expect(r4.dirty).toBe(true);
+
+    // Changed dimensions -> dirty: true
+    const r5 = renderer.getOrCreateLayerGrid('test-node-1', ['XYZ'], 'word', 20, 5);
+    expect(r5.dirty).toBe(true);
+
+    // Clear cache -> dirty: true
+    renderer.clearGridCache('test-node-1');
+    const r6 = renderer.getOrCreateLayerGrid('test-node-1', ['XYZ'], 'word', 20, 5);
+    expect(r6.dirty).toBe(true);
+  });
+
   it('SignalDispatcher propagates video_out and matte_out signals for GlyphMap', () => {
     const dispatcher = SignalDispatcher.getInstance();
     const gmEffect = createDefaultEffect('GlyphMap', 'glyph-test') as GlyphMapEffect;
