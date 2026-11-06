@@ -551,7 +551,7 @@ export const PORT_DEFS: Record<string, PortDef[]> = {
     { id: 'width_cv',       label: 'Width CV',      direction: 'in',  signalType: 'modulation', priority: 2, bipolar: true },
     { id: 'thresh_cv',      label: 'Thresh CV',     direction: 'in',  signalType: 'modulation', priority: 3, bipolar: true },
     { id: 'smooth_cv',      label: 'Smooth CV',     direction: 'in',  signalType: 'modulation', priority: 4 },
-    { id: 'pulse_cv',       label: 'Pulse CV',      direction: 'in',  signalType: 'modulation', priority: 5, bipolar: true },
+    { id: 'pulse_cv',       label: 'Bulge CV',      direction: 'in',  signalType: 'modulation', priority: 5, bipolar: true },
     { id: 'pulse_speed_cv', label: 'Spd CV',        direction: 'in',  signalType: 'modulation', priority: 6, bipolar: true },
     { id: 'video_out',      label: 'Video Out',     direction: 'out', signalType: 'video',      priority: 0 },
     { id: 'matte_out',      label: 'Matte Out',     direction: 'out', signalType: 'video',      priority: 1 },

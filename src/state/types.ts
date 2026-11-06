@@ -1032,7 +1032,7 @@ export interface ChromaBandsEffect {
 export type OutlineEdgeMode = 'luma_bands' | 'chroma_bands' | 'focus_peaking' | 'manga_dog' | 'analog_diff';
 export type OutlineBgMode = 'over_video_ink' | 'over_video_neon' | 'lines_transparent' | 'lines_black';
 export type OutlineColorMode = 'custom' | 'palette_in' | 'sample_video';
-export type OutlinePulseMode = 'contour' | 'radial' | 'horizontal' | 'vertical';
+export type OutlinePulseMode = 'local_edge' | 'contour' | 'radial' | 'horizontal' | 'vertical';
 
 export interface OutlineEffect {
   id: string;

@@ -133,16 +133,28 @@ fn getPulseMultiplier(uv: vec2<f32>, approxAngle: f32) -> f32 {
 
   var phase = 0.0;
   if (mode == 0) {
-    // Contour Flow: travels around silhouette / contour perimeter
+    // Local Edge Flow: projects coordinate along local tangent vector and normal angle (zero center pole)
+    let dLumaX = rgbToRec709Luma(textureSampleLevel(videoTex, smp, uv + vec2<f32>(0.002, 0.0), 0.0).rgb)
+               - rgbToRec709Luma(textureSampleLevel(videoTex, smp, uv - vec2<f32>(0.002, 0.0), 0.0).rgb);
+    let dLumaY = rgbToRec709Luma(textureSampleLevel(videoTex, smp, uv + vec2<f32>(0.0, 0.002), 0.0).rgb)
+               - rgbToRec709Luma(textureSampleLevel(videoTex, smp, uv - vec2<f32>(0.0, 0.002), 0.0).rgb);
+    let gLen = max(0.0001, sqrt(dLumaX * dLumaX + dLumaY * dLumaY));
+    let tx = -dLumaY / gLen;
+    let ty = dLumaX / gLen;
+    let s = (uv.x - 0.5) * tx * aspect + (uv.y - 0.5) * ty;
+    let localAngle = atan2(dLumaY, dLumaX);
+    phase = (s * 10.0 + localAngle * 0.75) * freq + time * 6.28318;
+  } else if (mode == 1) {
+    // Orbital Flow: travels around center-referenced angular pole
     let p = uv - vec2<f32>(0.5, 0.5);
     let polar = atan2(p.y, p.x * aspect);
     phase = (polar + approxAngle * 0.5) * freq + time * 6.28318;
-  } else if (mode == 1) {
+  } else if (mode == 2) {
     // Radial Ripple: concentric rings radiating from center
     let p = uv - vec2<f32>(0.5, 0.5);
     let r = length(vec2<f32>(p.x * aspect, p.y));
     phase = r * freq * 12.56637 - time * 6.28318;
-  } else if (mode == 2) {
+  } else if (mode == 3) {
     // Horizontal Sweep: left to right
     phase = uv.x * freq * 6.28318 - time * 6.28318;
   } else {

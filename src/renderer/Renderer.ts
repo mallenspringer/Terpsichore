@@ -2194,8 +2194,8 @@ export class Renderer {
               const basePulseSpeed = ef.pulseSpeed ?? 1.0;
               const pulseSpeed = this.getEffectiveParam(layer, ef.id, 'pulse_speed_cv', basePulseSpeed, timeSec);
               const pulseFreq = Math.max(0.2, Math.min(20.0, ef.pulseFreq ?? 3.0));
-              const pulseModeMap: Record<string, number> = { contour: 0, radial: 1, horizontal: 2, vertical: 3 };
-              const pulseModeVal = pulseModeMap[ef.pulseMode ?? 'contour'] ?? 0;
+              const pulseModeMap: Record<string, number> = { local_edge: 0, contour: 1, radial: 2, horizontal: 3, vertical: 4 };
+              const pulseModeVal = pulseModeMap[ef.pulseMode ?? 'local_edge'] ?? 0;
 
               f32[12] = pulseAmount;
               f32[13] = pulseSpeed;

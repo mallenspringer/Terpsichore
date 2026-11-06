@@ -287,7 +287,8 @@ export const OutlineNodeUI: React.FC<OutlineNodeUIProps> = ({
                   outline: 'none'
                 }}
               >
-                <option value="contour">Contour Flow (Perimeters)</option>
+                <option value="local_edge">Local Edge Flow (Tangent)</option>
+                <option value="contour">Orbital Flow (Center-Referenced)</option>
                 <option value="radial">Radial Ripple (Expanding Rings)</option>
                 <option value="horizontal">Horizontal Sweep (Left to Right)</option>
                 <option value="vertical">Vertical Sweep (Top to Bottom)</option>

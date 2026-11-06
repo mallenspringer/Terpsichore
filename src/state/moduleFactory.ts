@@ -590,7 +590,7 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
         pulseAmount: 1.5,
         pulseSpeed: 1.0,
         pulseFreq: 3.0,
-        pulseMode: 'contour'
+        pulseMode: 'local_edge'
       };
 
     default:

@@ -65,7 +65,7 @@ describe('Outline (Contour & Edge Synthesizer) Module', () => {
     expect(ef.pulseAmount).toBe(1.5);
     expect(ef.pulseSpeed).toBe(1.0);
     expect(ef.pulseFreq).toBe(3.0);
-    expect(ef.pulseMode).toBe('contour');
+    expect(ef.pulseMode).toBe('local_edge');
   });
 
   it('exposes all required ports in PORT_DEFS (video_in, palette_in, width_cv, thresh_cv, smooth_cv, pulse_cv, pulse_speed_cv, video_out, matte_out)', () => {
@@ -81,6 +81,9 @@ describe('Outline (Contour & Edge Synthesizer) Module', () => {
     expect(portIds).toContain('pulse_speed_cv');
     expect(portIds).toContain('video_out');
     expect(portIds).toContain('matte_out');
+
+    const pulsePort = ports.find(p => p.id === 'pulse_cv');
+    expect(pulsePort?.label).toBe('Bulge CV');
   });
 
   it('registers in Effects category with contour and edge tags in moduleRegistry', () => {
@@ -153,6 +156,7 @@ describe('Outline (Contour & Edge Synthesizer) Module', () => {
     });
 
     const validPulseModes: OutlinePulseMode[] = [
+      'local_edge',
       'contour',
       'radial',
       'horizontal',
