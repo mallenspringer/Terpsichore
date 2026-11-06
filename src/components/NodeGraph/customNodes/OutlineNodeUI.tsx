@@ -1,6 +1,6 @@
 import React from 'react';
 import { useEngineStore } from '../../../state/store';
-import { OutlineEffect, OutlineEdgeMode, OutlineBgMode, OutlineColorMode } from '../../../state/types';
+import { OutlineEffect, OutlineEdgeMode, OutlineBgMode, OutlineColorMode, OutlinePulseMode } from '../../../state/types';
 
 interface OutlineNodeUIProps {
   layerId: string;
@@ -44,6 +44,11 @@ export const OutlineNodeUI: React.FC<OutlineNodeUIProps> = ({
   const colorMode = effect.colorMode || 'custom';
   const analogDirection = effect.analogDirection || 'horizontal';
   const lineColor = effect.lineColor || [0, 0, 0, 1];
+  const pulseActive = !!effect.pulseActive;
+  const pulseAmount = effect.pulseAmount ?? 1.5;
+  const pulseSpeed = effect.pulseSpeed ?? 1.0;
+  const pulseFreq = effect.pulseFreq ?? 3.0;
+  const pulseMode = effect.pulseMode || 'contour';
 
   const isBandedMode = edgeMode === 'luma_bands' || edgeMode === 'chroma_bands';
 
@@ -239,6 +244,109 @@ export const OutlineNodeUI: React.FC<OutlineNodeUIProps> = ({
             />
           )}
         </div>
+      </div>
+
+      {/* Traveling Pulse / Bulge Animation */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '6px', background: '#141414', borderRadius: '4px', border: '1px solid #282828' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: '10px', color: '#00ff88', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600 }}>
+            Traveling Pulse
+          </span>
+          <button
+            onClick={() => handleUpdate({ pulseActive: !pulseActive })}
+            style={{
+              padding: '2px 8px',
+              fontSize: '9px',
+              fontWeight: 600,
+              background: pulseActive ? '#00ff88' : '#222',
+              color: pulseActive ? '#000' : '#888',
+              border: pulseActive ? '1px solid #00ff88' : '1px solid #444',
+              borderRadius: '3px',
+              cursor: 'pointer'
+            }}
+          >
+            {pulseActive ? 'ACTIVE' : 'OFF'}
+          </button>
+        </div>
+
+        {pulseActive && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '2px' }}>
+            {/* Pulse Mode */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+              <span style={{ fontSize: '9px', color: '#888' }}>Travel Trajectory</span>
+              <select
+                value={pulseMode}
+                onChange={e => handleUpdate({ pulseMode: e.target.value as OutlinePulseMode })}
+                style={{
+                  background: '#1a1a1a',
+                  color: '#fff',
+                  border: '1px solid #333',
+                  borderRadius: '3px',
+                  padding: '3px 5px',
+                  fontSize: '10px',
+                  outline: 'none'
+                }}
+              >
+                <option value="contour">Contour Flow (Perimeters)</option>
+                <option value="radial">Radial Ripple (Expanding Rings)</option>
+                <option value="horizontal">Horizontal Sweep (Left to Right)</option>
+                <option value="vertical">Vertical Sweep (Top to Bottom)</option>
+              </select>
+            </div>
+
+            {/* Bulge Intensity */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#aaa' }}>
+                <span>Bulge Scale</span>
+                <span style={{ color: '#00ff88' }}>+{Math.round(pulseAmount * 100)}%</span>
+              </div>
+              <input
+                type="range"
+                min={0.1}
+                max={4.0}
+                step={0.1}
+                value={pulseAmount}
+                onChange={e => handleUpdate({ pulseAmount: parseFloat(e.target.value) })}
+                style={{ width: '100%', accentColor: '#00ff88' }}
+              />
+            </div>
+
+            {/* Speed & Frequency */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#aaa' }}>
+                  <span>Speed</span>
+                  <span style={{ color: '#00ff88' }}>{pulseSpeed.toFixed(1)}x</span>
+                </div>
+                <input
+                  type="range"
+                  min={-4.0}
+                  max={4.0}
+                  step={0.2}
+                  value={pulseSpeed}
+                  onChange={e => handleUpdate({ pulseSpeed: parseFloat(e.target.value) })}
+                  style={{ width: '100%', accentColor: '#00ff88' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#aaa' }}>
+                  <span>Density</span>
+                  <span style={{ color: '#00ff88' }}>{pulseFreq.toFixed(1)}</span>
+                </div>
+                <input
+                  type="range"
+                  min={0.5}
+                  max={10.0}
+                  step={0.5}
+                  value={pulseFreq}
+                  onChange={e => handleUpdate({ pulseFreq: parseFloat(e.target.value) })}
+                  style={{ width: '100%', accentColor: '#00ff88' }}
+                />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Background / Output Mode */}

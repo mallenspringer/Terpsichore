@@ -74,3 +74,4 @@ describe('NoiseSource (Noise Gen) Module', () => {
     expect(NoiseSourceFragmentWGSL).toContain('fn fs_main(');
   });
 });
+

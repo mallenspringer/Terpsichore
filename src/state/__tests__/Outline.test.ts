@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useEngineStore } from '../store';
 import { createDefaultEffect, createDefaultSource } from '../moduleFactory';
-import { OutlineEffect } from '../types';
+import { OutlineEffect, OutlinePulseMode } from '../types';
 import { PORT_DEFS } from '../../components/NodeGraph/portDefs';
 import { ALL_MODULES } from '../../components/ModuleCatalog/moduleRegistry';
 import { SignalDispatcher } from '../SignalDispatcher';
+import { OutlineWGSL } from '../../renderer/shaders/Outline';
 
 const mockAudioEngine = {
   getPeakVolume: () => 0,
@@ -60,9 +61,14 @@ describe('Outline (Contour & Edge Synthesizer) Module', () => {
     expect(ef.spatialSmoothing).toBe(0.2);
     expect(ef.analogDirection).toBe('horizontal');
     expect(ef.usePaletteIn).toBe(true);
+    expect(ef.pulseActive).toBe(false);
+    expect(ef.pulseAmount).toBe(1.5);
+    expect(ef.pulseSpeed).toBe(1.0);
+    expect(ef.pulseFreq).toBe(3.0);
+    expect(ef.pulseMode).toBe('contour');
   });
 
-  it('exposes all required ports in PORT_DEFS (video_in, palette_in, width_cv, thresh_cv, smooth_cv, video_out, matte_out)', () => {
+  it('exposes all required ports in PORT_DEFS (video_in, palette_in, width_cv, thresh_cv, smooth_cv, pulse_cv, pulse_speed_cv, video_out, matte_out)', () => {
     const ports = PORT_DEFS.Outline;
     expect(ports).toBeDefined();
     const portIds = ports.map(p => p.id);
@@ -71,6 +77,8 @@ describe('Outline (Contour & Edge Synthesizer) Module', () => {
     expect(portIds).toContain('width_cv');
     expect(portIds).toContain('thresh_cv');
     expect(portIds).toContain('smooth_cv');
+    expect(portIds).toContain('pulse_cv');
+    expect(portIds).toContain('pulse_speed_cv');
     expect(portIds).toContain('video_out');
     expect(portIds).toContain('matte_out');
   });
@@ -143,5 +151,22 @@ describe('Outline (Contour & Edge Synthesizer) Module', () => {
       ef.bgMode = bg;
       expect(ef.bgMode).toBe(bg);
     });
+
+    const validPulseModes: OutlinePulseMode[] = [
+      'contour',
+      'radial',
+      'horizontal',
+      'vertical'
+    ];
+    validPulseModes.forEach(pm => {
+      ef.pulseMode = pm;
+      expect(ef.pulseMode).toBe(pm);
+    });
+  });
+
+  it('WGSL shader declares params3 for traveling pulse and contains getPulseMultiplier', () => {
+    expect(OutlineWGSL).toContain('params3: vec4<f32>');
+    expect(OutlineWGSL).toContain('fn getPulseMultiplier(');
+    expect(OutlineWGSL).toContain('let pulseMul = getPulseMultiplier(uv, approxAngle);');
   });
 });

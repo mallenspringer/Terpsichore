@@ -6,8 +6,10 @@ struct OutlineUniforms {
   params0: vec4<f32>,
   // params1: x = bgMode (0..3), y = colorMode (0..2), z = threshold (0..1), w = aspect (w/h)
   params1: vec4<f32>,
-  // params2: x = timeSec, y = spatialSmoothing (0..1), z = analogDirection (0 = horiz, 1 = vert), w = unused
+  // params2: x = timeSec, y = spatialSmoothing (0..1), z = analogDirection (0 = horiz, 1 = vert), w = pulseActive (0 or 1)
   params2: vec4<f32>,
+  // params3: x = pulseAmount (0..4), y = pulseSpeed (-5..5), z = pulseFreq (0.2..12), w = pulseMode (0..3)
+  params3: vec4<f32>,
   // lineColor: RGBA
   lineColor: vec4<f32>,
   // 8 Palette Colors
@@ -115,12 +117,56 @@ struct DetectionResult {
   angle: f32,      // Gradient tangent angle theta in radians (-PI..PI)
 };
 
+fn getPulseMultiplier(uv: vec2<f32>, approxAngle: f32) -> f32 {
+  if (u.params2.w < 0.5) {
+    return 1.0;
+  }
+  let amount = max(0.0, u.params3.x);
+  if (amount <= 0.001) {
+    return 1.0;
+  }
+  let speed = u.params3.y;
+  let freq = max(0.2, u.params3.z);
+  let mode = i32(u.params3.w + 0.5);
+  let time = u.params2.x * speed;
+  let aspect = max(0.1, u.params1.w);
+
+  var phase = 0.0;
+  if (mode == 0) {
+    // Contour Flow: travels around silhouette / contour perimeter
+    let p = uv - vec2<f32>(0.5, 0.5);
+    let polar = atan2(p.y, p.x * aspect);
+    phase = (polar + approxAngle * 0.5) * freq + time * 6.28318;
+  } else if (mode == 1) {
+    // Radial Ripple: concentric rings radiating from center
+    let p = uv - vec2<f32>(0.5, 0.5);
+    let r = length(vec2<f32>(p.x * aspect, p.y));
+    phase = r * freq * 12.56637 - time * 6.28318;
+  } else if (mode == 2) {
+    // Horizontal Sweep: left to right
+    phase = uv.x * freq * 6.28318 - time * 6.28318;
+  } else {
+    // Vertical Sweep: top to bottom
+    phase = uv.y * freq * 6.28318 - time * 6.28318;
+  }
+
+  // Graduated wave profile: cosine squared for smooth bell swell
+  let wave = cos(phase) * 0.5 + 0.5;
+  let bell = wave * wave;
+  return 1.0 + amount * bell;
+}
+
 fn detectEdges(uv: vec2<f32>) -> DetectionResult {
   let edgeMode = i32(u.params0.x + 0.5);
   let bandCount = clamp(i32(u.params0.y + 0.5), 2, 8);
-  let lineWidth = max(0.5, u.params0.z);
+  let baseLineWidth = max(0.5, u.params0.z);
   let aspect = max(0.1, u.params1.w);
   let thresh = max(0.01, u.params1.z);
+
+  let pVec = uv - vec2<f32>(0.5, 0.5);
+  let approxAngle = atan2(pVec.y, pVec.x * aspect);
+  let pulseMul = getPulseMultiplier(uv, approxAngle);
+  let lineWidth = baseLineWidth * pulseMul;
 
   let rad = lineWidth * 0.0016;
   let dx = rad / aspect;

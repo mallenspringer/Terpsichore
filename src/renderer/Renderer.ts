@@ -2138,10 +2138,10 @@ export class Renderer {
           } else if (effect.type === 'Outline') {
               pipeline = this.outlinePipeline;
               const ef = effect as OutlineEffect;
-              const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 192);
+              const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 256);
               const pal = this.getConnectedPalette(layer, nodeId, 'palette_in');
 
-              const f32 = new Float32Array(48);
+              const f32 = new Float32Array(64);
 
               let edgeModeVal = 0; // luma_bands
               if (ef.edgeMode === 'chroma_bands') edgeModeVal = 1;
@@ -2182,24 +2182,38 @@ export class Renderer {
               const smoothing = Math.max(0, Math.min(1.0, this.getEffectiveParam(layer, ef.id, 'smooth_cv', ef.spatialSmoothing ?? 0.2, timeSec)));
               const analogDirVal = ef.analogDirection === 'vertical' ? 1.0 : 0.0;
 
-              // params2: [timeSec, spatialSmoothing, analogDirection, unused]
+              // params2: [timeSec, spatialSmoothing, analogDirection, pulseActive]
               f32[8] = timeSec;
               f32[9] = smoothing;
               f32[10] = analogDirVal;
-              f32[11] = 0.0;
+              f32[11] = ef.pulseActive ? 1.0 : 0.0;
 
-              // lineColor: RGBA (offset 12..15)
+              // params3: [pulseAmount, pulseSpeed, pulseFreq, pulseMode]
+              const basePulseAmount = ef.pulseAmount ?? 1.5;
+              const pulseAmount = Math.max(0.0, Math.min(6.0, this.getEffectiveParam(layer, ef.id, 'pulse_cv', basePulseAmount, timeSec)));
+              const basePulseSpeed = ef.pulseSpeed ?? 1.0;
+              const pulseSpeed = this.getEffectiveParam(layer, ef.id, 'pulse_speed_cv', basePulseSpeed, timeSec);
+              const pulseFreq = Math.max(0.2, Math.min(20.0, ef.pulseFreq ?? 3.0));
+              const pulseModeMap: Record<string, number> = { contour: 0, radial: 1, horizontal: 2, vertical: 3 };
+              const pulseModeVal = pulseModeMap[ef.pulseMode ?? 'contour'] ?? 0;
+
+              f32[12] = pulseAmount;
+              f32[13] = pulseSpeed;
+              f32[14] = pulseFreq;
+              f32[15] = pulseModeVal;
+
+              // lineColor: RGBA (offset 16..19)
               const lc = ef.lineColor || [0, 0, 0, 1];
-              f32[12] = lc[0]; f32[13] = lc[1]; f32[14] = lc[2]; f32[15] = lc[3] ?? 1.0;
+              f32[16] = lc[0]; f32[17] = lc[1]; f32[18] = lc[2]; f32[19] = lc[3] ?? 1.0;
 
-              // 8 Palette Colors (offset 16..47)
+              // 8 Palette Colors (offset 20..51)
               for (let i = 0; i < 8; i++) {
                 let c = DEFAULT_LUMA_PALETTE[i];
                 if (pal && ef.usePaletteIn !== false && pal.colors.length > 0) {
                   const pc = pal.colors[i % pal.colors.length];
                   c = [pc[0], pc[1], pc[2], pc[3] ?? 1.0];
                 }
-                const base = 16 + i * 4;
+                const base = 20 + i * 4;
                 f32[base] = c[0]; f32[base + 1] = c[1]; f32[base + 2] = c[2]; f32[base + 3] = c[3] ?? 1.0;
               }
 

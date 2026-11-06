@@ -585,7 +585,12 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
         bgMode: 'over_video_ink',
         spatialSmoothing: 0.2,
         analogDirection: 'horizontal',
-        usePaletteIn: true
+        usePaletteIn: true,
+        pulseActive: false,
+        pulseAmount: 1.5,
+        pulseSpeed: 1.0,
+        pulseFreq: 3.0,
+        pulseMode: 'contour'
       };
 
     default:

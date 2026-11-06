@@ -1032,6 +1032,7 @@ export interface ChromaBandsEffect {
 export type OutlineEdgeMode = 'luma_bands' | 'chroma_bands' | 'focus_peaking' | 'manga_dog' | 'analog_diff';
 export type OutlineBgMode = 'over_video_ink' | 'over_video_neon' | 'lines_transparent' | 'lines_black';
 export type OutlineColorMode = 'custom' | 'palette_in' | 'sample_video';
+export type OutlinePulseMode = 'contour' | 'radial' | 'horizontal' | 'vertical';
 
 export interface OutlineEffect {
   id: string;
@@ -1047,6 +1048,13 @@ export interface OutlineEffect {
   spatialSmoothing: number; // 0..1
   analogDirection?: 'horizontal' | 'vertical';
   usePaletteIn?: boolean;
+
+  // Traveling Pulse / Bulge Animation
+  pulseActive?: boolean;
+  pulseAmount?: number;   // 0..4 (graduated bulge scale)
+  pulseSpeed?: number;    // -5..5 Hz
+  pulseFreq?: number;     // 0.5..12 repetitions
+  pulseMode?: OutlinePulseMode;
 }
 
 
