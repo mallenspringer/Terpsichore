@@ -3621,9 +3621,9 @@ export class Renderer {
     const src = (nodeId === 'source' ? layer.source : layer.effects.find(e => e.id === nodeId)) as NoiseVideoSource;
     if (!src) return;
 
-    const noiseTypeMap: Record<string, number> = { white: 0, perlin: 1, simplex: 2, ridged: 3, billow: 4, worley: 5, voronoi: 6, warped: 7 };
-    const uniformBuffer = this.getUniformBuffer(`${layer.id}.${nodeId}.noise_uniforms`, 64);
-    const f32 = new Float32Array(16);
+    const noiseTypeMap: Record<string, number> = { white: 0, perlin: 1, simplex: 2, ridged: 3, billow: 4, worley: 5, voronoi: 6, warped: 7, fbm: 1 };
+    const uniformBuffer = this.getUniformBuffer(`${layer.id}.${nodeId}.noise_uniforms`, 256);
+    const f32 = new Float32Array(64);
 
     f32[0] = this.getEffectiveParam(layer, nodeId, 'scale_cv', src.scale ?? 2.0, timeSec);
     f32[1] = this.getEffectiveParam(layer, nodeId, 'evolution_cv', src.evolution ?? 1.0, timeSec);
@@ -3637,8 +3637,12 @@ export class Renderer {
     const u32 = new Uint32Array(f32.buffer);
     u32[8] = noiseTypeMap[src.noiseType] ?? 0;
     u32[9] = src.autoAnimate ? 1 : 0;
-    u32[10] = 0; // Padding
+    u32[10] = 0; // usePalette: 0 (grayscale noise)
     f32[11] = this.canvas.width / this.canvas.height;
+    u32[12] = 0; // paletteCount
+    u32[13] = 0; // interpolation
+    f32[14] = 0; // pad0
+    f32[15] = 0; // pad1
 
     this.device.queue.writeBuffer(uniformBuffer, 0, f32);
 
