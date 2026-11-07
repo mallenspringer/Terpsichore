@@ -3712,7 +3712,17 @@ export class Renderer {
   } | null {
     const edge = layer.graph?.edges.find(e => e.toNodeId === nodeId && e.toPort === portName);
     if (!edge) return null;
-    const paletteEffect = layer.effects.find(e => e.id === edge.fromNodeId) as ColorPaletteEffect | undefined;
+    const fromEffect = layer.effects.find(e => e.id === edge.fromNodeId);
+    if (fromEffect && fromEffect.type === 'OpticalSensor') {
+      const sigs = SignalDispatcher.getInstance().getLatestSignals(layer.id);
+      const r = sigs[`${fromEffect.id}.r_out`] ?? 1.0;
+      const g = sigs[`${fromEffect.id}.g_out`] ?? 1.0;
+      const b = sigs[`${fromEffect.id}.b_out`] ?? 1.0;
+      const colors = [[r, g, b, 1.0], [0, 0, 0, 1], [0, 0, 0, 1], [0, 0, 0, 1], [0, 0, 0, 1], [0, 0, 0, 1], [0, 0, 0, 1], [0, 0, 0, 1]];
+      const positions = new Array(8).fill(0);
+      return { colors, positions, count: 1, interpolation: 0 };
+    }
+    const paletteEffect = fromEffect as ColorPaletteEffect | undefined;
     if (!paletteEffect || paletteEffect.type !== 'ColorPalette' || !paletteEffect.colors || paletteEffect.colors.length === 0) {
       return null;
     }

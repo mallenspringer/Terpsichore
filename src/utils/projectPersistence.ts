@@ -27,6 +27,7 @@ export function exportProject() {
     projectName: state.projectName,
     authorName: state.authorName,
     midiBindings: state.midiBindings,
+    sensorSystem: state.sensorSystem,
   };
 
   // 2. Gather UI Layouts and Bank Config

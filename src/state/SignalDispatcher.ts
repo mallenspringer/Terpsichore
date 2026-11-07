@@ -4,12 +4,14 @@ import {
   SignalMathEffect, SampleAndHoldEffect, StepSequencerEffect, OscilloscopeEffect,
   SpectralSplitterEffect, AlphaAdjustEffect, AudioTransformerEffect, AudioModulatorEffect,
   AudioGateEffect, SpeechEnvelopeTrackerEffect, VocalPitchTrackerEffect, VowelFormantTrackerEffect,
-  SpokenWordVisualizerEffect, AudioToCVEffect, ColorPaletteEffect, ImageCueSource, TextCueSource
+  SpokenWordVisualizerEffect, AudioToCVEffect, ColorPaletteEffect, ImageCueSource, TextCueSource,
+  OpticalSensorEffect
 } from './types';
 import { AudioEngine } from './AudioEngine';
 import { MidiManager } from './MidiManager';
 import { MediaManager } from '../renderer/MediaManager';
 import { ImageCueManager } from '../renderer/ImageCueManager';
+import { SensorEngine } from '../sensor/SensorEngine';
 
 type SignalFunction = (context: DispatchContext, dt: number) => void;
 
@@ -1242,6 +1244,45 @@ export class SignalDispatcher {
                   ctx.signalValues[`${nodeId}.col_${i}_out`] = 0.0;
                 }
               }
+            });
+          } else if (effect.type === 'OpticalSensor') {
+            pipeline.push((ctx: DispatchContext) => {
+              const ef = ctx.layer.effects.find(e => e.id === nodeId) as OpticalSensorEffect;
+              if (!ef) return;
+              const sensorId = ef.sensorId;
+              const gain = ef.gain ?? 1.0;
+              const customThreshold = ef.threshold ?? 0.3;
+
+              const signals = SensorEngine.getInstance().getSensorSignals(sensorId);
+              if (!signals) {
+                ctx.signalValues[`${nodeId}.motion_out`] = 0.0;
+                ctx.signalValues[`${nodeId}.gate_out`] = 0.0;
+                ctx.signalValues[`${nodeId}.trig_out`] = 0.0;
+                ctx.signalValues[`${nodeId}.hue_cv`] = 0.0;
+                ctx.signalValues[`${nodeId}.sat_cv`] = 0.0;
+                ctx.signalValues[`${nodeId}.luma_cv`] = 0.0;
+                ctx.signalValues[`${nodeId}.r_out`] = 0.0;
+                ctx.signalValues[`${nodeId}.g_out`] = 0.0;
+                ctx.signalValues[`${nodeId}.b_out`] = 0.0;
+                ctx.signalValues[`${nodeId}.palette_out`] = 1.0;
+                return;
+              }
+
+              const motion = Math.min(1.0, signals.motion * gain);
+              const gate = ef.threshold !== undefined
+                ? (motion >= customThreshold ? 1.0 : 0.0)
+                : signals.gate;
+
+              ctx.signalValues[`${nodeId}.motion_out`] = motion;
+              ctx.signalValues[`${nodeId}.gate_out`] = gate;
+              ctx.signalValues[`${nodeId}.trig_out`] = signals.trig;
+              ctx.signalValues[`${nodeId}.hue_cv`] = signals.hue;
+              ctx.signalValues[`${nodeId}.sat_cv`] = signals.sat;
+              ctx.signalValues[`${nodeId}.luma_cv`] = signals.luma;
+              ctx.signalValues[`${nodeId}.r_out`] = signals.r;
+              ctx.signalValues[`${nodeId}.g_out`] = signals.g;
+              ctx.signalValues[`${nodeId}.b_out`] = signals.b;
+              ctx.signalValues[`${nodeId}.palette_out`] = 1.0;
             });
           }
         }

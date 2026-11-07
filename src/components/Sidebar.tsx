@@ -112,9 +112,10 @@ interface SidebarProps {
   activeLayerId: string | null;
   onSelectLayer: (id: string) => void;
   onOpenMidiModal?: () => void;
+  onOpenSensorModal?: () => void;
 }
 
-export function Sidebar({ activeLayerId, onSelectLayer, onOpenMidiModal }: SidebarProps) {
+export function Sidebar({ activeLayerId, onSelectLayer, onOpenMidiModal, onOpenSensorModal }: SidebarProps) {
   const layers = useEngineStore(s => s.layers);
   const layerOrder = useEngineStore(s => s.layerOrder);
   const resolution = useEngineStore(s => s.resolution);
@@ -463,6 +464,26 @@ export function Sidebar({ activeLayerId, onSelectLayer, onOpenMidiModal }: Sideb
             }}
           >
             🔌 OVERLAYS: {midiOverlayActive ? 'ON' : 'OFF'}
+          </button>
+        </div>
+        <div className="sb-resolution-row" style={{ marginTop: 4 }}>
+          <button 
+            onClick={onOpenSensorModal}
+            style={{ 
+              width: '100%', 
+              background: '#0d2b30', 
+              color: '#00e5ff', 
+              border: '1px solid currentColor', 
+              borderRadius: 3, 
+              cursor: 'pointer', 
+              fontSize: 10, 
+              padding: '4px 0', 
+              fontFamily: 'inherit', 
+              fontWeight: 'bold',
+              letterSpacing: '0.5px'
+            }}
+          >
+            🎯 SENSOR ZONES
           </button>
         </div>
       </SbSection>

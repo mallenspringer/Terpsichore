@@ -168,6 +168,15 @@ export const ALL_MODULES: ModuleEntry[] = [
     tags: ['audio', 'envelope', 'rms', 'peak', 'modulation', 'gate', 'amplitude', 'cv', 'reactive']
   },
   {
+    id: 'OpticalSensor',
+    glyph: '🎯',
+    label: 'Optical Sensor',
+    tooltip: 'Webcam Motion & Chrominance Optical Sensor Channel',
+    category: 'Utility',
+    moduleType: 'effect:OpticalSensor',
+    tags: ['sensor', 'optical', 'camera', 'webcam', 'motion', 'tripwire', 'color', 'tracking', 'cv', 'trigger', 'gate']
+  },
+  {
     id: 'VideoMixer',
     glyph: '⧉',
     label: 'Mixer',

@@ -24,6 +24,7 @@ import {
   ChromaBandsNodeUI,
   GlyphMapNodeUI,
   OutlineNodeUI,
+  OpticalSensorNodeUI,
 } from './customNodes';
 
 
@@ -754,6 +755,14 @@ export function ModuleNode({
           )}
           {moduleType === 'Outline' && (
             <OutlineNodeUI
+              nodeId={nodeId}
+              layerId={layerId}
+              effect={((rowCtx as any).effect || (rowCtx as any).source) as any}
+              rowCtx={rowCtx}
+            />
+          )}
+          {moduleType === 'OpticalSensor' && (
+            <OpticalSensorNodeUI
               nodeId={nodeId}
               layerId={layerId}
               effect={((rowCtx as any).effect || (rowCtx as any).source) as any}

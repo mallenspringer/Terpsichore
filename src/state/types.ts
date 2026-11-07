@@ -1057,6 +1057,53 @@ export interface OutlineEffect {
   pulseMode?: OutlinePulseMode;
 }
 
+// --- SENSOR SYSTEM ---
+export type SensorShapeType = 'line' | 'rect' | 'circle';
+export type SensorAlgorithm = 'motion' | 'chrominance';
+export type LineCrossingDirection = 'both' | 'a_to_b' | 'b_to_a';
+
+export interface SensorZoneConfig {
+  id: string;
+  name: string;
+  type: SensorShapeType;
+  algorithm: SensorAlgorithm;
+  color: string; // hex or rgba for outline overlay
+  enabled: boolean;
+  
+  // Normalized coordinates (0.0 to 1.0)
+  x1?: number;
+  y1?: number;
+  x2?: number;
+  y2?: number;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  cx?: number;
+  cy?: number;
+  radius?: number;
+
+  // Algorithm configuration
+  sensitivity: number; // 0..1
+  threshold: number;   // 0..1 (for trigger / gate)
+  smoothing: number;   // 0..1 (EMA smoothing)
+  lineDirection?: LineCrossingDirection; // 'both' | 'a_to_b' | 'b_to_a'
+}
+
+export interface SensorSystemState {
+  deviceId: string;
+  enabled: boolean;
+  sensors: SensorZoneConfig[];
+}
+
+export interface OpticalSensorEffect {
+  id: string;
+  type: 'OpticalSensor';
+  sensorId: string; // links to SensorZoneConfig.id
+  gain: number;     // 0..2
+  threshold: number;// 0..1
+}
+
 
 export type AnyEffect = 
   | Transform2DEffect | ColorAdjustEffect | LumaKeyEffect | SimpleFeedbackEffect
@@ -1067,7 +1114,7 @@ export type AnyEffect =
   | SignalMathEffect | SampleAndHoldEffect | StepSequencerEffect | PixelProcessorEffect
   | AudioSourceEffect | OscilloscopeEffect | SpectralSplitterEffect | WaterfallSpectrogramEffect | AudioTransformerEffect | AudioModulatorEffect | AudioGateEffect | AudioToCVEffect
   | SpeechEnvelopeTrackerEffect | VocalPitchTrackerEffect | VowelFormantTrackerEffect | SpokenWordVisualizerEffect
-  | CanvasBackgroundEffect | ParticleCloudEffect | ColorPaletteEffect | GrassFieldEffect | TextMakerEffect | LumaBandsEffect | ChromaBandsEffect | GlyphMapEffect | OutlineEffect
+  | CanvasBackgroundEffect | ParticleCloudEffect | ColorPaletteEffect | GrassFieldEffect | TextMakerEffect | LumaBandsEffect | ChromaBandsEffect | GlyphMapEffect | OutlineEffect | OpticalSensorEffect
   | ShapeGeneratorSource | VideoURLSource | VideoFileSource | WebcamCaptureSource | NoiseVideoSource | ColorNoiseSource
   | AudioInputSource | AudioFileSource | SystemAudioSource | ImageLoaderSource | ImageFileSource | ImageCueSource | TextCueSource;
 
@@ -1078,7 +1125,7 @@ export type EffectType =
   | 'KeyMixer' | 'VideoMath' | 'UVDisplace'
   | 'LogicGate' | 'TriggeredGate' | 'Pattern' | 'Kaleidoscope' | 'SignalMath' | 'SampleAndHold' | 'StepSequencer' | 'AudioSource' | 'Oscilloscope' | 'SpectralSplitter' | 'WaterfallSpectrogram' | 'PixelProcessor' | 'AudioTransformer' | 'AudioModulator' | 'AudioGate' | 'AudioToCV'
   | 'SpeechEnvelopeTracker' | 'VocalPitchTracker' | 'VowelFormantTracker' | 'SpokenWordVisualizer'
-  | 'CanvasBackground' | 'ParticleCloud' | 'ColorPalette' | 'GrassField' | 'TextMaker' | 'LumaBands' | 'ChromaBands' | 'GlyphMap' | 'Outline'
+  | 'CanvasBackground' | 'ParticleCloud' | 'ColorPalette' | 'GrassField' | 'TextMaker' | 'LumaBands' | 'ChromaBands' | 'GlyphMap' | 'Outline' | 'OpticalSensor'
   | 'ShapeGenerator' | 'VideoURL' | 'VideoFile' | 'WebcamCapture' | 'NoiseSource' | 'ColorNoise' | 'AudioInput' | 'AudioFile' | 'SystemAudio' | 'ImageLoader' | 'ImageFile' | 'ImageCue' | 'TextCue';
 
 export type GraphNode = AnyEffect;
@@ -1141,6 +1188,7 @@ export interface EngineState {
   midiBindings: MidiBinding[];
   midiLearnTarget: AbsoluteTargetSpec | QueryTargetSpec | null;
   midiOverlayActive: boolean;
+  sensorSystem?: SensorSystemState;
 }
 
 // --- AUDIO TYPES ---

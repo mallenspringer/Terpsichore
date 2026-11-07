@@ -15,3 +15,4 @@ export * from './ChromaBandsNodeUI';
 export * from './GlyphMapNodeUI';
 export * from './GlyphMapModal';
 export * from './OutlineNodeUI';
+export * from './OpticalSensorNodeUI';

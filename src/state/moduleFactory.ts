@@ -593,6 +593,15 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
         pulseMode: 'local_edge'
       };
 
+    case 'OpticalSensor':
+      return {
+        id,
+        type: 'OpticalSensor',
+        sensorId: '',
+        gain: 1.0,
+        threshold: 0.3,
+      };
+
     default:
       return { id, type: 'SimpleFeedback', feedbackAmount: 0.9, zoom: 0.95, angle: 0.05 } as any;
   }

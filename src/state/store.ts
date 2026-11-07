@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { LayerState, LayerGraph, InterLayerEdge, EngineState, PortSettings, AnySource, AnyEffect, MidiBinding, AbsoluteTargetSpec, QueryTargetSpec } from './types';
+import { LayerState, LayerGraph, InterLayerEdge, EngineState, PortSettings, AnySource, AnyEffect, MidiBinding, AbsoluteTargetSpec, QueryTargetSpec, SensorZoneConfig } from './types';
 import { buildAutoEdges } from './graphUtils';
 import { AudioEngine } from './AudioEngine';
 
@@ -41,6 +41,14 @@ interface EngineActions {
   updateMidiBinding: (id: string, updates: Partial<MidiBinding>) => void;
   setMidiLearnTarget: (target: AbsoluteTargetSpec | QueryTargetSpec | null) => void;
   setMidiOverlayActive: (active: boolean) => void;
+
+  // Sensor System
+  setSensorSystemDevice: (deviceId: string) => void;
+  setSensorSystemEnabled: (enabled: boolean) => void;
+  addSensorZone: (zone: SensorZoneConfig) => void;
+  updateSensorZone: (id: string, updates: Partial<SensorZoneConfig>) => void;
+  removeSensorZone: (id: string) => void;
+  reorderSensorZones: (fromIndex: number, toIndex: number) => void;
 }
 
 export type StoreState = EngineState & EngineActions & {
@@ -83,6 +91,11 @@ export const useEngineStore = create<StoreState>((set) => ({
   midiBindings: [],
   midiLearnTarget: null,
   midiOverlayActive: false,
+  sensorSystem: {
+    deviceId: '',
+    enabled: true,
+    sensors: [],
+  },
 
   setProjectName: (name) => set({ projectName: name }),
   setAuthorName: (name) => set({ authorName: name }),
@@ -145,7 +158,8 @@ export const useEngineStore = create<StoreState>((set) => ({
       authorName: project.authorName || 'User',
       activeLayerId: project.layerOrder[0] || null,
       midiBindings: project.midiBindings || [],
-      midiLearnTarget: null
+      midiLearnTarget: null,
+      sensorSystem: project.sensorSystem || { deviceId: '', enabled: true, sensors: [] }
     })),
 
   reorderEffect: (layerId, fromIndex, toIndex) =>
@@ -295,6 +309,69 @@ export const useEngineStore = create<StoreState>((set) => ({
   })),
   setMidiLearnTarget: (target) => set({ midiLearnTarget: target }),
   setMidiOverlayActive: (active) => set({ midiOverlayActive: active }),
+
+  setSensorSystemDevice: (deviceId) =>
+    set((state) => ({
+      sensorSystem: {
+        ...(state.sensorSystem || { enabled: true, sensors: [] }),
+        deviceId,
+      }
+    })),
+
+  setSensorSystemEnabled: (enabled) =>
+    set((state) => ({
+      sensorSystem: {
+        ...(state.sensorSystem || { deviceId: '', sensors: [] }),
+        enabled,
+      }
+    })),
+
+  addSensorZone: (zone) =>
+    set((state) => {
+      const current = state.sensorSystem || { deviceId: '', enabled: true, sensors: [] };
+      return {
+        sensorSystem: {
+          ...current,
+          sensors: [...current.sensors, zone],
+        }
+      };
+    }),
+
+  updateSensorZone: (id, updates) =>
+    set((state) => {
+      const current = state.sensorSystem || { deviceId: '', enabled: true, sensors: [] };
+      return {
+        sensorSystem: {
+          ...current,
+          sensors: current.sensors.map(s => s.id === id ? { ...s, ...updates } : s),
+        }
+      };
+    }),
+
+  removeSensorZone: (id) =>
+    set((state) => {
+      const current = state.sensorSystem || { deviceId: '', enabled: true, sensors: [] };
+      return {
+        sensorSystem: {
+          ...current,
+          sensors: current.sensors.filter(s => s.id !== id),
+        }
+      };
+    }),
+
+  reorderSensorZones: (fromIndex, toIndex) =>
+    set((state) => {
+      const current = state.sensorSystem || { deviceId: '', enabled: true, sensors: [] };
+      const nextSensors = [...current.sensors];
+      const [moved] = nextSensors.splice(fromIndex, 1);
+      nextSensors.splice(toIndex, 0, moved);
+      return {
+        sensorSystem: {
+          ...current,
+          sensors: nextSensors,
+        }
+      };
+    }),
 }));
 
 if (typeof window !== 'undefined') {

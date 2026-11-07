@@ -5,6 +5,7 @@ import { Renderer } from "./renderer/Renderer";
 import { Sidebar } from "./components/Sidebar";
 import { NodeGraph } from "./components/NodeGraph/NodeGraph";
 import { MidiMappingModal } from "./components/NodeGraph/MidiMappingModal";
+import { SensorConfigModal } from "./components/SensorModal/SensorConfigModal";
 import { AudioEngine } from "./state/AudioEngine";
 import { ExternalWindowManager } from "./utils/ExternalWindowManager";
 import { stepTextCueCard, stepTextCueBank } from "./utils/textCueUtils";
@@ -25,7 +26,14 @@ function App() {
   const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
   const [videoProgress, setVideoProgress] = useState<Record<string, {currentTime: number, duration: number}>>({});
   const [isMidiModalOpen, setMidiModalOpen] = useState(false);
+  const [isSensorModalOpen, setSensorModalOpen] = useState(false);
   const [isPopoutOpen, setPopoutOpen] = useState(false);
+
+  useEffect(() => {
+    const handleOpenSensor = () => setSensorModalOpen(true);
+    window.addEventListener('terp_open_sensor_modal', handleOpenSensor);
+    return () => window.removeEventListener('terp_open_sensor_modal', handleOpenSensor);
+  }, []);
 
   useEffect(() => {
     return ExternalWindowManager.getInstance().subscribe(setPopoutOpen);
@@ -379,6 +387,7 @@ function App() {
           activeLayerId={activeLayerId} 
           onSelectLayer={setActiveLayerId} 
           onOpenMidiModal={() => setMidiModalOpen(true)}
+          onOpenSensorModal={() => setSensorModalOpen(true)}
         />
 
         <div className="main-area">
@@ -451,6 +460,7 @@ function App() {
       </div>
       
       <MidiMappingModal isOpen={isMidiModalOpen} onClose={() => setMidiModalOpen(false)} />
+      <SensorConfigModal isOpen={isSensorModalOpen} onClose={() => setSensorModalOpen(false)} />
     </div>
   );
 }
