@@ -108,7 +108,18 @@ export class SensorEngine {
 
     try {
       const constraints: MediaStreamConstraints = {
-        video: deviceId ? { deviceId: { exact: deviceId } } : true,
+        video: deviceId
+          ? {
+              deviceId: { exact: deviceId },
+              width: { ideal: 1920, max: 3840 },
+              height: { ideal: 1080, max: 2160 },
+              aspectRatio: { ideal: 1.7777777778 }
+            }
+          : {
+              width: { ideal: 1920, max: 3840 },
+              height: { ideal: 1080, max: 2160 },
+              aspectRatio: { ideal: 1.7777777778 }
+            },
         audio: false
       };
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -162,6 +173,21 @@ export class SensorEngine {
   public processFrame() {
     if (!this.video || !this.ctx || this.video.readyState < 2) {
       return;
+    }
+
+    const vidW = this.video.videoWidth || 16;
+    const vidH = this.video.videoHeight || 9;
+    const targetW = 320;
+    const targetH = Math.max(90, Math.min(320, Math.round(targetW * (vidH / vidW))));
+
+    if (this.width !== targetW || this.height !== targetH) {
+      this.width = targetW;
+      this.height = targetH;
+      if (this.canvas) {
+        this.canvas.width = targetW;
+        this.canvas.height = targetH;
+      }
+      this.prevFrame = null;
     }
 
     const w = this.width;

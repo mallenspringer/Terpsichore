@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useEngineStore } from '../../state/store';
-import { SensorAlgorithm, LineCrossingDirection } from '../../state/types';
+import { SensorZoneConfig, SensorAlgorithm, LineCrossingDirection } from '../../state/types';
 import { SensorEngine } from '../../sensor/SensorEngine';
 import './SensorConfigModal.css';
 
@@ -19,6 +19,13 @@ const COLOR_PALETTE = [
   '#ffffff'
 ];
 
+type HandleType =
+  | 'line_p1' | 'line_p2' | 'line_mid'
+  | 'circle_center' | 'circle_r_e' | 'circle_r_w' | 'circle_r_n' | 'circle_r_s'
+  | 'rect_nw' | 'rect_ne' | 'rect_se' | 'rect_sw'
+  | 'rect_n' | 'rect_s' | 'rect_e' | 'rect_w'
+  | 'body';
+
 export function SensorConfigModal({ isOpen, onClose }: SensorConfigModalProps) {
   const sensorSystem = useEngineStore(s => s.sensorSystem);
   const setSensorSystemDevice = useEngineStore(s => s.setSensorSystemDevice);
@@ -34,17 +41,19 @@ export function SensorConfigModal({ isOpen, onClose }: SensorConfigModalProps) {
   const [selectedSensorId, setSelectedSensorId] = useState<string | null>(null);
   const [activeTool, setActiveTool] = useState<'select' | 'line' | 'rect' | 'circle'>('select');
 
-  // Drawing interaction state
+  // Drawing and interaction state
   const [dragState, setDragState] = useState<{
     isDrawing: boolean;
     startX: number;
     startY: number;
     currX: number;
     currY: number;
-    action?: 'create' | 'move' | 'resize';
-    handle?: string;
+    action: 'create' | 'move' | 'resize';
+    handle?: HandleType;
+    initial?: SensorZoneConfig;
   } | null>(null);
 
+  const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animFrameRef = useRef<number | null>(null);
 
@@ -74,19 +83,89 @@ export function SensorConfigModal({ isOpen, onClose }: SensorConfigModalProps) {
     loadDevices();
   }, [isOpen, activeDeviceId, setSensorSystemDevice]);
 
-  // Ensure SensorEngine device is running when modal opens
+  // Ensure SensorEngine is running when modal opens
   useEffect(() => {
     if (isOpen) {
       SensorEngine.getInstance().start();
     }
   }, [isOpen]);
 
+  // Helper to test if a point (px, py) is on a handle of the sensor
+  const getHandleAt = (
+    s: SensorZoneConfig,
+    px: number,
+    py: number,
+    w: number,
+    h: number
+  ): HandleType | null => {
+    if (s.type === 'line') {
+      const p1x = (s.x1 ?? 0.2) * w;
+      const p1y = (s.y1 ?? 0.5) * h;
+      const p2x = (s.x2 ?? 0.8) * w;
+      const p2y = (s.y2 ?? 0.5) * h;
+      const midx = (p1x + p2x) / 2;
+      const midy = (p1y + p2y) / 2;
+
+      if (Math.hypot(px - p1x, py - p1y) <= 12) return 'line_p1';
+      if (Math.hypot(px - p2x, py - p2y) <= 12) return 'line_p2';
+      if (Math.hypot(px - midx, py - midy) <= 12) return 'line_mid';
+
+      // Distance to segment
+      const l2 = (p2x - p1x) ** 2 + (p2y - p1y) ** 2;
+      if (l2 > 0) {
+        const t = Math.max(0, Math.min(1, ((px - p1x) * (p2x - p1x) + (py - p1y) * (p2y - p1y)) / l2));
+        const projX = p1x + t * (p2x - p1x);
+        const projY = p1y + t * (p2y - p1y);
+        if (Math.hypot(px - projX, py - projY) <= 10) return 'body';
+      }
+      return null;
+    }
+
+    if (s.type === 'circle') {
+      const cx = (s.cx ?? 0.5) * w;
+      const cy = (s.cy ?? 0.5) * h;
+      const r = (s.radius ?? 0.15) * Math.min(w, h);
+
+      if (Math.hypot(px - (cx + r), py - cy) <= 10) return 'circle_r_e';
+      if (Math.hypot(px - (cx - r), py - cy) <= 10) return 'circle_r_w';
+      if (Math.hypot(px - cx, py - (cy - r)) <= 10) return 'circle_r_n';
+      if (Math.hypot(px - cx, py - (cy + r)) <= 10) return 'circle_r_s';
+      if (Math.hypot(px - cx, py - cy) <= 10) return 'circle_center';
+      if (Math.hypot(px - cx, py - cy) <= r) return 'body';
+      return null;
+    }
+
+    // Rect
+    const rx = (s.x ?? 0.1) * w;
+    const ry = (s.y ?? 0.1) * h;
+    const rw = (s.width ?? 0.3) * w;
+    const rh = (s.height ?? 0.3) * h;
+
+    // 4 corners
+    if (Math.hypot(px - rx, py - ry) <= 10) return 'rect_nw';
+    if (Math.hypot(px - (rx + rw), py - ry) <= 10) return 'rect_ne';
+    if (Math.hypot(px - (rx + rw), py - (ry + rh)) <= 10) return 'rect_se';
+    if (Math.hypot(px - rx, py - (ry + rh)) <= 10) return 'rect_sw';
+
+    // 4 edges
+    if (Math.hypot(px - (rx + rw / 2), py - ry) <= 8) return 'rect_n';
+    if (Math.hypot(px - (rx + rw / 2), py - (ry + rh)) <= 8) return 'rect_s';
+    if (Math.hypot(px - rx, py - (ry + rh / 2)) <= 8) return 'rect_w';
+    if (Math.hypot(px - (rx + rw), py - (ry + rh / 2)) <= 8) return 'rect_e';
+
+    // Body
+    if (px >= rx && px <= rx + rw && py >= ry && py <= ry + rh) return 'body';
+
+    return null;
+  };
+
   // Canvas drawing loop
   useEffect(() => {
     if (!isOpen) return;
 
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    const container = containerRef.current;
+    if (!canvas || !container) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
@@ -95,20 +174,39 @@ export function SensorConfigModal({ isOpen, onClose }: SensorConfigModalProps) {
     const render = () => {
       if (!isSubscribed) return;
 
-      const rect = canvas.getBoundingClientRect();
-      if (canvas.width !== Math.floor(rect.width) || canvas.height !== Math.floor(rect.height)) {
-        canvas.width = Math.max(10, Math.floor(rect.width));
-        canvas.height = Math.max(10, Math.floor(rect.height));
+      const cRect = container.getBoundingClientRect();
+      const availW = Math.max(100, cRect.width - 24);
+      const availH = Math.max(100, cRect.height - 24);
+
+      // Match webcam's native aspect ratio (default 16:9 for room coverage)
+      const vid = SensorEngine.getInstance().getVideoElement();
+      const vidW = vid?.videoWidth || 16;
+      const vidH = vid?.videoHeight || 9;
+      const aspect = vidW / vidH;
+
+      let dispW = availW;
+      let dispH = availW / aspect;
+      if (dispH > availH) {
+        dispH = availH;
+        dispW = availH * aspect;
+      }
+
+      const targetW = Math.floor(dispW);
+      const targetH = Math.floor(dispH);
+
+      if (canvas.width !== targetW || canvas.height !== targetH) {
+        canvas.width = targetW;
+        canvas.height = targetH;
+        canvas.style.width = `${targetW}px`;
+        canvas.style.height = `${targetH}px`;
       }
 
       const w = canvas.width;
       const h = canvas.height;
 
       // 1. Draw camera video preview
-      const vid = SensorEngine.getInstance().getVideoElement();
       if (vid && vid.readyState >= 2) {
         ctx.drawImage(vid, 0, 0, w, h);
-        // Dim video slightly so overlays pop
         ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
         ctx.fillRect(0, 0, w, h);
       } else {
@@ -138,7 +236,7 @@ export function SensorConfigModal({ isOpen, onClose }: SensorConfigModalProps) {
           const lx2 = (s.x2 ?? 0.8) * w;
           const ly2 = (s.y2 ?? 0.5) * h;
 
-          // Draw tripwire line
+          // Tripwire line
           ctx.strokeStyle = isTriggered ? '#ffffff' : color;
           ctx.lineWidth = isSelected ? 3 : 2;
           ctx.setLineDash(isGate ? [6, 3] : []);
@@ -166,12 +264,36 @@ export function SensorConfigModal({ isOpen, onClose }: SensorConfigModalProps) {
             ctx.stroke();
           }
 
-          // End handles
-          ctx.fillStyle = isSelected ? '#ffffff' : color;
-          ctx.beginPath();
-          ctx.arc(lx1, ly1, 5, 0, Math.PI * 2);
-          ctx.arc(lx2, ly2, 5, 0, Math.PI * 2);
-          ctx.fill();
+          // Handles if selected
+          if (isSelected) {
+            // Endpoint A
+            ctx.fillStyle = '#ffffff';
+            ctx.strokeStyle = '#0f172a';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.arc(lx1, ly1, 6, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            // Endpoint B
+            ctx.beginPath();
+            ctx.arc(lx2, ly2, 6, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            // Midpoint handle
+            const mx = (lx1 + lx2) / 2;
+            const my = (ly1 + ly2) / 2;
+            ctx.fillStyle = color;
+            ctx.fillRect(mx - 3.5, my - 3.5, 7, 7);
+            ctx.strokeRect(mx - 3.5, my - 3.5, 7, 7);
+          } else {
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.arc(lx1, ly1, 4, 0, Math.PI * 2);
+            ctx.arc(lx2, ly2, 4, 0, Math.PI * 2);
+            ctx.fill();
+          }
 
           // Label
           ctx.font = 'bold 11px monospace';
@@ -202,9 +324,27 @@ export function SensorConfigModal({ isOpen, onClose }: SensorConfigModalProps) {
 
           // Center handle
           ctx.fillStyle = isSelected ? '#ffffff' : color;
+          ctx.strokeStyle = '#0f172a';
+          ctx.lineWidth = 1.5;
           ctx.beginPath();
           ctx.arc(cx, cy, 4, 0, Math.PI * 2);
           ctx.fill();
+          if (isSelected) ctx.stroke();
+
+          // Radial resize handles if selected
+          if (isSelected) {
+            const radHandles = [
+              [cx + r, cy],
+              [cx - r, cy],
+              [cx, cy - r],
+              [cx, cy + r],
+            ];
+            ctx.fillStyle = '#ffffff';
+            radHandles.forEach(([hx, hy]) => {
+              ctx.fillRect(hx - 3.5, hy - 3.5, 7, 7);
+              ctx.strokeRect(hx - 3.5, hy - 3.5, 7, 7);
+            });
+          }
 
           // Label
           ctx.font = 'bold 11px monospace';
@@ -233,13 +373,35 @@ export function SensorConfigModal({ isOpen, onClose }: SensorConfigModalProps) {
           ctx.lineWidth = isSelected ? 3 : 2;
           ctx.strokeRect(rx, ry, rw, rh);
 
-          // Corner handles if selected
+          // 8 Resize handles if selected (4 corners + 4 edges)
           if (isSelected) {
             ctx.fillStyle = '#ffffff';
-            ctx.fillRect(rx - 3, ry - 3, 6, 6);
-            ctx.fillRect(rx + rw - 3, ry - 3, 6, 6);
-            ctx.fillRect(rx - 3, ry + rh - 3, 6, 6);
-            ctx.fillRect(rx + rw - 3, ry + rh - 3, 6, 6);
+            ctx.strokeStyle = '#0f172a';
+            ctx.lineWidth = 1.5;
+
+            // Corners (8x8)
+            const corners = [
+              [rx, ry],
+              [rx + rw, ry],
+              [rx + rw, ry + rh],
+              [rx, ry + rh],
+            ];
+            corners.forEach(([hx, hy]) => {
+              ctx.fillRect(hx - 4, hy - 4, 8, 8);
+              ctx.strokeRect(hx - 4, hy - 4, 8, 8);
+            });
+
+            // Edge midpoints (6x6)
+            const edges = [
+              [rx + rw / 2, ry],
+              [rx + rw / 2, ry + rh],
+              [rx, ry + rh / 2],
+              [rx + rw, ry + rh / 2],
+            ];
+            edges.forEach(([hx, hy]) => {
+              ctx.fillRect(hx - 3, hy - 3, 6, 6);
+              ctx.strokeRect(hx - 3, hy - 3, 6, 6);
+            });
           }
 
           // Label
@@ -298,62 +460,64 @@ export function SensorConfigModal({ isOpen, onClose }: SensorConfigModalProps) {
     };
   }, [isOpen, sensors, selectedSensorId, activeTool, dragState]);
 
-  // Canvas Mouse Event Handlers
+  // Pointer Down
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
     const nx = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
     const ny = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+    const px = nx * canvas.width;
+    const py = ny * canvas.height;
 
     if (activeTool === 'select') {
-      // Find clicked sensor
+      // 1. If a sensor is already selected, check if clicking one of its handles
+      const currentSelected = sensors.find(s => s.id === selectedSensorId);
+      if (currentSelected) {
+        const handle = getHandleAt(currentSelected, px, py, canvas.width, canvas.height);
+        if (handle) {
+          const isMove = handle === 'body' || handle === 'circle_center' || handle === 'line_mid';
+          setDragState({
+            isDrawing: true,
+            startX: nx,
+            startY: ny,
+            currX: nx,
+            currY: ny,
+            action: isMove ? 'move' : 'resize',
+            handle,
+            initial: { ...currentSelected }
+          });
+          return;
+        }
+      }
+
+      // 2. Otherwise check if clicking any sensor to select it
       let clickedId: string | null = null;
+      let clickedHandle: HandleType | null = null;
+
       for (let i = sensors.length - 1; i >= 0; i--) {
         const s = sensors[i];
-        if (s.type === 'line') {
-          const x1 = s.x1 ?? 0.2;
-          const y1 = s.y1 ?? 0.5;
-          const x2 = s.x2 ?? 0.8;
-          const y2 = s.y2 ?? 0.5;
-          // Distance to segment
-          const l2 = (x2 - x1) ** 2 + (y2 - y1) ** 2;
-          const t = Math.max(0, Math.min(1, ((nx - x1) * (x2 - x1) + (ny - y1) * (y2 - y1)) / l2));
-          const projX = x1 + t * (x2 - x1);
-          const projY = y1 + t * (y2 - y1);
-          if (Math.hypot(nx - projX, ny - projY) < 0.05) {
-            clickedId = s.id;
-            break;
-          }
-        } else if (s.type === 'circle') {
-          const cx = s.cx ?? 0.5;
-          const cy = s.cy ?? 0.5;
-          const r = s.radius ?? 0.15;
-          if (Math.hypot(nx - cx, ny - cy) <= r) {
-            clickedId = s.id;
-            break;
-          }
-        } else {
-          const rx = s.x ?? 0.1;
-          const ry = s.y ?? 0.1;
-          const rw = s.width ?? 0.3;
-          const rh = s.height ?? 0.3;
-          if (nx >= rx && nx <= rx + rw && ny >= ry && ny <= ry + rh) {
-            clickedId = s.id;
-            break;
-          }
+        const h = getHandleAt(s, px, py, canvas.width, canvas.height);
+        if (h) {
+          clickedId = s.id;
+          clickedHandle = h;
+          break;
         }
       }
 
       setSelectedSensorId(clickedId);
-      if (clickedId) {
+      if (clickedId && clickedHandle) {
+        const s = sensors.find(item => item.id === clickedId)!;
+        const isMove = clickedHandle === 'body' || clickedHandle === 'circle_center' || clickedHandle === 'line_mid';
         setDragState({
           isDrawing: true,
           startX: nx,
           startY: ny,
           currX: nx,
           currY: ny,
-          action: 'move'
+          action: isMove ? 'move' : 'resize',
+          handle: clickedHandle,
+          initial: { ...s }
         });
       }
     } else {
@@ -369,43 +533,133 @@ export function SensorConfigModal({ isOpen, onClose }: SensorConfigModalProps) {
     }
   };
 
+  // Pointer Move (Hover cursor & Drag interaction)
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!dragState || !dragState.isDrawing) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
     const nx = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
     const ny = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+    const px = nx * canvas.width;
+    const py = ny * canvas.height;
 
-    if (dragState.action === 'move' && selectedSensorId) {
-      const dx = nx - dragState.currX;
-      const dy = ny - dragState.currY;
-      const s = sensors.find(item => item.id === selectedSensorId);
-      if (s) {
-        if (s.type === 'line') {
-          updateSensorZone(s.id, {
-            x1: Math.max(0, Math.min(1, (s.x1 ?? 0.2) + dx)),
-            y1: Math.max(0, Math.min(1, (s.y1 ?? 0.5) + dy)),
-            x2: Math.max(0, Math.min(1, (s.x2 ?? 0.8) + dx)),
-            y2: Math.max(0, Math.min(1, (s.y2 ?? 0.5) + dy)),
-          });
-        } else if (s.type === 'circle') {
-          updateSensorZone(s.id, {
-            cx: Math.max(0, Math.min(1, (s.cx ?? 0.5) + dx)),
-            cy: Math.max(0, Math.min(1, (s.cy ?? 0.5) + dy)),
-          });
-        } else {
-          updateSensorZone(s.id, {
-            x: Math.max(0, Math.min(1 - (s.width ?? 0.3), (s.x ?? 0.1) + dx)),
-            y: Math.max(0, Math.min(1 - (s.height ?? 0.3), (s.y ?? 0.1) + dy)),
-          });
+    // Hover Cursor Management
+    if (!dragState?.isDrawing) {
+      if (activeTool !== 'select') {
+        canvas.style.cursor = 'crosshair';
+      } else {
+        const currentSelected = sensors.find(s => s.id === selectedSensorId);
+        let cursor = 'default';
+        if (currentSelected) {
+          const handle = getHandleAt(currentSelected, px, py, canvas.width, canvas.height);
+          if (handle === 'rect_nw' || handle === 'rect_se') cursor = 'nwse-resize';
+          else if (handle === 'rect_ne' || handle === 'rect_sw') cursor = 'nesw-resize';
+          else if (handle === 'rect_n' || handle === 'rect_s' || handle === 'circle_r_n' || handle === 'circle_r_s') cursor = 'ns-resize';
+          else if (handle === 'rect_e' || handle === 'rect_w' || handle === 'circle_r_e' || handle === 'circle_r_w') cursor = 'ew-resize';
+          else if (handle === 'line_p1' || handle === 'line_p2') cursor = 'crosshair';
+          else if (handle === 'line_mid' || handle === 'circle_center' || handle === 'body') cursor = 'move';
         }
+        if (cursor === 'default') {
+          // Check other sensors for hover pointer
+          for (let i = sensors.length - 1; i >= 0; i--) {
+            if (getHandleAt(sensors[i], px, py, canvas.width, canvas.height)) {
+              cursor = 'pointer';
+              break;
+            }
+          }
+        }
+        canvas.style.cursor = cursor;
+      }
+      return;
+    }
+
+    // Active Drag Operation
+    const init = dragState.initial;
+    if (!init || !selectedSensorId) {
+      setDragState(prev => prev ? { ...prev, currX: nx, currY: ny } : null);
+      return;
+    }
+
+    const dx = nx - dragState.startX;
+    const dy = ny - dragState.startY;
+
+    if (dragState.action === 'move') {
+      if (init.type === 'line') {
+        const ldx = (init.x2 ?? 0.8) - (init.x1 ?? 0.2);
+        const ldy = (init.y2 ?? 0.5) - (init.y1 ?? 0.5);
+        const newX1 = Math.max(0, Math.min(1 - ldx, (init.x1 ?? 0.2) + dx));
+        const newY1 = Math.max(0, Math.min(1 - ldy, (init.y1 ?? 0.5) + dy));
+        updateSensorZone(init.id, {
+          x1: newX1,
+          y1: newY1,
+          x2: newX1 + ldx,
+          y2: newY1 + ldy
+        });
+      } else if (init.type === 'circle') {
+        updateSensorZone(init.id, {
+          cx: Math.max(0, Math.min(1, (init.cx ?? 0.5) + dx)),
+          cy: Math.max(0, Math.min(1, (init.cy ?? 0.5) + dy))
+        });
+      } else {
+        const w = init.width ?? 0.3;
+        const h = init.height ?? 0.3;
+        updateSensorZone(init.id, {
+          x: Math.max(0, Math.min(1 - w, (init.x ?? 0.1) + dx)),
+          y: Math.max(0, Math.min(1 - h, (init.y ?? 0.1) + dy))
+        });
+      }
+    } else if (dragState.action === 'resize') {
+      const handle = dragState.handle;
+
+      if (init.type === 'line') {
+        if (handle === 'line_p1') {
+          updateSensorZone(init.id, { x1: nx, y1: ny });
+        } else if (handle === 'line_p2') {
+          updateSensorZone(init.id, { x2: nx, y2: ny });
+        }
+      } else if (init.type === 'circle') {
+        const cx = init.cx ?? 0.5;
+        const cy = init.cy ?? 0.5;
+        const distPx = Math.hypot((nx - cx) * canvas.width, (ny - cy) * canvas.height);
+        const newR = Math.max(0.02, Math.min(0.5, distPx / Math.min(canvas.width, canvas.height)));
+        updateSensorZone(init.id, { radius: newR });
+      } else if (init.type === 'rect') {
+        let x = init.x ?? 0.1;
+        let y = init.y ?? 0.1;
+        let rw = init.width ?? 0.3;
+        let rh = init.height ?? 0.3;
+
+        // East resizing
+        if (handle === 'rect_e' || handle === 'rect_ne' || handle === 'rect_se') {
+          rw = Math.max(0.02, Math.min(1 - x, nx - x));
+        }
+        // West resizing
+        if (handle === 'rect_w' || handle === 'rect_nw' || handle === 'rect_sw') {
+          const right = x + rw;
+          const newX = Math.max(0, Math.min(right - 0.02, nx));
+          x = newX;
+          rw = right - newX;
+        }
+        // South resizing
+        if (handle === 'rect_s' || handle === 'rect_se' || handle === 'rect_sw') {
+          rh = Math.max(0.02, Math.min(1 - y, ny - y));
+        }
+        // North resizing
+        if (handle === 'rect_n' || handle === 'rect_nw' || handle === 'rect_ne') {
+          const bottom = y + rh;
+          const newY = Math.max(0, Math.min(bottom - 0.02, ny));
+          y = newY;
+          rh = bottom - newY;
+        }
+
+        updateSensorZone(init.id, { x, y, width: rw, height: rh });
       }
     }
 
     setDragState(prev => prev ? { ...prev, currX: nx, currY: ny } : null);
   };
 
+  // Pointer Up
   const handlePointerUp = () => {
     if (!dragState || !dragState.isDrawing) return;
 
@@ -441,7 +695,11 @@ export function SensorConfigModal({ isOpen, onClose }: SensorConfigModalProps) {
           setActiveTool('select');
         }
       } else if (activeTool === 'circle') {
-        const radius = Math.max(0.03, Math.hypot(ex - sx, ey - sy));
+        const canvas = canvasRef.current;
+        const w = canvas?.width || 320;
+        const h = canvas?.height || 180;
+        const distPx = Math.hypot((ex - sx) * w, (ey - sy) * h);
+        const radius = Math.max(0.03, distPx / Math.min(w, h));
         addSensorZone({
           id: newId,
           name: `Circle ${sensors.length + 1}`,
@@ -508,7 +766,7 @@ export function SensorConfigModal({ isOpen, onClose }: SensorConfigModalProps) {
             <button
               className={`sensor-tool-btn ${activeTool === 'select' ? 'active' : ''}`}
               onClick={() => setActiveTool('select')}
-              title="Select / Move"
+              title="Select / Move / Resize"
             >
               ✥ Select (V)
             </button>
@@ -553,8 +811,8 @@ export function SensorConfigModal({ isOpen, onClose }: SensorConfigModalProps) {
 
         {/* Body */}
         <div className="sensor-modal-body">
-          {/* Canvas Preview */}
-          <div className="sensor-preview-container">
+          {/* Canvas Preview Container */}
+          <div className="sensor-preview-container" ref={containerRef}>
             <canvas
               ref={canvasRef}
               className="sensor-preview-canvas"
@@ -563,7 +821,11 @@ export function SensorConfigModal({ isOpen, onClose }: SensorConfigModalProps) {
               onPointerUp={handlePointerUp}
             />
             <div className="sensor-preview-overlay-info">
-              {activeTool === 'select' ? 'Click to select / drag to move' : `Drag to create ${activeTool} sensor`}
+              {activeTool === 'select'
+                ? selectedSensor
+                  ? 'Drag handles to resize • Drag body to move'
+                  : 'Click a sensor to select & resize'
+                : `Drag to draw ${activeTool} sensor`}
             </div>
           </div>
 
