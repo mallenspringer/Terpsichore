@@ -2395,8 +2395,8 @@ export class Renderer {
             } else if (effect.type === 'UVDisplace') {
               pipeline = this.uvDisplacePipeline;
               const ef = effect as UVDisplaceEffect;
-              const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 16);
-              const buf = new ArrayBuffer(16);
+              const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 32);
+              const buf = new ArrayBuffer(32);
               const f32 = new Float32Array(buf);
               const u32 = new Uint32Array(buf);
 
@@ -2407,9 +2407,18 @@ export class Renderer {
               f32[1] = ay;
 
               const modeMap: Record<string, number> = { cartesian: 0, radial: 1, luma: 2 };
-              const wrapMap: Record<string, number> = { clamp: 0, wrap: 1, mirror: 2 };
+              const wrapMap: Record<string, number> = { clamp: 0, wrap: 1, mirror: 2, soft_wrap: 3 };
+              const polarityMap: Record<string, number> = { bipolar: 0, unipolar: 1 };
+
               u32[2] = modeMap[ef.mode] ?? 0;
               u32[3] = wrapMap[ef.wrapMode] ?? 0;
+              u32[4] = polarityMap[ef.polarity ?? 'bipolar'] ?? 0;
+
+              // Default edgeFalloff to 0.1 for clamp mode to prevent edge streaks; 0.0 for wrap/mirror
+              const defaultFalloff = (ef.wrapMode === 'clamp' || !ef.wrapMode) ? 0.1 : 0.0;
+              f32[5] = ef.edgeFalloff !== undefined ? ef.edgeFalloff : defaultFalloff;
+              f32[6] = 0.12; // soft wrap crossfade overlap width
+              f32[7] = 0.0;  // padding
 
               this.device.queue.writeBuffer(uniformBuffer, 0, buf);
 

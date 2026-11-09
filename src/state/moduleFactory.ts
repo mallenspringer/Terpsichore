@@ -260,7 +260,9 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
       amountX: 1.0,
       amountY: 1.0,
       mode: 'cartesian',
-      wrapMode: 'clamp'
+      wrapMode: 'clamp',
+      polarity: 'bipolar',
+      edgeFalloff: 0.1
     };
     case 'VideoMixer': return { id, type: 'VideoMixer', v1: 1, v2: 0, v3: 0, v4: 0, v1Alpha: 1.0, v2Alpha: 1.0, v3Alpha: 1.0, v4Alpha: 1.0, v1Mode: 'normal', v2Mode: 'add', v3Mode: 'add', v4Mode: 'add', masterGain: 1.0 };
     case 'KeyMixer': return {

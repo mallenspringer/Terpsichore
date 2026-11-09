@@ -1831,19 +1831,49 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
         );
       }
     },
+    { id: 'polarity', label: 'Polarity',
+      render: ctx => {
+        const ef = eff<UVDisplaceEffect>(ctx);
+        const pol = ef.polarity ?? 'bipolar';
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'row', gap: 4 }}>
+            {(['bipolar', 'unipolar'] as const).map(p => (
+              <button key={p}
+                className={`mode-toggle ${pol === p ? 'active' : ''}`}
+                style={{ flex: 1, textTransform: 'capitalize', fontSize: 10, padding: '2px 4px' }}
+                onClick={() => upd(ctx)({ polarity: p })}
+              >{p === 'bipolar' ? 'Bipolar (±)' : 'Unipolar (+)'}</button>
+            ))}
+          </div>
+        );
+      }
+    },
     { id: 'wrap', label: 'Wrap',
       render: ctx => {
         const ef = eff<UVDisplaceEffect>(ctx);
+        const wrapLabels: Record<string, string> = { clamp: 'Clamp', soft_wrap: 'Soft', wrap: 'Wrap', mirror: 'Mirror' };
         return (
           <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'row', gap: 4 }}>
-            {(['clamp', 'wrap', 'mirror'] as const).map(w => (
+            {(['clamp', 'soft_wrap', 'wrap', 'mirror'] as const).map(w => (
               <button key={w}
                 className={`mode-toggle ${ef.wrapMode === w ? 'active' : ''}`}
-                style={{ flex: 1, textTransform: 'capitalize', fontSize: 10, padding: '2px 4px' }}
+                style={{ flex: 1, fontSize: 10, padding: '2px 3px' }}
+                title={w === 'soft_wrap' ? 'Soft Wrap (Seamless Crossfade)' : undefined}
                 onClick={() => upd(ctx)({ wrapMode: w })}
-              >{w}</button>
+              >{wrapLabels[w] ?? w}</button>
             ))}
           </div>
+        );
+      }
+    },
+    { id: 'falloff', label: 'Edge Fade',
+      render: ctx => {
+        const ef = eff<UVDisplaceEffect>(ctx);
+        const defaultVal = (ef.wrapMode === 'clamp' || !ef.wrapMode) ? 0.1 : 0.0;
+        const currentVal = ef.edgeFalloff !== undefined ? ef.edgeFalloff : defaultVal;
+        return (
+          <Slider label="Edge Fade" min={0} max={0.4} step={0.01} resetValue={defaultVal}
+            value={currentVal} onChange={v => upd(ctx)({ edgeFalloff: v })} paramId="edgeFalloff" ctx={ctx} />
         );
       }
     }

@@ -715,7 +715,9 @@ export interface UVDisplaceEffect {
   amountX: number;      // 0.0 .. 2.0 (default 1.0)
   amountY: number;      // 0.0 .. 2.0 (default 1.0)
   mode: 'cartesian' | 'radial' | 'luma';
-  wrapMode: 'clamp' | 'wrap' | 'mirror';
+  wrapMode: 'clamp' | 'wrap' | 'mirror' | 'soft_wrap';
+  polarity?: 'bipolar' | 'unipolar';
+  edgeFalloff?: number; // 0.0 .. 0.5 (default 0.1 for clamp)
 }
 
 export interface KaleidoscopeEffect {

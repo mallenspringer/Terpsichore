@@ -118,6 +118,8 @@ describe('Tier 4 Modules', () => {
       expect(effect.amountY).toBe(1.0);
       expect(effect.mode).toBe('cartesian');
       expect(effect.wrapMode).toBe('clamp');
+      expect(effect.polarity).toBe('bipolar');
+      expect(effect.edgeFalloff).toBe(0.1);
     });
 
     it('has required video_in, map_in, amount_cv, and video_out ports', () => {
