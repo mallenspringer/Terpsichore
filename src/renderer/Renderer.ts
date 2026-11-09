@@ -4413,6 +4413,13 @@ export class Renderer {
       wheat: 5
     };
 
+    const removalStyleMap: Record<string, number> = {
+      cut: 0,
+      dissolve: 1,
+      shrink: 2
+    };
+    const removalStyleVal = removalStyleMap[ef.removalStyle ?? 'dissolve'] ?? 1;
+
     // 3. Dispatch Compute Pass
     const computeUniformBuffer = this.getUniformBuffer(`${nodeId}.grass_compute_uniforms`, 80);
     this.device.queue.writeBuffer(computeUniformBuffer, 0, new Float32Array([
@@ -4428,7 +4435,7 @@ export class Renderer {
       ef.lifetimeDuration ?? 10.0,
       pruneActive ? 1.0 : 0.0,
       pruneCutRatio,
-      ef.pruneAudioMode === 'silence_dissolve' ? 1.0 : 0.0,
+      removalStyleVal,
       tuftTriggerActive ? 1.0 : 0.0,
       tuftStyleMap[ef.tuftStyle ?? 'wildflowers'] ?? 1,
       ef.tuftChance ?? 0.05,

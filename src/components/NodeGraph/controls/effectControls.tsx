@@ -3110,12 +3110,72 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
     },
     {
       id: 'removalAndPruning',
-      label: 'Removal & Pruning (Dual Mode)',
+      label: 'Removal & Pruning Lifecycle',
       render: ctx => {
         const ef = eff<GrassFieldEffect>(ctx);
-        const pruneMode = ef.pruneAudioMode ?? 'transient_cut';
+        const style = ef.removalStyle ?? 'dissolve';
         return (
           <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'column', gap: 8 }}>
+            {/* Unified Removal Style Selector */}
+            <div style={{ background: '#141414', padding: '5px 6px', borderRadius: 3, border: '1px solid #282828' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
+                <span style={{ fontSize: 10, color: '#ddd', fontWeight: 'bold' }}>Removal Visual Style:</span>
+              </div>
+              <div style={{ display: 'flex', gap: 4 }}>
+                <button
+                  style={{
+                    flex: 1,
+                    fontSize: 9,
+                    padding: '3px 0',
+                    borderRadius: 2,
+                    cursor: 'pointer',
+                    background: style === 'dissolve' ? '#f58c18' : '#222',
+                    color: style === 'dissolve' ? '#000' : '#aaa',
+                    border: 'none',
+                    fontWeight: style === 'dissolve' ? 'bold' : 'normal'
+                  }}
+                  onClick={() => upd(ctx)({ removalStyle: 'dissolve' })}
+                  title="Dust dissolve: particles crumble top-left to bottom-right"
+                >
+                  Dust Dissolve
+                </button>
+                <button
+                  style={{
+                    flex: 1,
+                    fontSize: 9,
+                    padding: '3px 0',
+                    borderRadius: 2,
+                    cursor: 'pointer',
+                    background: style === 'cut' ? '#f58c18' : '#222',
+                    color: style === 'cut' ? '#000' : '#aaa',
+                    border: 'none',
+                    fontWeight: style === 'cut' ? 'bold' : 'normal'
+                  }}
+                  onClick={() => upd(ctx)({ removalStyle: 'cut' })}
+                  title="Scythe cut: slices blades down to short stubble"
+                >
+                  Scythe Cut
+                </button>
+                <button
+                  style={{
+                    flex: 1,
+                    fontSize: 9,
+                    padding: '3px 0',
+                    borderRadius: 2,
+                    cursor: 'pointer',
+                    background: style === 'shrink' ? '#f58c18' : '#222',
+                    color: style === 'shrink' ? '#000' : '#aaa',
+                    border: 'none',
+                    fontWeight: style === 'shrink' ? 'bold' : 'normal'
+                  }}
+                  onClick={() => upd(ctx)({ removalStyle: 'shrink' })}
+                  title="Ungrow: grass smoothly retracts back into the base"
+                >
+                  Shrink / Ungrow
+                </button>
+              </div>
+            </div>
+
             {/* Mode 1: Timer-based continuous decay */}
             <div style={{ background: '#141414', padding: '4px 6px', borderRadius: 3, border: '1px solid #282828' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
@@ -3155,56 +3215,15 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
               </div>
 
               {ef.gatedPruneEnabled && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <Slider
-                    label="Gate Threshold"
-                    min={0.1}
-                    max={1.0}
-                    step={0.02}
-                    resetValue={0.7}
-                    value={ef.pruneThreshold ?? 0.7}
-                    onChange={v => upd(ctx)({ pruneThreshold: v })}
-                  />
-
-                  {/* Audio Prune Mode Selector */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#0a0a0a', padding: '3px 4px', borderRadius: 2 }}>
-                    <span style={{ fontSize: 9, color: '#aaa' }}>Audio Cut Style:</span>
-                    <div style={{ display: 'flex', gap: 4 }}>
-                      <button
-                        style={{
-                          fontSize: 9,
-                          padding: '2px 5px',
-                          borderRadius: 2,
-                          cursor: 'pointer',
-                          background: pruneMode === 'transient_cut' ? '#f58c18' : '#222',
-                          color: pruneMode === 'transient_cut' ? '#000' : '#888',
-                          border: 'none',
-                          fontWeight: pruneMode === 'transient_cut' ? 'bold' : 'normal'
-                        }}
-                        onClick={() => upd(ctx)({ pruneAudioMode: 'transient_cut' })}
-                        title="Sudden instant scythe cut on drum/transient peaks"
-                      >
-                        Transient Cut
-                      </button>
-                      <button
-                        style={{
-                          fontSize: 9,
-                          padding: '2px 5px',
-                          borderRadius: 2,
-                          cursor: 'pointer',
-                          background: pruneMode === 'silence_dissolve' ? '#f58c18' : '#222',
-                          color: pruneMode === 'silence_dissolve' ? '#000' : '#888',
-                          border: 'none',
-                          fontWeight: pruneMode === 'silence_dissolve' ? 'bold' : 'normal'
-                        }}
-                        onClick={() => upd(ctx)({ pruneAudioMode: 'silence_dissolve' })}
-                        title="Gradient diagonal dust wipe on silence / music drops"
-                      >
-                        Dust Dissolve
-                      </button>
-                    </div>
-                  </div>
-                </div>
+                <Slider
+                  label="Gate Threshold"
+                  min={0.1}
+                  max={1.0}
+                  step={0.02}
+                  resetValue={0.7}
+                  value={ef.pruneThreshold ?? 0.7}
+                  onChange={v => upd(ctx)({ pruneThreshold: v })}
+                />
               )}
             </div>
           </div>

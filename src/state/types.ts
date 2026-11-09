@@ -816,6 +816,7 @@ export interface ColorPaletteEffect {
 }
 
 export type TuftStyle = 'wildflowers' | 'poppies' | 'dandelions' | 'kelp' | 'wheat';
+export type GrassRemovalStyle = 'dissolve' | 'cut' | 'shrink';
 
 export interface GrassFieldEffect {
   id: string;
@@ -842,7 +843,8 @@ export interface GrassFieldEffect {
   lifetimeDuration: number;       // 1.0 to 30.0, default 10.0
   gatedPruneEnabled: boolean;     // default false
   pruneThreshold: number;         // 0.1 to 1.0, default 0.7
-  pruneAudioMode: 'transient_cut' | 'silence_dissolve'; // default 'transient_cut'
+  removalStyle: GrassRemovalStyle;// 'dissolve' | 'cut' | 'shrink', default 'dissolve'
+  pruneAudioMode?: 'transient_cut' | 'silence_dissolve'; // legacy compatibility
   colorPreset: 'meadow' | 'bioluminescent' | 'golden' | 'neon';
   showSky?: boolean;              // default true (false = full alpha transparency)
   showGround?: boolean;           // default true (false = transparent ground floor)

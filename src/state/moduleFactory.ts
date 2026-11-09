@@ -428,6 +428,7 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
         lifetimeDuration: 10.0,
         gatedPruneEnabled: false,
         pruneThreshold: 0.7,
+        removalStyle: 'dissolve',
         pruneAudioMode: 'transient_cut',
         colorPreset: 'meadow',
         showSky: true,

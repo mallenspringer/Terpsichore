@@ -30,7 +30,7 @@ struct GrassComputeUniforms {
   lifetimeDuration: f32, // Lifetime in seconds
   pruneTrigger: f32,     // > 0.5 triggers prune
   pruneCutRatio: f32,    // 0..1 ratio of blades affected
-  pruneMode: f32,        // 0: instant cut, 1: dust dissolve
+  removalStyle: f32,     // 0: cut, 1: dissolve, 2: shrink
   tuftTrigger: f32,      // > 0.5 triggers tuft spawn
   tuftStyle: f32,        // 1: wildflowers, 2: poppies, 3: dandelions, 4: kelp, 5: wheat
   tuftChance: f32,       // Stochastic chance 0..1
@@ -107,137 +107,136 @@ fn cs_main(@builtin(global_invocation_id) id: vec3<u32>) {
   let activeRatio = bladeIdxF / u.totalBlades;
   let inDensityRange = activeRatio <= u.density;
 
-  // Staggered germination threshold across seeds (0.01 to 0.85)
-  let germinateThreshold = 0.01 + rnd * 0.84;
-  let canGerminate = inDensityRange && (u.growth > germinateThreshold);
-
-  // Handle post-dissolution dormancy cooldown timer (recoilDelay holds dormancy remaining)
+  // 1. Post-removal Dormancy Cooldown (for state 0)
   if (b.state == 0u && b.recoilDelay > 0.0) {
     b.recoilDelay = max(0.0, b.recoilDelay - u.dt);
   }
 
-  // 3. State Progression: Germination, Organic Growth, Decay & Removal
-  if (canGerminate && b.recoilDelay <= 0.0) {
-    // Blade is authorized to sprout / grow
-    if (b.state == 0u) {
-      // Sprout from seed! Re-roll tuft choice based on active chance
-      b.state = 1u; // growing
-      b.height = 0.001;
-      b.age = 0.0;
-      b.dissolveProgress = 0.0;
-      b.tuftScale = 0.0;
-      b.tuftType = select(0u, u32(u.tuftStyle), rnd < u.tuftChance);
-    } else if (b.state == 4u) {
-      // Regrow from cut stubble if growth drive increases
-      if (u.growth > 0.30) {
-        b.state = 1u;
-      }
-    }
-
-    if (b.state == 1u || b.state == 2u) {
-      // Update tuft style if active tuft exists
-      if (b.tuftType > 0u && u.tuftStyle > 0.0) {
-        b.tuftType = u32(u.tuftStyle);
-      } else if (b.tuftType == 0u && rnd < u.tuftChance && b.height > 0.20) {
-        // Late bloomer if tuftChance slider is raised
-        b.tuftType = u32(u.tuftStyle);
-      }
-
-      // Timer continuous decay handling (if enabled)
-      if (u.timerDecayEnabled > 0.5) {
-        b.age = b.age + u.dt;
-        if (b.age >= b.lifetime) {
-          b.state = 3u; // enter dissolve dust wipe
-          b.dissolveProgress = 0.0;
-        }
-      }
-
-      // Compute target mature height.
-      // Once sprouted, blades grow up towards their mature target without violently shrinking on brief volume dips!
-      let targetRatio = clamp(0.35 + 0.65 * u.growth, 0.35, 1.0);
-      let targetH = b.targetHeight * targetRatio;
-
-      // Organic growth rate: scaled by u.growthRate
-      let growSpeed = 0.65 * max(0.01, u.growthRate);
-      if (b.height < targetH) {
-        b.height = min(targetH, b.height + u.dt * growSpeed);
-      } else {
-        b.height = max(targetH, b.height - u.dt * growSpeed * 0.4);
-      }
-
-      if (b.height >= targetH * 0.90 && b.height > 0.04) {
-        b.state = 2u; // mature
-      } else {
-        b.state = 1u; // growing
-      }
-    }
-  } else {
-    // When u.growth drops below threshold (or out of density range)
-    // If timer decay is ON, mature blades can finish their lifespan gracefully unless growth is deeply cut (u.growth < 0.02)
-    // If timer decay is OFF, blades slowly wither back down
-    if (b.state == 1u || b.state == 2u) {
-      let isTotalSilence = u.growth <= 0.025;
-      if (isTotalSilence || !inDensityRange || u.timerDecayEnabled < 0.5) {
-        if (u.pruneMode > 0.5) {
-          // Dissolve into dust
-          if (b.state != 3u) {
-            b.state = 3u;
-            b.dissolveProgress = 0.0;
-          }
-        } else {
-          // Organic wither back into the earth
-          let witherSpeed = 0.55 * max(0.2, u.growthRate);
-          b.height = max(0.0, b.height - u.dt * witherSpeed);
-          if (b.height <= 0.003) {
-            b.state = 0u;
-            b.height = 0.0;
-            b.tuftScale = 0.0;
-            b.age = 0.0;
-            b.recoilDelay = mix(0.4, 1.6, rnd); // brief dormancy
-          }
-        }
-      } else {
-        // Timer decay is active and non-zero sound: let blade age naturally
-        b.age = b.age + u.dt;
-        if (b.age >= b.lifetime) {
-          b.state = 3u;
-          b.dissolveProgress = 0.0;
-        }
-      }
-    }
-  }
-
-  // Handle blades currently dissolving (e.g. from timer decay or prune dissolve)
+  // 2. Active Removal Progression Handling
+  // State 3: Dissolve (Dusting away)
   if (b.state == 3u) {
-    b.dissolveProgress = b.dissolveProgress + u.dt * 1.6;
+    b.dissolveProgress = b.dissolveProgress + u.dt * 1.5;
     if (b.dissolveProgress >= 1.0) {
-      // COMPLETELY REMOVED! Enter randomized dormancy cooldown so meadow respawns organically
       b.state = 0u;
       b.height = 0.0;
       b.dissolveProgress = 0.0;
       b.tuftScale = 0.0;
       b.age = 0.0;
-      b.recoilDelay = mix(0.6, 2.2, rnd); // Staggered dormancy gap
-      // Re-randomize lifetime for next cycle
+      b.recoilDelay = mix(0.5, 2.5, rnd); // Rest in soil before sprouting again
       let nextRnd = hash11(bladeIdxF * 71.39 + u.time * 0.2);
-      b.lifetime = max(3.0, u.lifetimeDuration * (0.6 + 0.8 * nextRnd));
+      b.lifetime = max(2.5, u.lifetimeDuration * (0.60 + 0.80 * nextRnd));
     }
   }
+  // State 4: Cut Stubble (lingers briefly then clears to soil)
+  else if (b.state == 4u) {
+    b.recoilDelay = max(0.0, b.recoilDelay - u.dt);
+    if (b.recoilDelay <= 0.0) {
+      b.state = 0u;
+      b.height = 0.0;
+      b.dissolveProgress = 0.0;
+      b.tuftScale = 0.0;
+      b.age = 0.0;
+      b.recoilDelay = mix(0.5, 2.5, rnd);
+      let nextRnd = hash11(bladeIdxF * 71.39 + u.time * 0.2);
+      b.lifetime = max(2.5, u.lifetimeDuration * (0.60 + 0.80 * nextRnd));
+    }
+  }
+  // State 5: Shrink / Ungrow (retracts smoothly down into soil)
+  else if (b.state == 5u) {
+    let shrinkSpeed = 0.90 * max(0.2, u.growthRate);
+    b.height = max(0.0, b.height - u.dt * shrinkSpeed);
+    b.tuftScale = max(0.0, b.tuftScale - u.dt * 2.0);
+    if (b.height <= 0.003) {
+      b.state = 0u;
+      b.height = 0.0;
+      b.dissolveProgress = 0.0;
+      b.tuftScale = 0.0;
+      b.age = 0.0;
+      b.recoilDelay = mix(0.5, 2.5, rnd);
+      let nextRnd = hash11(bladeIdxF * 71.39 + u.time * 0.2);
+      b.lifetime = max(2.5, u.lifetimeDuration * (0.60 + 0.80 * nextRnd));
+    }
+  }
+  // 3. Sprouting, Growth, Maturity, and Removal Triggering (States 0, 1, 2)
+  else {
+    let inDensityRange = activeRatio <= u.density;
+    let germinateThreshold = 0.01 + rnd * 0.84;
+    let canGerminate = inDensityRange && (u.growth > germinateThreshold);
 
-  // Gated Pruning / Cut Trigger Handling
-  if (u.pruneTrigger > 0.5 && (b.state == 1u || b.state == 2u)) {
-    let cutRnd = hash11(bladeIdxF * 91.137 + u.time);
-    if (cutRnd < u.pruneCutRatio) {
-      if (u.pruneMode < 0.5) {
-        // Sudden scythe cut: truncate blade to short stubble
-        b.height = b.height * 0.25;
-        b.tuftType = 0u;
-        b.tuftScale = 0.0;
-        b.state = 4u; // cut
-      } else {
-        // Dissolve into dust
-        b.state = 3u;
+    if (b.state == 0u) {
+      // Dormant seed: sprout if audio/CV drives growth and not in cooldown!
+      if (canGerminate && b.recoilDelay <= 0.0) {
+        b.state = 1u; // sprouting
+        b.height = 0.001;
+        b.age = 0.0;
         b.dissolveProgress = 0.0;
+        b.tuftScale = 0.0;
+        b.tuftType = select(0u, u32(u.tuftStyle), rnd < u.tuftChance);
+      }
+    } else if (b.state == 1u || b.state == 2u) {
+      // Active blade: growing (1) or mature (2)
+
+      // Age the blade if timer continuous decay is active
+      if (u.timerDecayEnabled > 0.5) {
+        b.age = b.age + u.dt;
+      }
+
+      // Check removal conditions
+      var shouldRemove = false;
+
+      // Condition A: Timer continuous decay reached end of lifespan!
+      if (u.timerDecayEnabled > 0.5 && b.age >= b.lifetime) {
+        shouldRemove = true;
+      }
+
+      // Condition B: Gated prune trigger (audio peak transient or CV gate)
+      if (u.pruneTrigger > 0.5) {
+        let cutRnd = hash11(bladeIdxF * 91.137 + u.time);
+        if (cutRnd < u.pruneCutRatio) {
+          shouldRemove = true;
+        }
+      }
+
+      // Condition C: Complete silence or outside density range when timer decay is off
+      if (!inDensityRange || (u.timerDecayEnabled < 0.5 && u.growth <= 0.02)) {
+        shouldRemove = true;
+      }
+
+      if (shouldRemove) {
+        // Trigger removal using selected removalStyle!
+        if (u.removalStyle < 0.5) {
+          // Style 0: Cut (scythe cut to stubble)
+          b.state = 4u;
+          b.height = b.height * 0.20;
+          b.tuftType = 0u;
+          b.tuftScale = 0.0;
+          b.recoilDelay = 0.75;
+        } else if (u.removalStyle < 1.5) {
+          // Style 1: Dissolve (dust particle wipe)
+          b.state = 3u;
+          b.dissolveProgress = 0.0;
+        } else {
+          // Style 2: Shrink (retracts down into ground)
+          b.state = 5u;
+        }
+      } else {
+        // Continue growing or persisting
+        if (b.state == 1u) {
+          let growSpeed = 0.75 * max(0.02, u.growthRate) * max(0.3, u.growth);
+          b.height = min(b.targetHeight, b.height + u.dt * growSpeed);
+          if (b.height >= b.targetHeight * 0.95) {
+            b.state = 2u; // reached maturity!
+            b.height = b.targetHeight;
+          }
+        }
+        // State 2: Mature blade persists at target height, swaying in wind!
+
+        // Update tuft / flower style if raised
+        if (b.tuftType > 0u && u.tuftStyle > 0.0) {
+          b.tuftType = u32(u.tuftStyle);
+        } else if (b.tuftType == 0u && rnd < u.tuftChance && b.height > 0.20) {
+          b.tuftType = u32(u.tuftStyle);
+        }
       }
     }
   }
@@ -563,13 +562,17 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
   let blade = blades[in.bladeIdx];
 
-  // 2. Dissolution Dust Wipe Handling
+  // 2. Dissolution Dust Particle Wipe (Top-Left to Bottom-Right)
   if (blade.state == 3u) {
-    // Gradient wipe from top corner to opposite bottom corner
-    let wipeThreshold = in.uv.x * 0.35 + (1.0 - in.uv.y);
-    let cutoff = (1.0 - blade.dissolveProgress) * 1.35;
-    if (wipeThreshold > cutoff) {
-      discard;
+    // Spatial gradient from top-left (uv.x = 0, uv.y = 1) to bottom-right (uv.x = 1, uv.y = 0)
+    let wipe = in.uv.x * 0.45 + (1.0 - in.uv.y) * 0.55;
+    // Granular 2D dust speck noise per blade
+    let dustNoise = hash21(in.uv * vec2<f32>(36.0, 100.0) + vec2<f32>(blade.seed * 53.7, blade.seed * 19.1));
+    let dustVal = wipe + (dustNoise - 0.5) * 0.55;
+
+    let threshold = blade.dissolveProgress * 1.40 - 0.15;
+    if (dustVal < threshold) {
+      discard; // Dissolved into dust!
     }
   }
 
@@ -638,6 +641,20 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
       let awn = sin(tuftT * 50.0 + tuftX * 8.0) * 0.15;
       let wheatCol = vec3<f32>(1.0, 0.88, 0.42) * (0.85 + 0.35 * grain + awn);
       finalRgb = mix(finalRgb, wheatCol, 0.88 * smoothstep(0.0, 0.2, scale));
+    }
+  }
+
+  // Dust speckle glow along active disintegration front
+  if (blade.state == 3u) {
+    let wipe = in.uv.x * 0.45 + (1.0 - in.uv.y) * 0.55;
+    let dustNoise = hash21(in.uv * vec2<f32>(36.0, 100.0) + vec2<f32>(blade.seed * 53.7, blade.seed * 19.1));
+    let dustVal = wipe + (dustNoise - 0.5) * 0.55;
+    let threshold = blade.dissolveProgress * 1.40 - 0.15;
+    let edgeDist = dustVal - threshold;
+    if (edgeDist < 0.14) {
+      let speckle = (1.0 - edgeDist / 0.14) * 0.75;
+      let dustColor = vec3<f32>(0.98, 0.88, 0.65);
+      finalRgb = mix(finalRgb, dustColor, speckle);
     }
   }
 

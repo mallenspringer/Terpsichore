@@ -32,6 +32,7 @@ describe('GrassField (3D Animated Procedural Meadow) Module', () => {
     expect(gf.lifetimeDuration).toBe(10.0);
     expect(gf.gatedPruneEnabled).toBe(false);
     expect(gf.pruneThreshold).toBe(0.7);
+    expect(gf.removalStyle).toBe('dissolve');
     expect(gf.pruneAudioMode).toBe('transient_cut');
     expect(gf.colorPreset).toBe('meadow');
     expect(gf.showSky).toBe(true);
