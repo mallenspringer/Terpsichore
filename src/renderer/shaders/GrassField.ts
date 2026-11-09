@@ -338,6 +338,12 @@ struct VertexOutput {
   @location(2) depth: f32,
 };
 
+fn hash21(p: vec2<f32>) -> f32 {
+  var p3 = fract(vec3<f32>(p.xyx) * 0.1031);
+  p3 = p3 + dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+
 fn getCustomStopPos(idx: u32) -> f32 {
   if (idx == 0u) { return u.customPositions[0].x; }
   if (idx == 1u) { return u.customPositions[0].y; }
