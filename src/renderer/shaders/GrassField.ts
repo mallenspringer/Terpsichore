@@ -37,7 +37,7 @@ struct GrassComputeUniforms {
   tuftBurstAmount: f32,  // Number of tufts to spawn on burst
   totalBlades: f32,      // Total buffer capacity
   growthRate: f32,       // 0.01 to 3.0 (speed multiplier)
-  pad2: f32,
+  windPhase: f32,        // Continuous integrated wind phase from CPU
 };
 
 @group(0) @binding(0) var<uniform> u: GrassComputeUniforms;
@@ -107,28 +107,42 @@ fn cs_main(@builtin(global_invocation_id) id: vec3<u32>) {
   let activeRatio = bladeIdxF / u.totalBlades;
   let inDensityRange = activeRatio <= u.density;
 
-  // Staggered germination threshold across seeds (0.02 to 0.88)
-  let germinateThreshold = 0.02 + rnd * 0.86;
+  // Staggered germination threshold across seeds (0.01 to 0.85)
+  let germinateThreshold = 0.01 + rnd * 0.84;
   let canGerminate = inDensityRange && (u.growth > germinateThreshold);
 
-  // 3. State Progression: Germination, Slow Organic Growth, Decay & Removal
-  if (canGerminate) {
+  // Handle post-dissolution dormancy cooldown timer (recoilDelay holds dormancy remaining)
+  if (b.state == 0u && b.recoilDelay > 0.0) {
+    b.recoilDelay = max(0.0, b.recoilDelay - u.dt);
+  }
+
+  // 3. State Progression: Germination, Organic Growth, Decay & Removal
+  if (canGerminate && b.recoilDelay <= 0.0) {
     // Blade is authorized to sprout / grow
     if (b.state == 0u) {
-      // Sprout from seed!
+      // Sprout from seed! Re-roll tuft choice based on active chance
       b.state = 1u; // growing
       b.height = 0.001;
       b.age = 0.0;
       b.dissolveProgress = 0.0;
       b.tuftScale = 0.0;
+      b.tuftType = select(0u, u32(u.tuftStyle), rnd < u.tuftChance);
     } else if (b.state == 4u) {
       // Regrow from cut stubble if growth drive increases
-      if (u.growth > 0.35) {
+      if (u.growth > 0.30) {
         b.state = 1u;
       }
     }
 
     if (b.state == 1u || b.state == 2u) {
+      // Update tuft style if active tuft exists
+      if (b.tuftType > 0u && u.tuftStyle > 0.0) {
+        b.tuftType = u32(u.tuftStyle);
+      } else if (b.tuftType == 0u && rnd < u.tuftChance && b.height > 0.20) {
+        // Late bloomer if tuftChance slider is raised
+        b.tuftType = u32(u.tuftStyle);
+      }
+
       // Timer continuous decay handling (if enabled)
       if (u.timerDecayEnabled > 0.5) {
         b.age = b.age + u.dt;
@@ -138,69 +152,73 @@ fn cs_main(@builtin(global_invocation_id) id: vec3<u32>) {
         }
       }
 
-      // Compute target height based on how far u.growth exceeds this blade's germination threshold
-      let growthSpan = max(0.01, 1.0 - germinateThreshold);
-      let localGrowthRatio = clamp((u.growth - germinateThreshold) / growthSpan, 0.0, 1.0);
-      let targetH = b.targetHeight * localGrowthRatio;
+      // Compute target mature height.
+      // Once sprouted, blades grow up towards their mature target without violently shrinking on brief volume dips!
+      let targetRatio = clamp(0.35 + 0.65 * u.growth, 0.35, 1.0);
+      let targetH = b.targetHeight * targetRatio;
 
-      // Organic growth rate: scaled by u.growthRate (allows 1% speed up to 300%)
-      let growSpeed = 0.55 * max(0.01, u.growthRate);
+      // Organic growth rate: scaled by u.growthRate
+      let growSpeed = 0.65 * max(0.01, u.growthRate);
       if (b.height < targetH) {
         b.height = min(targetH, b.height + u.dt * growSpeed);
       } else {
-        b.height = max(targetH, b.height - u.dt * growSpeed * 0.7);
+        b.height = max(targetH, b.height - u.dt * growSpeed * 0.4);
       }
 
-      if (b.height >= targetH * 0.95 && b.height > 0.04) {
+      if (b.height >= targetH * 0.90 && b.height > 0.04) {
         b.state = 2u; // mature
       } else {
         b.state = 1u; // growing
       }
     }
   } else {
-    // Not authorized to grow (e.g. 0 audio, silent pause, or below gate threshold)
-    // Blade must DECAY and be completely REMOVED from the field!
-    if (b.state != 0u) {
-      if (u.pruneMode > 0.5) {
-        // Mode 2: Dissolve into dust wipe
-        if (b.state != 3u) {
-          b.state = 3u;
-          b.dissolveProgress = 0.0;
-        }
-        b.dissolveProgress = b.dissolveProgress + u.dt * 1.5;
-        if (b.dissolveProgress >= 1.0) {
-          // COMPLETELY REMOVED!
-          b.state = 0u;
-          b.height = 0.0;
-          b.dissolveProgress = 0.0;
-          b.tuftScale = 0.0;
-          b.age = 0.0;
+    // When u.growth drops below threshold (or out of density range)
+    // If timer decay is ON, mature blades can finish their lifespan gracefully unless growth is deeply cut (u.growth < 0.02)
+    // If timer decay is OFF, blades slowly wither back down
+    if (b.state == 1u || b.state == 2u) {
+      let isTotalSilence = u.growth <= 0.025;
+      if (isTotalSilence || !inDensityRange || u.timerDecayEnabled < 0.5) {
+        if (u.pruneMode > 0.5) {
+          // Dissolve into dust
+          if (b.state != 3u) {
+            b.state = 3u;
+            b.dissolveProgress = 0.0;
+          }
+        } else {
+          // Organic wither back into the earth
+          let witherSpeed = 0.55 * max(0.2, u.growthRate);
+          b.height = max(0.0, b.height - u.dt * witherSpeed);
+          if (b.height <= 0.003) {
+            b.state = 0u;
+            b.height = 0.0;
+            b.tuftScale = 0.0;
+            b.age = 0.0;
+            b.recoilDelay = mix(0.4, 1.6, rnd); // brief dormancy
+          }
         }
       } else {
-        // Mode 1: Shrink / wither back into the earth
-        b.height = max(0.0, b.height - u.dt * 0.85);
-        if (b.height <= 0.002) {
-          // COMPLETELY REMOVED!
-          b.state = 0u;
-          b.height = 0.0;
-          b.tuftScale = 0.0;
-          b.age = 0.0;
+        // Timer decay is active and non-zero sound: let blade age naturally
+        b.age = b.age + u.dt;
+        if (b.age >= b.lifetime) {
+          b.state = 3u;
+          b.dissolveProgress = 0.0;
         }
       }
     }
   }
 
-  // Handle blades currently dissolving (e.g. from timer decay)
+  // Handle blades currently dissolving (e.g. from timer decay or prune dissolve)
   if (b.state == 3u) {
-    b.dissolveProgress = b.dissolveProgress + u.dt * 1.5;
+    b.dissolveProgress = b.dissolveProgress + u.dt * 1.6;
     if (b.dissolveProgress >= 1.0) {
-      // COMPLETELY REMOVED! Frees up ground space for new shoots
+      // COMPLETELY REMOVED! Enter randomized dormancy cooldown so meadow respawns organically
       b.state = 0u;
       b.height = 0.0;
       b.dissolveProgress = 0.0;
       b.tuftScale = 0.0;
       b.age = 0.0;
-      // Re-randomize lifetime so respawned blades don't clump
+      b.recoilDelay = mix(0.6, 2.2, rnd); // Staggered dormancy gap
+      // Re-randomize lifetime for next cycle
       let nextRnd = hash11(bladeIdxF * 71.39 + u.time * 0.2);
       b.lifetime = max(3.0, u.lifetimeDuration * (0.6 + 0.8 * nextRnd));
     }
@@ -224,20 +242,20 @@ fn cs_main(@builtin(global_invocation_id) id: vec3<u32>) {
     }
   }
 
-  // Tuft Burst Trigger Handling - Rich visible burst across meadow
-  if (u.tuftTrigger > 0.5 && b.state == 2u) {
-    let burstRnd = hash11(bladeIdxF * 53.471 + u.time * 0.7);
-    let burstThreshold = (u.tuftBurstAmount * 16.0) / (u.totalBlades * max(0.2, u.density));
+  // Tuft Burst Trigger Handling - Spawns flowers on ANY visible blade (growing or mature)
+  if (u.tuftTrigger > 0.5 && (b.state == 1u || b.state == 2u) && b.height > 0.10) {
+    let burstRnd = hash11(bladeIdxF * 53.471 + u.time * 1.3);
+    let burstThreshold = (u.tuftBurstAmount * 18.0) / (u.totalBlades * max(0.2, u.density));
     if (burstRnd < burstThreshold) {
       b.tuftType = u32(u.tuftStyle);
-      b.tuftScale = max(b.tuftScale, 0.08); // trigger bloom
+      b.tuftScale = max(b.tuftScale, 0.12); // trigger instant bloom
     }
   }
 
-  // Animated Blossoming Progression for Tufts
+  // Animated Blossoming Progression for Tufts (accessible to all heights > 0.12)
   if (b.tuftType > 0u && (b.state == 1u || b.state == 2u)) {
-    if (b.height > b.targetHeight * 0.40) {
-      b.tuftScale = min(1.0, b.tuftScale + u.dt * 2.0);
+    if (b.height > max(0.08, b.targetHeight * 0.25)) {
+      b.tuftScale = min(1.0, b.tuftScale + u.dt * 2.2);
     } else {
       b.tuftScale = max(0.0, b.tuftScale - u.dt * 1.5);
     }
@@ -245,22 +263,26 @@ fn cs_main(@builtin(global_invocation_id) id: vec3<u32>) {
     b.tuftScale = 0.0;
   }
 
-  // 4. Bend Dynamics: Stable Viscoelastic Damped Response (Clamped, Natural Stalk Physics)
-  let stiffness = mix(0.85, 1.20, rnd2);
-  let windTime = u.time * u.windSpeed;
-  let wave = sin(windTime + b.swayPhase) * cos(windTime * 0.60 + b.pos.x * 1.2);
-  // Physical target bend angle: strictly clamped to [-0.60, 0.60] radians (~34 deg max bend)
-  let targetBend = clamp((u.bend * 0.55 + wave * u.windStrength * 0.25) / stiffness, -0.60, 0.60);
+  // 4. Bend Dynamics: Smooth Continuous Wind Wave + Sub-Bass Gust Physics
+  let stiffness = mix(0.75, 1.25, rnd2);
+  let wPhase = u.windPhase;
+  // Natural multi-frequency spatial wave
+  let wave = sin(wPhase + b.swayPhase) * cos(wPhase * 0.65 + b.pos.x * 1.1)
+           + sin(wPhase * 1.4 + b.pos.y * 0.8) * 0.35;
+
+  // Unclamped physical target bend: allows expressive sway with smooth tanh saturation
+  let rawBend = (u.bend * 0.55 + wave * u.windStrength * 0.55) / stiffness;
+  // Soft saturation using tanh-like curve: [-1.05, 1.05] rad (~60 deg max bend)
+  let targetBend = rawBend / (1.0 + abs(rawBend) * 0.5);
 
   // Viscoelastic following: swift attack with wind gust, staggered gentle uncurling
   let diff = targetBend - b.dynamicBend;
-  // Individualized recovery speed per blade so meadow uncurls organically without lockstep twitch
-  let recoverySpeed = mix(1.8, 3.6, rnd);
-  let followRate = select(recoverySpeed, 7.0, abs(targetBend) > abs(b.dynamicBend));
-  b.dynamicBend = b.dynamicBend + diff * clamp(u.dt * followRate, 0.0, 0.5);
-  b.dynamicBend = clamp(b.dynamicBend, -0.60, 0.60);
+  let recoverySpeed = mix(2.2, 4.0, rnd);
+  let followRate = select(recoverySpeed, 8.5, abs(targetBend) > abs(b.dynamicBend));
+  b.dynamicBend = b.dynamicBend + diff * clamp(u.dt * followRate, 0.0, 0.55);
 
-  b.curvature = (rnd2 - 0.5) * 0.3 + b.dynamicBend * 0.7;
+  // Curvature: spectral brightness/slider bend curls stalk tips
+  b.curvature = (rnd2 - 0.5) * 0.25 + u.bend * 0.5;
   b.width = (0.055 + rnd * 0.040) * u.fatness;
 
   bladesOut[index] = b;
@@ -289,7 +311,7 @@ struct GrassBlade {
 struct GrassRenderUniforms {
   aspect: f32,
   time: f32,
-  tilt: f32,             // 0.0 (top down 0 deg) to 1.0 (horizon 85 deg)
+  tilt: f32,             // 0.0 (frontal 1.1 deg) to 1.0 (top-down 84.6 deg)
   zoom: f32,
   horizonY: f32,
   windSpeed: f32,
@@ -298,7 +320,11 @@ struct GrassRenderUniforms {
   useCustomPalette: f32,
   customColorCount: f32,
   customInterpolation: f32,
+  showSky: f32,          // 0.0 or 1.0 (full alpha transparency when 0)
+  showGround: f32,       // 0.0 or 1.0 (discard 3D ground plane when 0)
   pad1: f32,
+  pad2: f32,
+  pad3: f32,
   customColors: array<vec4<f32>, 8>,
   customPositions: array<vec4<f32>, 2>,
 };
@@ -386,8 +412,8 @@ fn vs_main(
   var out: VertexOutput;
   out.bladeIdx = instanceIndex;
 
-  // 3D Perspective Camera Setup
-  let pitch = mix(0.12, 0.85, u.tilt) * 1.5707963; // ~10 to ~76 deg
+  // 3D Perspective Camera Setup: Extended range from ~1.1 deg eye-level frontal up to ~84.6 deg steep top-down
+  let pitch = mix(0.012, 0.940, u.tilt) * 1.5707963;
   let camDist = 2.1 / max(0.2, u.zoom);
   let camY = cos(pitch) * camDist * 0.65 + 0.15;
   let camZ = -sin(pitch) * camDist * 0.65 - 0.15;
@@ -401,6 +427,13 @@ fn vs_main(
 
   // Instance 0: Expansive Ground Plane Quad (Soil / Turf Meadow Floor)
   if (instanceIndex == 0u) {
+    if (u.showGround < 0.5) {
+      // Ground plane hidden: discard quad completely
+      out.position = vec4<f32>(2.0, 2.0, 2.0, 1.0);
+      out.uv = vec2<f32>(0.0);
+      out.depth = 1.0;
+      return out;
+    }
     var groundCorners = array<vec2<f32>, 6>(
       vec2<f32>(-6.0, -0.9),
       vec2<f32>( 6.0, -0.9),
@@ -472,9 +505,10 @@ fn vs_main(
   let localX = (uv.x - 0.5) * blade.width * taper * flowerBulge;
 
   // Length-conserving physical curvature along camera billboard plane:
-  // Natural resting lean per blade (+- 0.08 rad) + dynamic wind bend
+  // Natural resting lean per blade (+- 0.08 rad) + dynamic wind bend + tip curvature
   let naturalLean = (blade.seed - 0.5) * 0.16;
-  let bendAngle = (blade.dynamicBend + naturalLean) * pow(uv.y, 1.4);
+  let tipBend = blade.curvature * pow(uv.y, 2.0);
+  let bendAngle = (blade.dynamicBend + naturalLean) * pow(uv.y, 1.3) + tipBend;
   let lateralDisplacement = sin(bendAngle) * (blade.height * uv.y);
   let verticalHeight = cos(bendAngle) * (blade.height * uv.y);
 
@@ -604,9 +638,11 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
   }
 
   // 5. Atmospheric Soft Depth Fog
-  let fog = smoothstep(0.70, 1.0, in.depth);
-  let fogColor = vec3<f32>(0.05, 0.10, 0.16);
-  finalRgb = mix(finalRgb, fogColor, fog * 0.35);
+  if (u.showSky > 0.5) {
+    let fog = smoothstep(0.70, 1.0, in.depth);
+    let fogColor = vec3<f32>(0.05, 0.10, 0.16);
+    finalRgb = mix(finalRgb, fogColor, fog * 0.35);
+  }
 
   return vec4<f32>(finalRgb, 1.0);
 }

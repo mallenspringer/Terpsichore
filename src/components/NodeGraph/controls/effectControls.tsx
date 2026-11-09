@@ -2842,6 +2842,24 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
                 onChange={v => upd(ctx)({ horizonY: v })}
               />
             </div>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 2 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: '#ddd', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={ef.showSky !== false}
+                  onChange={e => upd(ctx)({ showSky: e.target.checked })}
+                />
+                Show Sky (Opaque BG)
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: '#ddd', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={ef.showGround !== false}
+                  onChange={e => upd(ctx)({ showGround: e.target.checked })}
+                />
+                Show Ground Plane
+              </label>
+            </div>
           </div>
         );
       }

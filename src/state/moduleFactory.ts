@@ -429,7 +429,9 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
         gatedPruneEnabled: false,
         pruneThreshold: 0.7,
         pruneAudioMode: 'transient_cut',
-        colorPreset: 'meadow'
+        colorPreset: 'meadow',
+        showSky: true,
+        showGround: true
       };
 
     case 'TextMaker':

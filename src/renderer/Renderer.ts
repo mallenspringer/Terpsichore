@@ -116,6 +116,8 @@ export class Renderer {
   private grassPingPong: Map<string, number> = new Map();
   private grassGrowthAccum: Map<string, number> = new Map();
   private grassLastTime: Map<string, number> = new Map();
+  private grassWindPhase: Map<string, number> = new Map();
+  private grassTuftCooldown: Map<string, number> = new Map();
 
   // Isolated layouts to prevent 'Minimum Binding Size' collisions
   private effectLayouts: Map<string, GPUBindGroupLayout> = new Map();
@@ -4258,7 +4260,7 @@ export class Renderer {
 
     // Leaky Energy Accumulator for Growth Mode B
     // Zero audio or below gate threshold = 0.0 growth (empty bare dirt)
-    // Sound above gate = accumulates energy, driving slow organic meadow growth
+    // Sound above gate = accumulates energy, driving organic meadow growth
     let accum = this.grassGrowthAccum.get(nodeId) ?? 0.0;
     const growthRate = Math.max(0.01, ef.growthRate ?? 1.0);
     const audioGateThreshold = 0.025;
@@ -4269,11 +4271,12 @@ export class Renderer {
       if (isAudioActive) {
         // Active sound above gate: charge energy steadily scaled by growthRate
         const normalizedEnergy = Math.min(1.0, (rawAudioEnergy - audioGateThreshold) / 0.35);
-        const chargeSpeed = 0.45 * growthRate;
-        accum = Math.min(1.0, accum + (0.25 + 0.75 * normalizedEnergy) * chargeSpeed * dt);
+        const chargeSpeed = 0.35 * growthRate;
+        accum = Math.min(1.0, accum + (0.20 + 0.80 * normalizedEnergy) * chargeSpeed * dt);
       } else {
-        // Silent / below gate: steady natural decay back to 0.0 over ~1.8s
-        const decaySpeed = 0.55;
+        // Silent / below gate: steady natural decay tied to lifetimeDuration
+        const baseLifetime = Math.max(1.0, ef.lifetimeDuration ?? 10.0);
+        const decaySpeed = (ef.timerDecayEnabled !== false) ? (1.0 / baseLifetime) : 0.05;
         accum = Math.max(0.0, accum - decaySpeed * dt);
       }
       this.grassGrowthAccum.set(nodeId, accum);
@@ -4309,9 +4312,6 @@ export class Renderer {
       }
     }
 
-    // Tuft Normal
-    const audioTuftTrigger = isAudioConnected && busData ? ((audioPeak > (ef.tuftThreshold ?? 0.35)) || audioOnset) : false;
-
     // 2. Normalling Break-Jacks (CV Overrides)
     const baseGrowth = ef.growth ?? 0.0;
     let targetGrowth = 0.0;
@@ -4337,10 +4337,16 @@ export class Renderer {
 
     const modTilt = Math.max(0.0, Math.min(1.0, this.getEffectiveParam(layer, nodeId, 'tilt_cv', ef.tilt ?? 0.5, timeSec)));
 
+    const baseWindSpeed = ef.windSpeed ?? 1.5;
+    const bassGust = (isAudioConnected && ef.bassCoupling) ? Math.min(2.0, audioBass * 3.5) : 0.0;
+    const curPhase = this.grassWindPhase.get(nodeId) ?? 0.0;
+    const nextPhase = (curPhase + dt * baseWindSpeed * (1.0 + bassGust * 0.75)) % (Math.PI * 2000.0);
+    this.grassWindPhase.set(nodeId, nextPhase);
+
     const windEdge = layer.graph?.edges.find(e => e.toNodeId === nodeId && e.toPort === 'wind_cv');
     const modWind = windEdge
       ? this.getEffectiveParam(layer, nodeId, 'wind_cv', ef.windStrength ?? 1.0, timeSec)
-      : (isAudioConnected && ef.bassCoupling ? (ef.windStrength ?? 1.0) * (1.0 + Math.min(2.5, audioBass * 4.0)) : (ef.windStrength ?? 1.0));
+      : (isAudioConnected && ef.bassCoupling ? (ef.windStrength ?? 1.0) * (1.0 + bassGust) : (ef.windStrength ?? 1.0));
 
     const modDensity = Math.max(0.1, Math.min(1.0, this.getEffectiveParam(layer, nodeId, 'density_cv', ef.density ?? 0.6, timeSec)));
 
@@ -4373,23 +4379,31 @@ export class Renderer {
       this.grassGrowthAccum.set(nodeId, 0.05);
     }
 
-    // Tuft Trigger Resolution with 200ms burst hold window
+    // Tuft Trigger: detect rising edge for beats / triggers
     const tuftEdge = layer.graph?.edges.find(e => e.toNodeId === nodeId && e.toPort === 'tuft_trig');
     const latestSignals = SignalDispatcher.getInstance().getLatestSignals(layer.id);
     const trigVal = latestSignals[`${nodeId}.tuft_trig`] ?? 0;
     const lastTrig = this.lastTriggerVals.get(`${nodeId}.tuft_trig`) ?? 0;
     const curManualTuft = ef.tuftTriggerTime ?? 0;
     const lastManualTuft = this.lastTriggerVals.get(`${nodeId}.manualTuft`) ?? 0;
-    const isTuftRising = (tuftEdge ? (trigVal > 0.5 && lastTrig <= 0.5) : false) || (curManualTuft > lastManualTuft);
+    const isManualRising = curManualTuft > lastManualTuft;
+    const isCvRising = tuftEdge ? (trigVal > 0.5 && lastTrig <= 0.5) : false;
     this.lastTriggerVals.set(`${nodeId}.tuft_trig`, trigVal);
     this.lastTriggerVals.set(`${nodeId}.manualTuft`, curManualTuft);
 
-    let tuftHoldUntil = this.lastTriggerVals.get(`${nodeId}.tuftHoldUntil`) ?? 0;
-    if (isTuftRising || (isAudioConnected && audioTuftTrigger)) {
-      tuftHoldUntil = timeSec + 0.20; // 200ms burst window
-      this.lastTriggerVals.set(`${nodeId}.tuftHoldUntil`, tuftHoldUntil);
+    // Audio beat / onset rising edge with 180ms refractory period to avoid rapid jitter
+    let audioBeatTrigger = false;
+    if (isAudioConnected && busData) {
+      const tuftThresh = ef.tuftThreshold ?? 0.35;
+      const beatHit = audioOnset || (audioPeak > tuftThresh);
+      const lastBeatTime = this.grassTuftCooldown.get(nodeId) ?? 0;
+      if (beatHit && (timeSec - lastBeatTime > 0.18)) {
+        audioBeatTrigger = true;
+        this.grassTuftCooldown.set(nodeId, timeSec);
+      }
     }
-    const tuftTriggerActive = timeSec < tuftHoldUntil;
+
+    const tuftTriggerActive = isManualRising || isCvRising || audioBeatTrigger;
 
     const tuftStyleMap: Record<string, number> = {
       wildflowers: 1,
@@ -4408,7 +4422,7 @@ export class Renderer {
       modDensity,
       modBend,
       modFatness,
-      ef.windSpeed ?? 1.5,
+      baseWindSpeed,
       modWind,
       ef.timerDecayEnabled !== false ? 1.0 : 0.0,
       ef.lifetimeDuration ?? 10.0,
@@ -4421,7 +4435,7 @@ export class Renderer {
       ef.tuftBurstAmount ?? 25,
       totalBlades,
       growthRate,
-      0.0
+      nextPhase
     ]));
 
     const computeBindGroup = this.device.createBindGroup({
@@ -4448,6 +4462,9 @@ export class Renderer {
       neon: 3
     };
 
+    const showSky = ef.showSky !== false;
+    const showGround = ef.showGround !== false;
+
     const pal = this.getConnectedPalette(layer, nodeId, 'palette_in');
     const aspect = target.width / target.height;
     const renderF32 = new Float32Array(64);
@@ -4456,23 +4473,27 @@ export class Renderer {
     renderF32[2] = modTilt;
     renderF32[3] = ef.zoom ?? 1.0;
     renderF32[4] = ef.horizonY ?? 0.0;
-    renderF32[5] = ef.windSpeed ?? 1.5;
+    renderF32[5] = baseWindSpeed;
     renderF32[6] = modWind;
     renderF32[7] = presetMap[ef.colorPreset ?? 'meadow'] ?? 0;
     renderF32[8] = pal ? 1.0 : 0.0; // useCustomPalette
     renderF32[9] = pal ? pal.count : 0.0;
     renderF32[10] = pal ? pal.interpolation : 0.0;
-    renderF32[11] = 0.0;
+    renderF32[11] = showSky ? 1.0 : 0.0;
+    renderF32[12] = showGround ? 1.0 : 0.0;
+    renderF32[13] = 0.0;
+    renderF32[14] = 0.0;
+    renderF32[15] = 0.0;
 
     if (pal) {
       for (let i = 0; i < 8; i++) {
-        renderF32[12 + i * 4 + 0] = pal.colors[i][0];
-        renderF32[12 + i * 4 + 1] = pal.colors[i][1];
-        renderF32[12 + i * 4 + 2] = pal.colors[i][2];
-        renderF32[12 + i * 4 + 3] = pal.colors[i][3];
+        renderF32[16 + i * 4 + 0] = pal.colors[i][0];
+        renderF32[16 + i * 4 + 1] = pal.colors[i][1];
+        renderF32[16 + i * 4 + 2] = pal.colors[i][2];
+        renderF32[16 + i * 4 + 3] = pal.colors[i][3];
       }
       for (let i = 0; i < 8; i++) {
-        renderF32[44 + i] = pal.positions[i];
+        renderF32[48 + i] = pal.positions[i];
       }
     }
 
@@ -4486,14 +4507,17 @@ export class Renderer {
       ]
     });
 
-    const preset = ef.colorPreset ?? 'meadow';
-    let clearColor = { r: 0.05, g: 0.10, b: 0.16, a: 1.0 }; // Twilight sky
-    if (preset === 'bioluminescent') {
-      clearColor = { r: 0.02, g: 0.04, b: 0.09, a: 1.0 };
-    } else if (preset === 'golden') {
-      clearColor = { r: 0.18, g: 0.12, b: 0.08, a: 1.0 };
-    } else if (preset === 'neon') {
-      clearColor = { r: 0.10, g: 0.02, b: 0.16, a: 1.0 };
+    let clearColor = { r: 0.0, g: 0.0, b: 0.0, a: 0.0 };
+    if (showSky) {
+      const preset = ef.colorPreset ?? 'meadow';
+      clearColor = { r: 0.05, g: 0.10, b: 0.16, a: 1.0 }; // Twilight sky
+      if (preset === 'bioluminescent') {
+        clearColor = { r: 0.02, g: 0.04, b: 0.09, a: 1.0 };
+      } else if (preset === 'golden') {
+        clearColor = { r: 0.18, g: 0.12, b: 0.08, a: 1.0 };
+      } else if (preset === 'neon') {
+        clearColor = { r: 0.10, g: 0.02, b: 0.16, a: 1.0 };
+      }
     }
 
     const pass = commandEncoder.beginRenderPass({

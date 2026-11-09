@@ -844,6 +844,8 @@ export interface GrassFieldEffect {
   pruneThreshold: number;         // 0.1 to 1.0, default 0.7
   pruneAudioMode: 'transient_cut' | 'silence_dissolve'; // default 'transient_cut'
   colorPreset: 'meadow' | 'bioluminescent' | 'golden' | 'neon';
+  showSky?: boolean;              // default true (false = full alpha transparency)
+  showGround?: boolean;           // default true (false = transparent ground floor)
 }
 
 export type TextMakerFontFamily = 'broadcast_sans' | 'slab_serif' | 'vcr_osd' | 'brush_script' | 'lcd_digital';

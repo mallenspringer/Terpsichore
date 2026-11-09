@@ -34,6 +34,8 @@ describe('GrassField (3D Animated Procedural Meadow) Module', () => {
     expect(gf.pruneThreshold).toBe(0.7);
     expect(gf.pruneAudioMode).toBe('transient_cut');
     expect(gf.colorPreset).toBe('meadow');
+    expect(gf.showSky).toBe(true);
+    expect(gf.showGround).toBe(true);
   });
 
   it('is registered in module catalog and default bank loadout under Effects', () => {
@@ -110,10 +112,13 @@ describe('GrassField (3D Animated Procedural Meadow) Module', () => {
     expect(GrassComputeWGSL).toBeDefined();
     expect(GrassComputeWGSL).toContain('struct GrassBlade');
     expect(GrassComputeWGSL).toContain('fn cs_main');
+    expect(GrassComputeWGSL).toContain('windPhase');
 
     expect(GrassRenderWGSL).toBeDefined();
     expect(GrassRenderWGSL).toContain('fn vs_main');
     expect(GrassRenderWGSL).toContain('fn fs_main');
     expect(GrassRenderWGSL).toContain('sampleCustomPalette');
+    expect(GrassRenderWGSL).toContain('showSky');
+    expect(GrassRenderWGSL).toContain('showGround');
   });
 });
