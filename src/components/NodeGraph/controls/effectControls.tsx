@@ -2959,8 +2959,8 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
               />
               <Slider
                 label="Blade Fatness"
-                min={0.2}
-                max={3.0}
+                min={0.05}
+                max={2.0}
                 step={0.05}
                 resetValue={1.0}
                 value={ef.fatness ?? 1.0}

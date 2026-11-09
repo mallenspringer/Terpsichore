@@ -829,7 +829,7 @@ export interface GrassFieldEffect {
   density: number;                // 0.1 to 1.0, default 0.6
   bend: number;                   // -1.0 to 1.0, default 0.2
   invertCurvature: boolean;       // default false
-  fatness: number;                // 0.2 to 3.0, default 1.0
+  fatness: number;                // 0.05 to 2.0, default 1.0
   windSpeed: number;              // 0.0 to 5.0, default 1.5
   windStrength: number;           // 0.0 to 3.0, default 1.0
   bassCoupling: boolean;          // default true

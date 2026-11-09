@@ -82,13 +82,13 @@ fn cs_main(@builtin(global_invocation_id) id: vec3<u32>) {
 
   // 1. Blade Initialization / Ground Distribution (Starts dormant in soil)
   if (b.seed == 0.0) {
-    let gx = (rnd - 0.5) * 6.4;
-    let gz = -0.6 + rnd2 * 4.8;
+    let gx = (rnd - 0.5) * 15.0; // Spans exactly [-7.5, 7.5] across entire width of ground object
+    let gz = 0.0 + rnd2 * 5.5;    // Spans [0.0, 5.5] matching ground plane
     b.pos = vec2<f32>(gx, gz);
     b.targetHeight = 0.65 + rnd3 * 0.70;
     // Initial instantiation: starts dormant in the ground (0 height, state 0)
     b.height = 0.0;
-    b.width = (0.055 + rnd * 0.040) * u.fatness;
+    b.width = (0.032 + rnd * 0.024) * u.fatness;
     b.curvature = (rnd2 - 0.5) * 0.6;
     b.swayPhase = gx * 1.8 + gz * 1.4 + rnd * 6.28;
     b.lifetime = max(3.0, u.lifetimeDuration * (0.6 + 0.8 * rnd));
@@ -283,7 +283,7 @@ fn cs_main(@builtin(global_invocation_id) id: vec3<u32>) {
 
   // Curvature: spectral brightness/slider bend curls stalk tips
   b.curvature = (rnd2 - 0.5) * 0.25 + u.bend * 0.5;
-  b.width = (0.055 + rnd * 0.040) * u.fatness;
+  b.width = (0.032 + rnd * 0.024) * u.fatness;
 
   bladesOut[index] = b;
 }
@@ -412,18 +412,21 @@ fn vs_main(
   var out: VertexOutput;
   out.bladeIdx = instanceIndex;
 
-  // 3D Perspective Camera Setup: Extended range from ~1.1 deg eye-level frontal up to ~84.6 deg steep top-down
-  let pitch = mix(0.012, 0.940, u.tilt) * 1.5707963;
-  let camDist = 2.1 / max(0.2, u.zoom);
-  let camY = cos(pitch) * camDist * 0.65 + 0.15;
-  let camZ = -sin(pitch) * camDist * 0.65 - 0.15;
+  // 3D Perspective Camera Setup: Smooth orbit around target
+  let pitch = mix(0.015, 0.955, u.tilt) * 1.5707963;
+  let camDist = 2.6 / max(0.2, u.zoom);
+  let targetPos = vec3<f32>(0.0, 0.20 + u.horizonY * 0.5, 2.75);
+
+  let camY = targetPos.y + sin(pitch) * camDist;
+  let camZ = targetPos.z - cos(pitch) * camDist;
   let camPos = vec3<f32>(0.0, camY, camZ);
-  let targetPos = vec3<f32>(0.0, 0.20 + u.horizonY * 0.45, 2.0);
 
   let forward = normalize(targetPos - camPos);
   let right = normalize(cross(vec3<f32>(0.0, 1.0, 0.0), forward));
   let up = cross(forward, right);
   let fov = 1.35;
+  let near = 0.15;
+  let far = 25.0;
 
   // Instance 0: Expansive Ground Plane Quad (Soil / Turf Meadow Floor)
   if (instanceIndex == 0u) {
@@ -435,12 +438,12 @@ fn vs_main(
       return out;
     }
     var groundCorners = array<vec2<f32>, 6>(
-      vec2<f32>(-6.0, -0.9),
-      vec2<f32>( 6.0, -0.9),
-      vec2<f32>(-6.0,  5.0),
-      vec2<f32>( 6.0, -0.9),
-      vec2<f32>( 6.0,  5.0),
-      vec2<f32>(-6.0,  5.0)
+      vec2<f32>(-7.5,  0.0),
+      vec2<f32>( 7.5,  0.0),
+      vec2<f32>(-7.5,  5.5),
+      vec2<f32>( 7.5,  0.0),
+      vec2<f32>( 7.5,  5.5),
+      vec2<f32>(-7.5,  5.5)
     );
     let gPos = groundCorners[vertexIndex];
     let worldPos = vec3<f32>(gPos.x, 0.0, gPos.y);
@@ -448,29 +451,29 @@ fn vs_main(
     let viewZ = dot(pToCam, forward);
     let viewX = dot(pToCam, right);
     let viewY = dot(pToCam, up);
-    if (viewZ <= 0.05) {
-      out.position = vec4<f32>(2.0, 2.0, 2.0, 1.0);
-      out.depth = 1.0;
-      return out;
-    }
-    let projX = (viewX / (viewZ * fov)) / u.aspect;
-    let projY = viewY / (viewZ * fov);
-    let projZ = clamp((viewZ - 0.1) / 8.0, 0.0, 1.0);
-    out.position = vec4<f32>(projX, projY, projZ, 1.0);
-    out.uv = vec2<f32>((gPos.x + 6.0) / 12.0, (gPos.y + 0.9) / 5.9);
-    out.depth = projZ;
+
+    let clipX = (viewX / fov) / u.aspect;
+    let clipY = viewY / fov;
+    let clipZ = viewZ * (far / (far - near)) - (near * far / (far - near));
+    let clipW = viewZ;
+
+    out.position = vec4<f32>(clipX, clipY, clipZ, clipW);
+    out.uv = vec2<f32>((gPos.x + 7.5) / 15.0, gPos.y / 5.5);
+    out.depth = clamp((viewZ - near) / (far - near), 0.0, 1.0);
     return out;
   }
 
   // Instances 1..N: Grass Blades
   let blade = blades[instanceIndex];
 
-  // Near-plane guard for the entire blade root: prevents any partial vertex near-plane clipping
-  let rootPos = vec3<f32>(blade.pos.x, 0.0, blade.pos.y);
-  let rootToCam = rootPos - camPos;
-  let rootZ = dot(rootToCam, forward);
+  // Near-plane guard: calculate blade center distance to camera
+  let bladeCenter = vec3<f32>(blade.pos.x, blade.height * 0.5, blade.pos.y);
+  let centerToCam = bladeCenter - camPos;
+  let centerZ = dot(centerToCam, forward);
+  let bladeRadius = blade.height * 0.75 + blade.width;
 
-  if (blade.state == 0u || blade.height <= 0.005 || rootZ <= 0.25) {
+  // Cull blades that are dormant, zero height, or encroaching the camera near plane
+  if (blade.state == 0u || blade.height <= 0.005 || (centerZ - bladeRadius) < near) {
     out.position = vec4<f32>(2.0, 2.0, 2.0, 1.0); // Safely discard entire blade
     out.uv = vec2<f32>(0.0);
     out.depth = 1.0;
@@ -525,13 +528,14 @@ fn vs_main(
   let viewX = dot(pToCam, right);
   let viewY = dot(pToCam, up);
 
-  // Perspective Projection
-  let projX = (viewX / (viewZ * fov)) / u.aspect;
-  let projY = viewY / (viewZ * fov);
-  let projZ = clamp((viewZ - 0.1) / 8.0, 0.0, 1.0);
+  // Perspective Projection into proper Homogenous Clip Space (W = viewZ)
+  let clipX = (viewX / fov) / u.aspect;
+  let clipY = viewY / fov;
+  let clipZ = viewZ * (far / (far - near)) - (near * far / (far - near));
+  let clipW = viewZ;
 
-  out.position = vec4<f32>(projX, projY, projZ, 1.0);
-  out.depth = projZ;
+  out.position = vec4<f32>(clipX, clipY, clipZ, clipW);
+  out.depth = clamp((viewZ - near) / (far - near), 0.0, 1.0);
   return out;
 }
 

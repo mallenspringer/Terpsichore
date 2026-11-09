@@ -4230,8 +4230,8 @@ export class Renderer {
     const bufferSize = totalBlades * bladeByteSize;
 
     const ping = this.grassPingPong.get(nodeId) ?? 0;
-    const inBufKey = `${nodeId}.grass_buf_${ping}`;
-    const outBufKey = `${nodeId}.grass_buf_${1 - ping}`;
+    const inBufKey = `${nodeId}.grass_v2_buf_${ping}`;
+    const outBufKey = `${nodeId}.grass_v2_buf_${1 - ping}`;
     const inBuf = this.getStorageBuffer(inBufKey, bufferSize);
     const outBuf = this.getStorageBuffer(outBufKey, bufferSize);
     this.grassPingPong.set(nodeId, 1 - ping);
@@ -4356,7 +4356,7 @@ export class Renderer {
       ? this.getEffectiveParam(layer, nodeId, 'bend_cv', ef.bend ?? 0.2, timeSec)
       : (isAudioConnected ? Math.max(-1.0, Math.min(1.0, (ef.bend ?? 0.2) + bendAudioDelta)) : (ef.bend ?? 0.2));
 
-    const modFatness = Math.max(0.2, Math.min(3.0, this.getEffectiveParam(layer, nodeId, 'fatness_cv', ef.fatness ?? 1.0, timeSec)));
+    const modFatness = Math.max(0.05, Math.min(2.5, this.getEffectiveParam(layer, nodeId, 'fatness_cv', ef.fatness ?? 1.0, timeSec)));
 
     // Prune Resolution & Accumulator Reset
     const pruneEdge = layer.graph?.edges.find(e => e.toNodeId === nodeId && e.toPort === 'prune_in');
