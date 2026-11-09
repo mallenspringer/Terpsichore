@@ -115,7 +115,7 @@ fn cs_main(@builtin(global_invocation_id) id: vec3<u32>) {
   // 2. Active Removal Progression Handling
   // State 3: Dissolve (Dusting away)
   if (b.state == 3u) {
-    b.dissolveProgress = b.dissolveProgress + u.dt * 1.5;
+    b.dissolveProgress = b.dissolveProgress + u.dt * 0.50; // Tripled duration (~2.0s)
     if (b.dissolveProgress >= 1.0) {
       b.state = 0u;
       b.height = 0.0;
@@ -143,9 +143,9 @@ fn cs_main(@builtin(global_invocation_id) id: vec3<u32>) {
   }
   // State 5: Shrink / Ungrow (retracts smoothly down into soil)
   else if (b.state == 5u) {
-    let shrinkSpeed = 0.90 * max(0.2, u.growthRate);
+    let shrinkSpeed = 0.30 * max(0.2, u.growthRate); // Tripled duration (~2.5s)
     b.height = max(0.0, b.height - u.dt * shrinkSpeed);
-    b.tuftScale = max(0.0, b.tuftScale - u.dt * 2.0);
+    b.tuftScale = max(0.0, b.tuftScale - u.dt * 0.70);
     if (b.height <= 0.003) {
       b.state = 0u;
       b.height = 0.0;
@@ -210,7 +210,7 @@ fn cs_main(@builtin(global_invocation_id) id: vec3<u32>) {
           b.height = b.height * 0.20;
           b.tuftType = 0u;
           b.tuftScale = 0.0;
-          b.recoilDelay = 0.75;
+          b.recoilDelay = 2.25; // stubble lingers 3x longer (~2.25s) before clearing
         } else if (u.removalStyle < 1.5) {
           // Style 1: Dissolve (dust particle wipe)
           b.state = 3u;
