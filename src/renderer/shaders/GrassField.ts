@@ -160,8 +160,7 @@ fn cs_main(@builtin(global_invocation_id) id: vec3<u32>) {
   // 3. Sprouting, Growth, Maturity, and Removal Triggering (States 0, 1, 2)
   else {
     let inDensityRange = activeRatio <= u.density;
-    let germinateThreshold = 0.01 + rnd * 0.84;
-    let canGerminate = inDensityRange && (u.growth > germinateThreshold);
+    let canGerminate = inDensityRange && (u.growth > 0.02);
 
     if (b.state == 0u) {
       // Dormant seed: sprout if audio/CV drives growth and not in cooldown!
@@ -220,16 +219,20 @@ fn cs_main(@builtin(global_invocation_id) id: vec3<u32>) {
           b.state = 5u;
         }
       } else {
-        // Continue growing or persisting
+        // Continue growing or persisting scaled by Growth Height (u.growth)
+        let targetH = b.targetHeight * max(0.04, u.growth);
         if (b.state == 1u) {
           let growSpeed = 0.75 * max(0.02, u.growthRate) * max(0.3, u.growth);
-          b.height = min(b.targetHeight, b.height + u.dt * growSpeed);
-          if (b.height >= b.targetHeight * 0.95) {
+          b.height = min(targetH, b.height + u.dt * growSpeed);
+          if (b.height >= targetH * 0.95) {
             b.state = 2u; // reached maturity!
-            b.height = b.targetHeight;
+            b.height = targetH;
           }
+        } else if (b.state == 2u) {
+          // Mature blade tracks Growth Height slider / CV changes smoothly
+          let diff = targetH - b.height;
+          b.height = b.height + diff * clamp(u.dt * 4.0, 0.0, 1.0);
         }
-        // State 2: Mature blade persists at target height, swaying in wind!
 
         // Update tuft / flower style if raised
         if (b.tuftType > 0u && u.tuftStyle > 0.0) {

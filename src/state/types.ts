@@ -824,7 +824,7 @@ export interface GrassFieldEffect {
   tilt: number;                   // 0.0 to 1.0, default 0.5 (~45 deg)
   zoom: number;                   // 0.2 to 3.0, default 1.0
   horizonY: number;               // -1.0 to 1.0, default 0.0
-  growth: number;                 // 0.0 to 1.0, default 0.0
+  growth: number;                 // 0.0 to 1.0, default 0.8
   growthRate?: number;            // 0.01 to 3.0, default 1.0 (down to 1% speed)
   growthAudioMode: 'accumulate' | 'pitch'; // default 'accumulate'
   density: number;                // 0.1 to 1.0, default 0.6

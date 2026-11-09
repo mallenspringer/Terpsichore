@@ -4313,7 +4313,7 @@ export class Renderer {
     }
 
     // 2. Normalling Break-Jacks (CV Overrides)
-    const baseGrowth = ef.growth ?? 0.0;
+    const baseGrowth = ef.growth ?? 0.8;
     let targetGrowth = 0.0;
 
     const growthEdge = layer.graph?.edges.find(e => e.toNodeId === nodeId && e.toPort === 'growth_cv');
@@ -4321,15 +4321,15 @@ export class Renderer {
       // 1. CV Jack has priority override
       targetGrowth = this.getEffectiveParam(layer, nodeId, 'growth_cv', baseGrowth, timeSec);
     } else if (isAudioConnected) {
-      // 2. Audio Jack normalled modulation: Audio accumulates from 0.0 to 1.0
+      // 2. Audio Jack normalled modulation: Audio accumulates from 0.0 to 1.0, scaled by Growth Height slider
       if (ef.growthAudioMode === 'pitch') {
-        targetGrowth = isAudioActive ? (0.2 + Math.min(1.0, pitchVal) * 0.8) : 0.0;
+        targetGrowth = baseGrowth * (isAudioActive ? (0.2 + Math.min(1.0, pitchVal) * 0.8) : 0.0);
       } else {
-        // Growth Mode B (Accumulate): Driven directly by accumulated audio energy (0.0 on silence)
-        targetGrowth = accum;
+        // Growth Mode B (Accumulate): Driven directly by accumulated audio energy scaled by Growth Height
+        targetGrowth = baseGrowth * accum;
       }
     } else {
-      // 3. Fallback manual slider control (0.0 by default)
+      // 3. Fallback manual slider control
       targetGrowth = baseGrowth;
     }
 

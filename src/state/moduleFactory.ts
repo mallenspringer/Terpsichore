@@ -410,7 +410,7 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
         tilt: 0.5,
         zoom: 1.0,
         horizonY: 0.0,
-        growth: 0.0,
+        growth: 0.8,
         growthRate: 1.0,
         growthAudioMode: 'accumulate',
         density: 0.6,

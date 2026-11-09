@@ -14,7 +14,7 @@ describe('GrassField (3D Animated Procedural Meadow) Module', () => {
     expect(gf.tilt).toBe(0.5);
     expect(gf.zoom).toBe(1.0);
     expect(gf.horizonY).toBe(0.0);
-    expect(gf.growth).toBe(0.0);
+    expect(gf.growth).toBe(0.8);
     expect(gf.growthRate).toBe(1.0);
     expect(gf.growthAudioMode).toBe('accumulate');
     expect(gf.density).toBe(0.6);

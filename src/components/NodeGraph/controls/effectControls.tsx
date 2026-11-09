@@ -2878,8 +2878,8 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
                 min={0.0}
                 max={1.0}
                 step={0.01}
-                resetValue={0.0}
-                value={ef.growth ?? 0.0}
+                resetValue={0.8}
+                value={ef.growth ?? 0.8}
                 onChange={v => upd(ctx)({ growth: v })}
                 paramId="growth_cv"
                 ctx={ctx}
