@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useEngineStore } from '../state/store';
 import { VideoFileSource, ImageFileSource } from '../state/types';
 import { createDefaultSource, createDefaultEffect, createDefaultModulator } from '../state/moduleFactory';
-import { exportProject, importProject } from '../utils/projectPersistence';
+import { exportProject, importProject, newProjectWithConfirmation } from '../utils/projectPersistence';
 import {
   ALL_MODULES,
   CATEGORIES,
@@ -372,6 +372,8 @@ export function Sidebar({ activeLayerId, onSelectLayer, onOpenMidiModal, onOpenS
 
   const projectName = useEngineStore(s => s.projectName);
   const authorName = useEngineStore(s => s.authorName);
+  const isDirty = useEngineStore(s => s.isDirty);
+  const currentFilePath = useEngineStore(s => s.currentFilePath);
   const setProjectName = useEngineStore(s => s.setProjectName);
   const setAuthorName = useEngineStore(s => s.setAuthorName);
 
@@ -398,12 +400,14 @@ export function Sidebar({ activeLayerId, onSelectLayer, onOpenMidiModal, onOpenS
       {/* ── Section 0: Project ── */}
       <SbSection title="Project">
         <div className="sb-resolution-row">
-          <label>Name</label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            Name {isDirty && <span style={{ color: '#ffb74d', fontWeight: 'bold' }} title="Unsaved changes">•</span>}
+          </label>
           <input 
             type="text" 
             value={projectName} 
             onChange={e => setProjectName(e.target.value)}
-            style={{ flex: 1, background: '#222', color: '#fff', border: '1px solid #444', fontSize: 11, padding: '2px 4px' }}
+            style={{ flex: 1, background: '#222', color: '#fff', border: isDirty ? '1px solid #ffb74d' : '1px solid #444', fontSize: 11, padding: '2px 4px' }}
           />
         </div>
         <div className="sb-resolution-row">
@@ -415,29 +419,59 @@ export function Sidebar({ activeLayerId, onSelectLayer, onOpenMidiModal, onOpenS
             style={{ flex: 1, background: '#222', color: '#fff', border: '1px solid #444', fontSize: 11, padding: '2px 4px' }}
           />
         </div>
-        <div className="sb-resolution-row" style={{ marginTop: 8 }}>
+
+        {/* Project Actions */}
+        <div style={{ display: 'flex', gap: 4, marginTop: 8 }}>
           <button 
             onClick={() => exportProject()}
-            style={{ flex: 1, background: '#1a3a5f', color: '#4a9eff', border: '1px solid currentColor', borderRadius: 3, cursor: 'pointer', fontSize: 10, padding: '4px 0' }}
+            title={currentFilePath ? `Save to ${currentFilePath} (Ctrl+S)` : 'Save Project (Ctrl+S)'}
+            style={{ flex: 1, background: '#1a3a5f', color: '#4a9eff', border: '1px solid currentColor', borderRadius: 3, cursor: 'pointer', fontSize: 10, padding: '4px 0', fontWeight: 'bold' }}
           >
-            💾 SAVE PROJECT (.terp)
+            💾 SAVE {isDirty ? '•' : ''}
+          </button>
+          <button 
+            onClick={() => exportProject({ forceSaveAs: true })}
+            title="Save As new file (Ctrl+Shift+S)"
+            style={{ flex: 1, background: '#192b3c', color: '#88c0d0', border: '1px solid #3b5a75', borderRadius: 3, cursor: 'pointer', fontSize: 10, padding: '4px 0' }}
+          >
+            SAVE AS...
           </button>
         </div>
-        <div className="sb-resolution-row">
+
+        <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
           <button 
             onClick={() => fileInputRef.current?.click()}
+            title="Open Project (Ctrl+O)"
             style={{ flex: 1, background: '#222', color: '#ccc', border: '1px solid #444', borderRadius: 3, cursor: 'pointer', fontSize: 10, padding: '4px 0' }}
           >
-            📂 OPEN PROJECT
+            📂 OPEN
           </button>
-          <input 
-            type="file" 
-            ref={fileInputRef} 
-            style={{ display: 'none' }} 
-            accept=".terp,application/json"
-            onChange={handleImport}
-          />
+          <button 
+            onClick={() => newProjectWithConfirmation()}
+            title="New blank project"
+            style={{ flex: 1, background: '#222', color: '#aaa', border: '1px solid #333', borderRadius: 3, cursor: 'pointer', fontSize: 10, padding: '4px 0' }}
+          >
+            📄 NEW
+          </button>
         </div>
+
+        <div className="sb-resolution-row" style={{ marginTop: 4 }}>
+          <button 
+            onClick={() => exportProject({ forceSaveAs: true, isTemplate: true })}
+            title="Save as reusable starter template (*.terptemplate)"
+            style={{ flex: 1, background: '#221a30', color: '#b388ff', border: '1px solid #5d3f8a', borderRadius: 3, cursor: 'pointer', fontSize: 9, padding: '3px 0' }}
+          >
+            📋 SAVE AS TEMPLATE
+          </button>
+        </div>
+
+        <input 
+          type="file" 
+          ref={fileInputRef} 
+          style={{ display: 'none' }} 
+          accept=".terp,.terptemplate,application/json"
+          onChange={handleImport}
+        />
         <div className="sb-resolution-row" style={{ marginTop: 4, display: 'flex', gap: 4 }}>
           <button 
             onClick={onOpenMidiModal}

@@ -59,10 +59,17 @@ export type StoreState = EngineState & EngineActions & {
   globalResetSignal: number;
   projectName: string;
   authorName: string;
+  isDirty: boolean;
+  currentFilePath: string | null;
+  lastSavedAt: string | null;
   setIsGlobalPaused: (paused: boolean) => void;
   triggerGlobalReset: () => void;
   setProjectName: (name: string) => void;
   setAuthorName: (name: string) => void;
+  setDirty: (dirty: boolean) => void;
+  setProjectFilePath: (path: string | null) => void;
+  markSaved: (path?: string) => void;
+  newProject: () => void;
 };
 
 export const useEngineStore = create<StoreState>((set) => ({
@@ -75,6 +82,9 @@ export const useEngineStore = create<StoreState>((set) => ({
       modulators: {},
       opacity: 1.0,
       blendMode: 'normal',
+      graph: { nodes: [], edges: [], disconnectedPorts: [] },
+      signals: {},
+      inputSettings: {}
     }
   },
   layerOrder: ['layer_initial'],
@@ -88,6 +98,9 @@ export const useEngineStore = create<StoreState>((set) => ({
   globalResetSignal: 0,
   projectName: 'Untitled Project',
   authorName: 'User',
+  isDirty: false,
+  currentFilePath: null,
+  lastSavedAt: null,
   midiBindings: [],
   midiLearnTarget: null,
   midiOverlayActive: false,
@@ -97,13 +110,62 @@ export const useEngineStore = create<StoreState>((set) => ({
     sensors: [],
   },
 
-  setProjectName: (name) => set({ projectName: name }),
-  setAuthorName: (name) => set({ authorName: name }),
+  setDirty: (dirty) => set({ isDirty: dirty }),
+  setProjectFilePath: (path) => set({ currentFilePath: path }),
+  markSaved: (path) => set(() => ({
+    isDirty: false,
+    lastSavedAt: new Date().toISOString(),
+    ...(path !== undefined ? { currentFilePath: path } : {})
+  })),
+
+  newProject: () => {
+    const state = useEngineStore.getState();
+    Object.values(state.layers).forEach(layer => {
+      layer.effects.forEach(e => {
+        if (e.id) AudioEngine.getInstance().disconnectNode(e.id);
+      });
+      AudioEngine.getInstance().unregisterMediaElement(layer.id);
+    });
+
+    const initialLayerId = 'layer_initial';
+    set(() => ({
+      layers: {
+        [initialLayerId]: {
+          id: initialLayerId,
+          name: 'Layer 1',
+          source: { type: 'None' } as any,
+          effects: [],
+          modulators: {},
+          opacity: 1.0,
+          blendMode: 'normal',
+          graph: { nodes: [], edges: [], disconnectedPorts: [] },
+          signals: {},
+          inputSettings: {}
+        }
+      },
+      layerOrder: [initialLayerId],
+      activeLayerId: initialLayerId,
+      resolution: { width: 1920, height: 1080 },
+      globalAudioMuted: false,
+      interLayerEdges: [],
+      projectName: 'Untitled Project',
+      authorName: 'User',
+      isDirty: false,
+      currentFilePath: null,
+      lastSavedAt: null,
+      midiBindings: [],
+      midiLearnTarget: null,
+      sensorSystem: { deviceId: '', enabled: true, sensors: [] }
+    }));
+  },
+
+  setProjectName: (name) => set({ projectName: name, isDirty: true }),
+  setAuthorName: (name) => set({ authorName: name, isDirty: true }),
   setIsGlobalPaused: (paused) => set({ isGlobalPaused: paused }),
   triggerGlobalReset: () => set((state) => ({ globalResetSignal: state.globalResetSignal + 1 })),
 
   setResolution: (width: number, height: number) =>
-    set(() => ({ resolution: { width, height } })),
+    set(() => ({ resolution: { width, height }, isDirty: true })),
   
   setGlobalAudioMuted: (muted: boolean) =>
     set(() => ({ globalAudioMuted: muted })),
@@ -112,6 +174,7 @@ export const useEngineStore = create<StoreState>((set) => ({
     set((state) => ({
       layers: { ...state.layers, [layer.id]: layer },
       layerOrder: [layer.id, ...state.layerOrder],
+      isDirty: true,
     })),
   
   updateLayer: (id, updates) =>
@@ -119,7 +182,8 @@ export const useEngineStore = create<StoreState>((set) => ({
       layers: {
         ...state.layers,
         [id]: { ...state.layers[id], ...updates }
-      }
+      },
+      isDirty: true,
     })),
 
   removeLayer: (id) =>
@@ -136,6 +200,7 @@ export const useEngineStore = create<StoreState>((set) => ({
       return {
         layers: newLayers,
         layerOrder: state.layerOrder.filter(lid => lid !== id),
+        isDirty: true,
       };
     }),
 
@@ -144,7 +209,7 @@ export const useEngineStore = create<StoreState>((set) => ({
       const newOrder = [...state.layerOrder];
       const [moved] = newOrder.splice(fromIndex, 1);
       newOrder.splice(toIndex, 0, moved);
-      return { layerOrder: newOrder };
+      return { layerOrder: newOrder, isDirty: true };
     }),
 
   loadProject: (project) =>
@@ -159,7 +224,9 @@ export const useEngineStore = create<StoreState>((set) => ({
       activeLayerId: project.layerOrder[0] || null,
       midiBindings: project.midiBindings || [],
       midiLearnTarget: null,
-      sensorSystem: project.sensorSystem || { deviceId: '', enabled: true, sensors: [] }
+      sensorSystem: project.sensorSystem || { deviceId: '', enabled: true, sensors: [] },
+      isDirty: false,
+      lastSavedAt: new Date().toISOString()
     })),
 
   reorderEffect: (layerId, fromIndex, toIndex) =>
@@ -169,12 +236,13 @@ export const useEngineStore = create<StoreState>((set) => ({
       const effects = [...layer.effects];
       const [moved] = effects.splice(fromIndex, 1);
       effects.splice(toIndex, 0, moved);
-      return { layers: { ...state.layers, [layerId]: { ...layer, effects } } };
+      return { layers: { ...state.layers, [layerId]: { ...layer, effects } }, isDirty: true };
     }),
 
   updateLayerGraph: (layerId, graph) =>
     set((state) => ({
-      layers: { ...state.layers, [layerId]: { ...state.layers[layerId], graph } }
+      layers: { ...state.layers, [layerId]: { ...state.layers[layerId], graph } },
+      isDirty: true
     })),
 
   updateLayerSignals: (layerId, signals) =>
@@ -188,7 +256,7 @@ export const useEngineStore = create<StoreState>((set) => ({
       if (!layer) return {};
       const settings = { ...(layer.inputSettings || {}) };
       settings[portKey] = { ...(settings[portKey] || { amount: 1.0, bipolar: false, invert: false }), ...updates };
-      return { layers: { ...state.layers, [layerId]: { ...layer, inputSettings: settings } } };
+      return { layers: { ...state.layers, [layerId]: { ...layer, inputSettings: settings } }, isDirty: true };
     }),
 
   setSource: (layerId, source) =>
@@ -201,7 +269,8 @@ export const useEngineStore = create<StoreState>((set) => ({
         layers: { 
           ...state.layers, 
           [layerId]: { ...nextLayer, graph: { ...layer.graph, edges: nextEdges } } 
-        } 
+        },
+        isDirty: true
       };
     }),
 
@@ -215,7 +284,8 @@ export const useEngineStore = create<StoreState>((set) => ({
         layers: { 
           ...state.layers, 
           [layerId]: { ...nextLayer, graph: { ...layer.graph, edges: nextEdges } } 
-        } 
+        },
+        isDirty: true
       };
     }),
   
@@ -224,7 +294,7 @@ export const useEngineStore = create<StoreState>((set) => ({
       const layer = state.layers[layerId];
       if (!layer) return {};
       const effects = layer.effects.map(e => e.id === effectId ? { ...e, ...updates } as AnyEffect : e);
-      return { layers: { ...state.layers, [layerId]: { ...layer, effects } } };
+      return { layers: { ...state.layers, [layerId]: { ...layer, effects } }, isDirty: true };
     }),
 
   removeEffect: (layerId, effectId) =>
@@ -238,7 +308,8 @@ export const useEngineStore = create<StoreState>((set) => ({
         layers: { 
           ...state.layers, 
           [layerId]: { ...nextLayer, graph: { ...layer.graph, edges: nextEdges } } 
-        } 
+        },
+        isDirty: true
       };
     }),
 
@@ -252,7 +323,8 @@ export const useEngineStore = create<StoreState>((set) => ({
         layers: { 
           ...state.layers, 
           [layerId]: { ...nextLayer, graph: { ...layer.graph, edges: nextEdges } } 
-        } 
+        },
+        isDirty: true
       };
     }),
 
@@ -272,7 +344,7 @@ export const useEngineStore = create<StoreState>((set) => ({
           changed = true;
         }
       });
-      return changed ? { layers: nextLayers } : {};
+      return changed ? { layers: nextLayers, isDirty: true } : {};
     }),
 
   removeModulator: (layerId, id) =>
@@ -287,17 +359,18 @@ export const useEngineStore = create<StoreState>((set) => ({
         layers: { 
           ...state.layers, 
           [layerId]: { ...nextLayer, graph: { ...layer.graph, edges: nextEdges } } 
-        } 
+        },
+        isDirty: true
       };
     }),
 
-
   addInterLayerEdge: (edge) =>
-    set((state) => ({ interLayerEdges: [...state.interLayerEdges, edge] })),
+    set((state) => ({ interLayerEdges: [...state.interLayerEdges, edge], isDirty: true })),
 
   removeInterLayerEdge: (id) =>
     set((state) => ({
-      interLayerEdges: state.interLayerEdges.filter(e => e.id !== id)
+      interLayerEdges: state.interLayerEdges.filter(e => e.id !== id),
+      isDirty: true
     })),
 
   setActiveLayerId: (id) => set({ activeLayerId: id }),

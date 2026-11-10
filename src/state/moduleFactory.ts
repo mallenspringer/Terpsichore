@@ -1,5 +1,97 @@
 import { AnySource, AnyEffect, GlyphTemplatePack } from './types';
 
+export function isKnownSourceType(type: string): boolean {
+  if (!type) return false;
+  switch (type.trim()) {
+    case 'ShapeGenerator':
+    case 'VideoURL':
+    case 'VideoFile':
+    case 'WebcamCapture':
+    case 'ImageFile':
+    case 'AudioInput':
+    case 'AudioFile':
+    case 'SystemAudio':
+    case 'NoiseSource':
+    case 'ImageLoader':
+    case 'ColorNoise':
+    case 'ImageCue':
+    case 'TextCue':
+    case 'None':
+      return true;
+    default:
+      return false;
+  }
+}
+
+export function isKnownEffectType(type: string): boolean {
+  if (!type) return false;
+  switch (type.trim()) {
+    case 'Transform2D':
+    case 'ColorAdjust':
+    case 'LumaKey':
+    case 'AudioSource':
+    case 'Oscilloscope':
+    case 'SpectralSplitter':
+    case 'WaterfallSpectrogram':
+    case 'AudioTransformer':
+    case 'AudioModulator':
+    case 'AudioGate':
+    case 'AudioToCV':
+    case 'SpeechEnvelopeTracker':
+    case 'VocalPitchTracker':
+    case 'VowelFormantTracker':
+    case 'SpokenWordVisualizer':
+    case 'InterLayerOutput':
+    case 'InterLayerInput':
+    case 'ColorRGB':
+    case 'LumaSplitter':
+    case 'Spawn':
+    case 'Path':
+    case 'Inverter':
+    case 'LogicGate':
+    case 'TriggeredGate':
+    case 'Pattern':
+    case 'UVDisplace':
+    case 'VideoMixer':
+    case 'KeyMixer':
+    case 'VideoMath':
+    case 'AlphaAdjust':
+    case 'Kaleidoscope':
+    case 'SignalMath':
+    case 'Math':
+    case 'SampleAndHold':
+    case 'SimpleFeedback':
+    case 'StepSequencer':
+    case 'ShapeGenerator':
+    case 'VideoFile':
+    case 'VideoURL':
+    case 'WebcamCapture':
+    case 'PixelProcessor':
+    case 'NoiseSource':
+    case 'ImageFile':
+    case 'ImageCue':
+    case 'TextCue':
+    case 'ColorNoise':
+    case 'ImageLoader':
+    case 'AudioInput':
+    case 'AudioFile':
+    case 'SystemAudio':
+    case 'CanvasBackground':
+    case 'ParticleCloud':
+    case 'ColorPalette':
+    case 'GrassField':
+    case 'TextMaker':
+    case 'LumaBands':
+    case 'GlyphMap':
+    case 'ChromaBands':
+    case 'Outline':
+    case 'OpticalSensor':
+      return true;
+    default:
+      return false;
+  }
+}
+
 export function createDefaultSource(type: string): AnySource {
   switch (type) {
     case 'ShapeGenerator':

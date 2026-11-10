@@ -9,6 +9,7 @@ import { SensorConfigModal } from "./components/SensorModal/SensorConfigModal";
 import { AudioEngine } from "./state/AudioEngine";
 import { ExternalWindowManager } from "./utils/ExternalWindowManager";
 import { stepTextCueCard, stepTextCueBank } from "./utils/textCueUtils";
+import { exportProject, saveAutosaveSnapshot } from "./utils/projectPersistence";
 
 function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -37,6 +38,51 @@ function App() {
 
   useEffect(() => {
     return ExternalWindowManager.getInstance().subscribe(setPopoutOpen);
+  }, []);
+
+  // Project-level Keyboard Shortcuts & Window Title / Unsaved Changes Handling
+  const projectName = useEngineStore(s => s.projectName);
+  const isDirty = useEngineStore(s => s.isDirty);
+
+  useEffect(() => {
+    document.title = `${projectName || 'Untitled'}${isDirty ? ' •' : ''} - Terpsichore`;
+  }, [projectName, isDirty]);
+
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (useEngineStore.getState().isDirty) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
+
+  useEffect(() => {
+    const handleProjectShortcuts = (e: KeyboardEvent) => {
+      const isMac = typeof navigator !== 'undefined' && navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+      const modKey = isMac ? e.metaKey : e.ctrlKey;
+      if (!modKey) return;
+
+      if (e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        exportProject({ forceSaveAs: e.shiftKey });
+      }
+    };
+
+    window.addEventListener('keydown', handleProjectShortcuts);
+    return () => window.removeEventListener('keydown', handleProjectShortcuts);
+  }, []);
+
+  // Periodic Autosave Snapshot (every 45s when dirty)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (useEngineStore.getState().isDirty) {
+        saveAutosaveSnapshot();
+      }
+    }, 45000);
+    return () => clearInterval(interval);
   }, []);
 
   const handleTogglePopout = () => {
