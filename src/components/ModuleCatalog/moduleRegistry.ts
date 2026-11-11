@@ -368,6 +368,15 @@ export const ALL_MODULES: ModuleEntry[] = [
     tags: ['outline', 'edge', 'contour', 'focus', 'peaking', 'manga', 'ink', 'neon', 'analog', 'differentiator', 'sobel', 'effect']
   },
   {
+    id: 'BadAnalog',
+    glyph: '📺',
+    label: 'Bad Analog',
+    tooltip: 'Analog Video Synthesizer, CRT & Vector Display Emulator & Glitch Engine',
+    category: 'Effects',
+    moduleType: 'effect:BadAnalog',
+    tags: ['crt', 'vector', 'analog', 'glitch', 'vhs', 'scanlines', 'phosphor', 'tracking', 'headswitching', 'humbar', 'jitter', 'bleed', 'effect']
+  },
+  {
     id: 'GrassField',
     glyph: '🌱',
     label: 'Grass Field',

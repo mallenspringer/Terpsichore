@@ -333,7 +333,7 @@ export class SignalDispatcher {
               ctx.signalValues[`${nodeId}.video_out`] = 1.0;
               ctx.signalValues[`${nodeId}.matte_out`] = 1.0;
             });
-          } else if (effect.type === 'LumaBands' || effect.type === 'ChromaBands' || effect.type === 'Outline') {
+          } else if (effect.type === 'LumaBands' || effect.type === 'ChromaBands' || effect.type === 'Outline' || effect.type === 'BadAnalog') {
             pipeline.push((ctx: DispatchContext) => {
               ctx.signalValues[`${nodeId}.video_out`] = 1.0;
               ctx.signalValues[`${nodeId}.matte_out`] = 1.0;

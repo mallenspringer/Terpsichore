@@ -40,6 +40,7 @@ import { LumaBandsWGSL } from './shaders/LumaBands';
 import { ChromaBandsWGSL } from './shaders/ChromaBands';
 import { GlyphMapWGSL } from './shaders/GlyphMap';
 import { OutlineWGSL } from './shaders/Outline';
+import { BadAnalogWGSL } from './shaders/BadAnalog';
 import { GlyphMapRenderer } from './GlyphMapRenderer';
 import { DEFAULT_LUMA_PALETTE, DEFAULT_CHROMA_PALETTE } from '../state/moduleFactory';
 
@@ -53,7 +54,7 @@ import {
   NoiseVideoSource, ColorNoiseSource, InverterEffect, PixelProcessorEffect,
   PatternEffect, KaleidoscopeEffect, SampleAndHoldEffect, OscilloscopeEffect, SpectralSplitterEffect, WaterfallSpectrogramEffect,
   SpokenWordVisualizerEffect,
-  LayerState, AnySource, ImageCueSource, TextCueSource, TextMakerEffect, LumaBandsEffect, ChromaBandsEffect, GlyphMapEffect, OutlineEffect
+  LayerState, AnySource, ImageCueSource, TextCueSource, TextMakerEffect, LumaBandsEffect, ChromaBandsEffect, GlyphMapEffect, OutlineEffect, BadAnalogEffect
 } from '../state/types';
 
 export class Renderer {
@@ -135,6 +136,7 @@ export class Renderer {
   private chromaBandsPipeline!: GPURenderPipeline;
   private glyphMapPipeline!: GPURenderPipeline;
   private outlinePipeline!: GPURenderPipeline;
+  private badAnalogPipeline!: GPURenderPipeline;
   private glyphMapAtlasTex: GPUTexture | null = null;
   private textMakerCurrGlyphTex: Record<string, GPUTexture> = {};
   private textMakerPrevGlyphTex: Record<string, GPUTexture> = {};
@@ -874,6 +876,21 @@ export class Renderer {
       primitive
     });
     this.effectLayouts.set('Outline', this.outlinePipeline.getBindGroupLayout(0));
+
+    this.badAnalogPipeline = this.device.createRenderPipeline({
+      layout,
+      vertex,
+      fragment: {
+        module: this.device.createShaderModule({ code: BadAnalogWGSL }),
+        entryPoint: 'fs_main',
+        targets: [
+          { format: this.format },
+          { format: this.format }
+        ]
+      },
+      primitive
+    });
+    this.effectLayouts.set('BadAnalog', this.badAnalogPipeline.getBindGroupLayout(0));
 
 
 
@@ -2228,6 +2245,93 @@ export class Renderer {
                 { binding: 0, resource: { buffer: uniformBuffer } },
                 { binding: 1, resource: tex.createView() },
                 { binding: 2, resource: this.sampler }
+              ];
+
+              const isMatteConnected = (layer.graph?.edges || []).some(c => c.fromNodeId === nodeId && c.fromPort === 'matte_out');
+              const matteTex = this.ensureTexture(nodeId, 'matte_out');
+              const pass = commandEncoder.beginRenderPass({
+                colorAttachments: [
+                  { view: target.createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' },
+                  { view: matteTex.createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: isMatteConnected ? 'store' : 'discard' }
+                ]
+              });
+              const layout = this.effectLayouts.get(effect.type) || pipeline.getBindGroupLayout(0);
+              const bg = this.device.createBindGroup({ layout, entries });
+              pass.setPipeline(pipeline); pass.setBindGroup(0, bg); pass.draw(3); pass.end();
+              pipeline = null;
+          } else if (effect.type === 'BadAnalog') {
+              pipeline = this.badAnalogPipeline;
+              const ef = effect as BadAnalogEffect;
+              const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 96);
+              const f32 = new Float32Array(24);
+
+              // Display mode map: crt=0, vector=1, monochrome=2, matrix_lcd=3
+              const dispMap: Record<string, number> = { crt: 0, vector: 1, monochrome: 2, matrix_lcd: 3 };
+              const targetMap: Record<string, number> = { canvas: 0, upstream_bounded: 1 };
+              const phosMap: Record<string, number> = { p1_green: 0, p3_amber: 1, p4_white: 2 };
+
+              const displayModeVal = dispMap[ef.displayMode] ?? 0;
+              const processTargetVal = targetMap[ef.processTarget] ?? 0;
+              const phosphorTypeVal = phosMap[ef.phosphorType] ?? 0;
+
+              const maskTex = this.getConnectedInputTexture(layer, nodeId, 'mask_in');
+              const hasMaskVal = maskTex ? 1.0 : 0.0;
+              const aspect = target.width / Math.max(1, target.height);
+
+              // CV Modulations
+              const baseJitter = ef.jitter ?? 0.08;
+              const jitterVal = Math.max(0.0, Math.min(2.0, this.getEffectiveParam(layer, ef.id, 'jitter_cv', baseJitter, timeSec)));
+
+              const baseTracking = ef.vhsTracking ?? 0.0;
+              const trackingVal = Math.max(0.0, Math.min(2.0, this.getEffectiveParam(layer, ef.id, 'tracking_cv', baseTracking, timeSec)));
+
+              const baseBleed = ef.chromaBleed ?? 0.35;
+              const bleedVal = Math.max(0.0, Math.min(2.0, this.getEffectiveParam(layer, ef.id, 'bleed_cv', baseBleed, timeSec)));
+
+              const glitchTrigVal = Math.max(0.0, Math.min(1.0, this.getEffectiveParam(layer, ef.id, 'glitch_trig', 0.0, timeSec)));
+
+              // params0: [displayMode, processTarget, phosphorType, timeSec]
+              f32[0] = displayModeVal;
+              f32[1] = processTargetVal;
+              f32[2] = phosphorTypeVal;
+              f32[3] = timeSec;
+
+              // params1: [aspect, hasMask, curvature, vignette]
+              f32[4] = aspect;
+              f32[5] = hasMaskVal;
+              f32[6] = ef.curvature ?? 0.15;
+              f32[7] = ef.vignette ?? 0.25;
+
+              // params2: [scanlines, scanlineCount, phosphorMask, maskBrightness]
+              f32[8] = ef.scanlines ?? 0.5;
+              f32[9] = ef.scanlineCount ?? 240.0;
+              f32[10] = ef.phosphorMask ?? 0.35;
+              f32[11] = ef.maskBrightness ?? 1.15;
+
+              // params3: [chromaBleed, jitter, vhsTracking, headSwitching]
+              f32[12] = bleedVal;
+              f32[13] = jitterVal;
+              f32[14] = trackingVal;
+              f32[15] = ef.headSwitching ?? 0.0;
+
+              // params4: [humBar, humBarSpeed, noiseSnow, lumaSag]
+              f32[16] = ef.humBar ?? 0.0;
+              f32[17] = ef.humBarSpeed ?? 0.5;
+              f32[18] = ef.noiseSnow ?? 0.05;
+              f32[19] = ef.lumaSag ?? 0.0;
+
+              // params5: [vectorGlow, vectorIntensity, glitchTrig, 0.0]
+              f32[20] = ef.vectorGlow ?? 0.6;
+              f32[21] = ef.vectorIntensity ?? 1.5;
+              f32[22] = glitchTrigVal;
+              f32[23] = 0.0;
+
+              this.device.queue.writeBuffer(uniformBuffer, 0, f32);
+              entries = [
+                { binding: 0, resource: { buffer: uniformBuffer } },
+                { binding: 1, resource: tex.createView() },
+                { binding: 2, resource: maskTex ? maskTex.createView() : this.blankTexture.createView() },
+                { binding: 3, resource: this.sampler }
               ];
 
               const isMatteConnected = (layer.graph?.edges || []).some(c => c.fromNodeId === nodeId && c.fromPort === 'matte_out');

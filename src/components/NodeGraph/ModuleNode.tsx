@@ -24,6 +24,7 @@ import {
   ChromaBandsNodeUI,
   GlyphMapNodeUI,
   OutlineNodeUI,
+  BadAnalogNodeUI,
   OpticalSensorNodeUI,
 } from './customNodes';
 
@@ -761,6 +762,14 @@ export function ModuleNode({
               rowCtx={rowCtx}
             />
           )}
+          {moduleType === 'BadAnalog' && (
+            <BadAnalogNodeUI
+              nodeId={nodeId}
+              layerId={layerId}
+              effect={((rowCtx as any).effect || (rowCtx as any).source) as any}
+              rowCtx={rowCtx}
+            />
+          )}
           {moduleType === 'OpticalSensor' && (
             <OpticalSensorNodeUI
               nodeId={nodeId}
@@ -812,6 +821,7 @@ export function ModuleNode({
            moduleType !== 'ChromaBands' &&
            moduleType !== 'GlyphMap' &&
            moduleType !== 'Outline' &&
+           moduleType !== 'BadAnalog' &&
            orderedRows.slice(0, visibleRows).map((row, index) => (
               <div
                 key={row.id}
@@ -841,6 +851,7 @@ export function ModuleNode({
            moduleType !== 'ChromaBands' &&
            moduleType !== 'GlyphMap' &&
            moduleType !== 'Outline' &&
+           moduleType !== 'BadAnalog' &&
            (hiddenCount > 0 || nodeState.expanded) ? (
             <div className="node-collapse-footer"
               onClick={() => onLayoutChange({ expanded: !nodeState.expanded })}>

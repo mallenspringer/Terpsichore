@@ -699,6 +699,31 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
         threshold: 0.3,
       };
 
+    case 'BadAnalog':
+      return {
+        id,
+        type: 'BadAnalog',
+        displayMode: 'crt',
+        processTarget: 'canvas',
+        phosphorType: 'p1_green',
+        curvature: 0.15,
+        vignette: 0.25,
+        scanlines: 0.5,
+        scanlineCount: 240,
+        phosphorMask: 0.35,
+        maskBrightness: 1.15,
+        vectorGlow: 0.6,
+        vectorIntensity: 1.5,
+        chromaBleed: 0.35,
+        jitter: 0.08,
+        vhsTracking: 0.0,
+        headSwitching: 0.0,
+        humBar: 0.0,
+        humBarSpeed: 0.5,
+        noiseSnow: 0.05,
+        lumaSag: 0.0,
+      };
+
     default:
       return { id, type: 'SimpleFeedback', feedbackAmount: 0.9, zoom: 0.95, angle: 0.05 } as any;
   }

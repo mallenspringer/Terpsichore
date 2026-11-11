@@ -30,6 +30,7 @@ const MODULE_PARAMS: Record<string, string[]> = {
   ImageCue: ['dirPlaybackSpeed', 'bankPlaybackSpeed', 'triggerThreshold', 'transitionDuration', 'objectFit'],
   TextCue: ['bankPlaybackSpeed', 'triggerThreshold'],
   TextMaker: ['fontSize', 'shadowAmount', 'extrudeAmount', 'glowAmount', 'posX', 'posY', 'scrollSpeed', 'colorCycleSpeed', 'transitionDuration', 'pixelateAmount', 'chromaBleedAmount', 'scanlinesAmount', 'jitterAmount', 'noiseAmount'],
+  BadAnalog: ['curvature', 'vignette', 'scanlines', 'phosphorMask', 'chromaBleed', 'jitter', 'vhsTracking', 'headSwitching', 'humBar', 'noiseSnow', 'lumaSag', 'vectorGlow', 'vectorIntensity'],
   
   // Effects / Utilities / Modulators
   LFO: ['frequency', 'amplitude', 'offset', 'bipolar'],

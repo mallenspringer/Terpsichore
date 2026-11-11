@@ -1112,6 +1112,44 @@ export interface OpticalSensorEffect {
   threshold: number;// 0..1
 }
 
+// --- BAD ANALOG SUITE ---
+export type BadAnalogDisplayMode = 'crt' | 'vector' | 'monochrome' | 'matrix_lcd';
+export type BadAnalogProcessTarget = 'canvas' | 'upstream_bounded';
+export type BadAnalogPhosphorType = 'p1_green' | 'p3_amber' | 'p4_white';
+
+export interface BadAnalogEffect {
+  id: string;
+  type: 'BadAnalog';
+  name?: string;
+  enabled?: boolean;
+
+  // Master Routing & Modes
+  displayMode: BadAnalogDisplayMode;
+  processTarget: BadAnalogProcessTarget;
+  phosphorType: BadAnalogPhosphorType;
+
+  // CRT & Geometry
+  curvature: number;          // 0..1 (pincushion/barrel)
+  vignette: number;           // 0..1 (edge falloff)
+  scanlines: number;          // 0..1 (raster line intensity)
+  scanlineCount: number;      // 120..720 (default 240 / 480)
+  phosphorMask: number;       // 0..1 (aperture grille / triad mask)
+  maskBrightness: number;     // 0.5..2.0 (boost when mask dims image)
+
+  // Vector Display Emulation
+  vectorGlow: number;         // 0..1 (beam bloom/glow)
+  vectorIntensity: number;    // 0.5..3.0 (beam overdrive)
+
+  // Analog Artifacts & Glitches
+  chromaBleed: number;        // 0..1 (horizontal color smear/subcarrier lag)
+  jitter: number;             // 0..1 (H-sync line tearing)
+  vhsTracking: number;        // 0..1 (tape tracking skew/flagging at top)
+  headSwitching: number;      // 0..1 (bottom tape head switch noise band)
+  humBar: number;             // 0..1 (60Hz ground hum rolling bar)
+  humBarSpeed: number;        // -2..2 (vertical drift rate)
+  noiseSnow: number;          // 0..1 (RF static/luma noise)
+  lumaSag: number;            // 0..1 (voltage drop/bloom on bright flashes)
+}
 
 export type AnyEffect = 
   | Transform2DEffect | ColorAdjustEffect | LumaKeyEffect | SimpleFeedbackEffect
@@ -1122,7 +1160,7 @@ export type AnyEffect =
   | SignalMathEffect | SampleAndHoldEffect | StepSequencerEffect | PixelProcessorEffect
   | AudioSourceEffect | OscilloscopeEffect | SpectralSplitterEffect | WaterfallSpectrogramEffect | AudioTransformerEffect | AudioModulatorEffect | AudioGateEffect | AudioToCVEffect
   | SpeechEnvelopeTrackerEffect | VocalPitchTrackerEffect | VowelFormantTrackerEffect | SpokenWordVisualizerEffect
-  | CanvasBackgroundEffect | ParticleCloudEffect | ColorPaletteEffect | GrassFieldEffect | TextMakerEffect | LumaBandsEffect | ChromaBandsEffect | GlyphMapEffect | OutlineEffect | OpticalSensorEffect
+  | CanvasBackgroundEffect | ParticleCloudEffect | ColorPaletteEffect | GrassFieldEffect | TextMakerEffect | LumaBandsEffect | ChromaBandsEffect | GlyphMapEffect | OutlineEffect | OpticalSensorEffect | BadAnalogEffect
   | ShapeGeneratorSource | VideoURLSource | VideoFileSource | WebcamCaptureSource | NoiseVideoSource | ColorNoiseSource
   | AudioInputSource | AudioFileSource | SystemAudioSource | ImageLoaderSource | ImageFileSource | ImageCueSource | TextCueSource;
 
@@ -1133,7 +1171,7 @@ export type EffectType =
   | 'KeyMixer' | 'VideoMath' | 'UVDisplace'
   | 'LogicGate' | 'TriggeredGate' | 'Pattern' | 'Kaleidoscope' | 'SignalMath' | 'SampleAndHold' | 'StepSequencer' | 'AudioSource' | 'Oscilloscope' | 'SpectralSplitter' | 'WaterfallSpectrogram' | 'PixelProcessor' | 'AudioTransformer' | 'AudioModulator' | 'AudioGate' | 'AudioToCV'
   | 'SpeechEnvelopeTracker' | 'VocalPitchTracker' | 'VowelFormantTracker' | 'SpokenWordVisualizer'
-  | 'CanvasBackground' | 'ParticleCloud' | 'ColorPalette' | 'GrassField' | 'TextMaker' | 'LumaBands' | 'ChromaBands' | 'GlyphMap' | 'Outline' | 'OpticalSensor'
+  | 'CanvasBackground' | 'ParticleCloud' | 'ColorPalette' | 'GrassField' | 'TextMaker' | 'LumaBands' | 'ChromaBands' | 'GlyphMap' | 'Outline' | 'OpticalSensor' | 'BadAnalog'
   | 'ShapeGenerator' | 'VideoURL' | 'VideoFile' | 'WebcamCapture' | 'NoiseSource' | 'ColorNoise' | 'AudioInput' | 'AudioFile' | 'SystemAudio' | 'ImageLoader' | 'ImageFile' | 'ImageCue' | 'TextCue';
 
 export type GraphNode = AnyEffect;
