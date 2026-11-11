@@ -29,6 +29,7 @@ type HandleType =
 export function SensorConfigModal({ isOpen, onClose }: SensorConfigModalProps) {
   const sensorSystem = useEngineStore(s => s.sensorSystem);
   const setSensorSystemDevice = useEngineStore(s => s.setSensorSystemDevice);
+  const setSensorSystemMirror = useEngineStore(s => s.setSensorSystemMirror);
   const addSensorZone = useEngineStore(s => s.addSensorZone);
   const updateSensorZone = useEngineStore(s => s.updateSensorZone);
   const removeSensorZone = useEngineStore(s => s.removeSensorZone);
@@ -206,7 +207,16 @@ export function SensorConfigModal({ isOpen, onClose }: SensorConfigModalProps) {
 
       // 1. Draw camera video preview
       if (vid && vid.readyState >= 2) {
-        ctx.drawImage(vid, 0, 0, w, h);
+        const isMirrored = useEngineStore.getState().sensorSystem?.mirror ?? true;
+        if (isMirrored) {
+          ctx.save();
+          ctx.translate(w, 0);
+          ctx.scale(-1, 1);
+          ctx.drawImage(vid, 0, 0, w, h);
+          ctx.restore();
+        } else {
+          ctx.drawImage(vid, 0, 0, w, h);
+        }
         ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
         ctx.fillRect(0, 0, w, h);
       } else {
@@ -458,7 +468,7 @@ export function SensorConfigModal({ isOpen, onClose }: SensorConfigModalProps) {
         cancelAnimationFrame(animFrameRef.current);
       }
     };
-  }, [isOpen, sensors, selectedSensorId, activeTool, dragState]);
+  }, [isOpen, sensors, selectedSensorId, activeTool, dragState, sensorSystem?.mirror]);
 
   // Pointer Down
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -806,6 +816,14 @@ export function SensorConfigModal({ isOpen, onClose }: SensorConfigModalProps) {
                 </option>
               ))}
             </select>
+            <button
+              className={`sensor-tool-btn ${sensorSystem?.mirror ?? true ? 'active' : ''}`}
+              onClick={() => setSensorSystemMirror(!(sensorSystem?.mirror ?? true))}
+              title="Mirror Camera Feed (Horizontal Flip)"
+              style={{ fontSize: 11, padding: '3px 8px' }}
+            >
+              🪞 Mirror
+            </button>
           </div>
         </div>
 

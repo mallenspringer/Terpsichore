@@ -38,6 +38,7 @@ describe('Sensor System', () => {
       sensorSystem: {
         deviceId: '',
         enabled: true,
+        mirror: true,
         sensors: []
       }
     });
@@ -49,15 +50,20 @@ describe('Sensor System', () => {
       expect(state.sensorSystem).toBeDefined();
       expect(state.sensorSystem?.deviceId).toBe('');
       expect(state.sensorSystem?.enabled).toBe(true);
+      expect(state.sensorSystem?.mirror).toBe(true);
       expect(state.sensorSystem?.sensors).toEqual([]);
     });
 
-    it('sets device id and enabled toggle', () => {
+    it('sets device id, enabled toggle, and mirror toggle', () => {
       useEngineStore.getState().setSensorSystemDevice('cam_xyz');
       expect(useEngineStore.getState().sensorSystem?.deviceId).toBe('cam_xyz');
 
       useEngineStore.getState().setSensorSystemEnabled(false);
       expect(useEngineStore.getState().sensorSystem?.enabled).toBe(false);
+
+      expect(useEngineStore.getState().sensorSystem?.mirror).toBe(true);
+      useEngineStore.getState().setSensorSystemMirror(false);
+      expect(useEngineStore.getState().sensorSystem?.mirror).toBe(false);
     });
 
     it('adds, updates, reorders, and removes sensor zones', () => {

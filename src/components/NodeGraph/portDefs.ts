@@ -232,7 +232,9 @@ export const PORT_DEFS: Record<string, PortDef[]> = {
   ],
   AudioInput: [
     { id: 'audio_out', label: 'Audio Out', direction: 'out', signalType: 'audio', priority: 0 },
-    { id: 'peak_out',  label: 'Peak Out',  direction: 'out', signalType: 'modulation', priority: 1 },
+    { id: 'ch1_out',   label: 'Ch 1 / L',   direction: 'out', signalType: 'audio', priority: 1 },
+    { id: 'ch2_out',   label: 'Ch 2 / R',   direction: 'out', signalType: 'audio', priority: 2 },
+    { id: 'peak_out',  label: 'Peak Out',  direction: 'out', signalType: 'modulation', priority: 3 },
   ],
   AudioFile: [
     { id: 'audio_out', label: 'Audio Out', direction: 'out', signalType: 'audio', priority: 0 },
@@ -641,6 +643,8 @@ const SHORT_LABELS: Record<string, string> = {
   video_out: 'V-Out',
   audio_in: 'A-In',
   audio_out: 'A-Out',
+  ch1_out: 'Ch 1',
+  ch2_out: 'Ch 2',
   low_out: 'Low',
   mid_out: 'Mid',
   high_out: 'High',

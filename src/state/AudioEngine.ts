@@ -13,6 +13,8 @@ export class AudioEngine {
   private moduleGains: Map<string, GainNode> = new Map();
   private layerGains: Map<string, GainNode> = new Map();
   private masterGain: GainNode;
+  private channelSplitters: Map<string, ChannelSplitterNode> = new Map();
+  private channelGains: Map<string, GainNode> = new Map();
 
   // Dynamic Effect Nodes for Audio Transformers
   private processingNodes: Map<string, {
@@ -152,21 +154,29 @@ export class AudioEngine {
       // Register this as a bus
       this.initializeBus(id, `Layer ${id}`);
 
+      // Setup Channel Splitter (Ch 1 / Left and Ch 2 / Right mono buses)
+      this.setupChannelSplitter(id, source);
+
     } catch (e) {
       console.error(`[AudioEngine] Failed to register element ${id}`, e);
     }
   }
   
   public async registerStream(id: string, stream: MediaStream) {
-    if (this.sources.has(id)) return;
+    if (this.sources.has(id)) {
+      if (this.streams.get(id) === stream) return;
+      this.unregisterMediaElement(id);
+    }
     
     try {
+      await this.resume();
       const source = this.context.createMediaStreamSource(stream);
       const moduleGain = this.context.createGain();
       const analyzer = this.context.createAnalyser();
       const layerGain = this.context.createGain();
 
       analyzer.fftSize = this.fftSize;
+      analyzer.smoothingTimeConstant = 0.8;
       // Chain: Source -> Analyzer -> ModuleGain -> LayerGain -> Master -> Output
       source.connect(analyzer);
       analyzer.connect(moduleGain);
@@ -180,8 +190,47 @@ export class AudioEngine {
       this.streams.set(id, stream);
       
       this.initializeBus(id, `Stream ${id}`);
+
+      // Setup Channel Splitter (Ch 1 / Left and Ch 2 / Right mono buses)
+      this.setupChannelSplitter(id, source as any);
     } catch (e) {
       console.error(`[AudioEngine] Failed to register stream ${id}`, e);
+    }
+  }
+
+  private setupChannelSplitter(id: string, sourceNode: AudioNode) {
+    try {
+      const splitter = this.context.createChannelSplitter(2);
+      sourceNode.connect(splitter);
+      this.channelSplitters.set(id, splitter);
+
+      // Ch 1 (Left mono)
+      const ch1Gain = this.context.createGain();
+      const ch1Analyzer = this.context.createAnalyser();
+      ch1Analyzer.fftSize = this.fftSize;
+      ch1Analyzer.smoothingTimeConstant = 0.8;
+      splitter.connect(ch1Analyzer, 0);
+      splitter.connect(ch1Gain, 0); // Channel 0 = Left
+
+      const ch1Id = `${id}__ch1_out`;
+      this.channelGains.set(ch1Id, ch1Gain);
+      this.analyzers.set(ch1Id, ch1Analyzer);
+      this.initializeBus(ch1Id, `Ch 1 / L (${id})`);
+
+      // Ch 2 (Right mono)
+      const ch2Gain = this.context.createGain();
+      const ch2Analyzer = this.context.createAnalyser();
+      ch2Analyzer.fftSize = this.fftSize;
+      ch2Analyzer.smoothingTimeConstant = 0.8;
+      splitter.connect(ch2Analyzer, 1);
+      splitter.connect(ch2Gain, 1); // Channel 1 = Right
+
+      const ch2Id = `${id}__ch2_out`;
+      this.channelGains.set(ch2Id, ch2Gain);
+      this.analyzers.set(ch2Id, ch2Analyzer);
+      this.initializeBus(ch2Id, `Ch 2 / R (${id})`);
+    } catch (e) {
+      console.warn(`[AudioEngine] Could not create channel splitter for ${id}:`, e);
     }
   }
 
@@ -196,6 +245,38 @@ export class AudioEngine {
     if (mGain) mGain.disconnect();
     if (analyzer) analyzer.disconnect();
     if (lGain) lGain.disconnect();
+
+    const splitter = this.channelSplitters.get(id);
+    if (splitter) {
+      try { splitter.disconnect(); } catch (e) {}
+      this.channelSplitters.delete(id);
+    }
+
+    const ch1Id = `${id}__ch1_out`;
+    const ch1Gain = this.channelGains.get(ch1Id);
+    if (ch1Gain) {
+      try { ch1Gain.disconnect(); } catch (e) {}
+      this.channelGains.delete(ch1Id);
+    }
+    const ch1Analyzer = this.analyzers.get(ch1Id);
+    if (ch1Analyzer) {
+      try { ch1Analyzer.disconnect(); } catch (e) {}
+      this.analyzers.delete(ch1Id);
+    }
+    this.buses.delete(ch1Id);
+
+    const ch2Id = `${id}__ch2_out`;
+    const ch2Gain = this.channelGains.get(ch2Id);
+    if (ch2Gain) {
+      try { ch2Gain.disconnect(); } catch (e) {}
+      this.channelGains.delete(ch2Id);
+    }
+    const ch2Analyzer = this.analyzers.get(ch2Id);
+    if (ch2Analyzer) {
+      try { ch2Analyzer.disconnect(); } catch (e) {}
+      this.analyzers.delete(ch2Id);
+    }
+    this.buses.delete(ch2Id);
 
     if (stream) {
       try {
@@ -243,12 +324,29 @@ export class AudioEngine {
     if (gain) {
       gain.gain.setTargetAtTime(muted ? 0 : 1, this.context.currentTime, 0.01);
     }
+    const ch1Gain = this.channelGains.get(`${id}__ch1_out`);
+    if (ch1Gain) {
+      ch1Gain.gain.setTargetAtTime(muted ? 0 : 1, this.context.currentTime, 0.01);
+    }
+    const ch2Gain = this.channelGains.get(`${id}__ch2_out`);
+    if (ch2Gain) {
+      ch2Gain.gain.setTargetAtTime(muted ? 0 : 1, this.context.currentTime, 0.01);
+    }
   }
 
   public setModuleVolume(id: string, volume: number) {
+    const vol = Math.max(0, volume);
     const gain = this.moduleGains.get(id);
     if (gain) {
-      gain.gain.setTargetAtTime(Math.max(0, volume), this.context.currentTime, 0.01);
+      gain.gain.setTargetAtTime(vol, this.context.currentTime, 0.01);
+    }
+    const ch1Gain = this.channelGains.get(`${id}__ch1_out`);
+    if (ch1Gain) {
+      ch1Gain.gain.setTargetAtTime(vol, this.context.currentTime, 0.01);
+    }
+    const ch2Gain = this.channelGains.get(`${id}__ch2_out`);
+    if (ch2Gain) {
+      ch2Gain.gain.setTargetAtTime(vol, this.context.currentTime, 0.01);
     }
   }
 
@@ -602,7 +700,7 @@ export class AudioEngine {
 
   private getBusOutput(id: string): AudioNode | undefined {
     if (id === 'master') return this.masterGain;
-    return this.moduleGains.get(id) || this.processingNodes.get(id)?.output || this.modulatorNodes.get(id)?.output || this.gateNodes.get(id)?.output || this.layerGains.get(id);
+    return this.channelGains.get(id) || this.moduleGains.get(id) || this.processingNodes.get(id)?.output || this.modulatorNodes.get(id)?.output || this.gateNodes.get(id)?.output || this.layerGains.get(id);
   }
 
   public disconnectNode(nodeId: string) {

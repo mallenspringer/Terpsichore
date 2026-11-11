@@ -61,6 +61,7 @@ export interface WebcamCaptureSource {
   type: 'WebcamCapture';
   deviceId: string;
   objectFit: 'cover' | 'contain' | 'fill';
+  mirror?: boolean;
 }
 
 export interface ImageLoaderSource {
@@ -1100,6 +1101,7 @@ export interface SensorSystemState {
   deviceId: string;
   enabled: boolean;
   sensors: SensorZoneConfig[];
+  mirror?: boolean;
 }
 
 export interface OpticalSensorEffect {

@@ -16,6 +16,8 @@ export interface SourceCtx {
   onSeekEnd?: () => void;
   onFileChange?: React.ChangeEventHandler<HTMLInputElement>;
   cameras?: MediaDeviceInfo[];
+  audioInputs?: MediaDeviceInfo[];
+  onRefreshDevices?: () => void;
   layerOpacity?: number;
   layerBlendMode?: 'add' | 'screen' | 'multiply' | 'normal';
   onLayerUpdate?: (updates: any) => void;
@@ -28,6 +30,9 @@ export interface EffectCtx {
   linkedScales?: Record<string, boolean>;
   setLinkedScales?: (s: Record<string, boolean>) => void;
   onFileChange?: React.ChangeEventHandler<HTMLInputElement>;
+  cameras?: MediaDeviceInfo[];
+  audioInputs?: MediaDeviceInfo[];
+  onRefreshDevices?: () => void;
   videoProgress?: { currentTime: number; duration: number };
   onSeek?: React.ChangeEventHandler<HTMLInputElement>;
   onSeekStart?: () => void;

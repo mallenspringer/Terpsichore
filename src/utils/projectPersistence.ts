@@ -182,7 +182,14 @@ export function reconcileProject(rawData: any): { project: TerpProject; isTempla
     projectName: metadata.name,
     authorName: metadata.author,
     midiBindings: Array.isArray(rawEngine.midiBindings) ? rawEngine.midiBindings : [],
-    sensorSystem: rawEngine.sensorSystem || { deviceId: '', enabled: true, sensors: [] }
+    sensorSystem: rawEngine.sensorSystem
+      ? {
+          deviceId: rawEngine.sensorSystem.deviceId || '',
+          enabled: rawEngine.sensorSystem.enabled !== false,
+          sensors: Array.isArray(rawEngine.sensorSystem.sensors) ? rawEngine.sensorSystem.sensors : [],
+          mirror: rawEngine.sensorSystem.mirror ?? true,
+        }
+      : { deviceId: '', enabled: true, sensors: [], mirror: true }
   };
 
   const ui = {

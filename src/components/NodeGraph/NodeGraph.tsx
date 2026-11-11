@@ -51,11 +51,13 @@ interface NodeGraphProps {
   onSeekStart?: (nodeId: string) => void;
   onSeekEnd?: (nodeId: string) => void;
   cameras: MediaDeviceInfo[];
+  audioInputs?: MediaDeviceInfo[];
+  onRefreshDevices?: () => void;
   linkedScales: Record<string, boolean>;
   setLinkedScales: (s: Record<string, boolean>) => void;
 }
 
-export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, onSeekStart, onSeekEnd, cameras, linkedScales, setLinkedScales }: NodeGraphProps) {
+export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, onSeekStart, onSeekEnd, cameras, audioInputs, onRefreshDevices, linkedScales, setLinkedScales }: NodeGraphProps) {
   const storeLayer = useEngineStore(s => layerId ? s.layers[layerId] : null);
   const layer = propLayer ?? storeLayer;
 
@@ -743,6 +745,8 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
     onSeekEnd: () => onSeekEnd?.('source'),
     onFileChange: (e) => handleNodeFileChange('source', e),
     cameras,
+    audioInputs,
+    onRefreshDevices,
   };
 
   return (
@@ -861,6 +865,9 @@ export function NodeGraph({ layerId, layer: propLayer, videoProgress, onSeek, on
               onSeek: (e) => handleNodeSeek(id, e),
               onSeekStart: () => onSeekStart?.(id),
               onSeekEnd: () => onSeekEnd?.(id),
+              cameras,
+              audioInputs,
+              onRefreshDevices,
               videoProgress: videoProgress[id] || { currentTime: 0, duration: 0 }
             };
             return (

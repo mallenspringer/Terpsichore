@@ -1233,7 +1233,8 @@ export class Renderer {
               if (width > 0 && height > 0) {
                 const uniformBuffer = this.getUniformBuffer(`${layer.id}.source.media_uniforms`, 16);
                 const fitMap: Record<string, number> = { cover: 0, contain: 1, fill: 2 };
-                const f32 = new Float32Array([fitMap[(layer.source as any).objectFit] ?? 0, width / height, this.canvas.width / this.canvas.height, 0]);
+                const isMirrored = Boolean((layer.source as any).mirror);
+                const f32 = new Float32Array([fitMap[(layer.source as any).objectFit] ?? 0, width / height, this.canvas.width / this.canvas.height, isMirrored ? 1 : 0]);
                 this.device.queue.writeBuffer(uniformBuffer, 0, f32);
 
                 if (media instanceof HTMLVideoElement && media.readyState >= 2) {
@@ -1394,7 +1395,8 @@ export class Renderer {
               if (sourceEffect?.type === 'AudioSource') {
                 busId = (sourceEffect as any).busId || 'master';
               } else if (edge.fromNodeId === 'source' || sourceEffect?.type === 'VideoFile' || sourceEffect?.type === 'VideoURL' || sourceEffect?.type === 'AudioFile' || sourceEffect?.type === 'AudioInput' || sourceEffect?.type === 'SystemAudio' || sourceEffect?.type === 'AudioTransformer' || sourceEffect?.type === 'AudioToCV') {
-                busId = edge.fromNodeId === 'source' ? layer.id : edge.fromNodeId;
+                const baseId = edge.fromNodeId === 'source' ? layer.id : edge.fromNodeId;
+                busId = (edge.fromPort === 'ch1_out' || edge.fromPort === 'ch2_out') ? `${baseId}__${edge.fromPort}` : baseId;
               }
             }
 
@@ -1464,7 +1466,8 @@ export class Renderer {
               const sourceEffect = layer?.effects.find(e => e.id === edge.fromNodeId);
               if (sourceEffect?.type === 'AudioSource') busId = (sourceEffect as any).busId;
               else if (edge.fromNodeId === 'source' || sourceEffect?.type === 'VideoFile' || sourceEffect?.type === 'VideoURL' || sourceEffect?.type === 'AudioFile' || sourceEffect?.type === 'AudioInput' || sourceEffect?.type === 'SystemAudio' || sourceEffect?.type === 'AudioTransformer' || sourceEffect?.type === 'AudioToCV') {
-                busId = edge.fromNodeId === 'source' ? layer.id : edge.fromNodeId;
+                const baseId = edge.fromNodeId === 'source' ? layer.id : edge.fromNodeId;
+                busId = (edge.fromPort === 'ch1_out' || edge.fromPort === 'ch2_out') ? `${baseId}__${edge.fromPort}` : baseId;
               }
             }
 
@@ -1552,7 +1555,8 @@ export class Renderer {
               const sourceEffect = layer?.effects.find(e => e.id === edge.fromNodeId);
               if (sourceEffect?.type === 'AudioSource') busId = (sourceEffect as any).busId;
               else if (edge.fromNodeId === 'source' || sourceEffect?.type === 'VideoFile' || sourceEffect?.type === 'VideoURL' || sourceEffect?.type === 'AudioFile' || sourceEffect?.type === 'AudioInput' || sourceEffect?.type === 'SystemAudio' || sourceEffect?.type === 'AudioTransformer' || sourceEffect?.type === 'AudioToCV') {
-                busId = edge.fromNodeId === 'source' ? layer.id : edge.fromNodeId;
+                const baseId = edge.fromNodeId === 'source' ? layer.id : edge.fromNodeId;
+                busId = (edge.fromPort === 'ch1_out' || edge.fromPort === 'ch2_out') ? `${baseId}__${edge.fromPort}` : baseId;
               }
             }
 
@@ -2970,7 +2974,8 @@ export class Renderer {
 
     const uniformBuffer = this.getUniformBuffer(`${layer.id}.${nodeId}.media_uniforms`, 16);
     const fitMap: Record<string, number> = { cover: 0, contain: 1, fill: 2 };
-    const f32 = new Float32Array([fitMap[(source as any).objectFit] ?? 0, width / height, this.canvas.width / this.canvas.height, 0]);
+    const isMirrored = Boolean((source as any).mirror);
+    const f32 = new Float32Array([fitMap[(source as any).objectFit] ?? 0, width / height, this.canvas.width / this.canvas.height, isMirrored ? 1 : 0]);
     this.device.queue.writeBuffer(uniformBuffer, 0, f32);
 
     if (media instanceof HTMLVideoElement && media.readyState >= 2) {
@@ -4109,7 +4114,8 @@ export class Renderer {
         const sourceEffect = layer.effects.find(e => e.id === edge.fromNodeId);
         if (sourceEffect?.type === 'AudioSource') busId = (sourceEffect as any).busId || 'master';
         else if (edge.fromNodeId === 'source' || sourceEffect?.type === 'VideoFile' || sourceEffect?.type === 'AudioFile' || sourceEffect?.type === 'AudioInput' || sourceEffect?.type === 'SystemAudio') {
-          busId = edge.fromNodeId === 'source' ? layer.id : edge.fromNodeId;
+          const baseId = edge.fromNodeId === 'source' ? layer.id : edge.fromNodeId;
+          busId = (edge.fromPort === 'ch1_out' || edge.fromPort === 'ch2_out') ? `${baseId}__${edge.fromPort}` : baseId;
         }
       }
       const busData = AudioEngine.getInstance().getBusData(busId);
@@ -4255,7 +4261,8 @@ export class Renderer {
       if (sourceEffect?.type === 'AudioSource') {
         busId = (sourceEffect as any).busId || 'master';
       } else if (audioEdge.fromNodeId === 'source' || sourceEffect?.type === 'VideoFile' || sourceEffect?.type === 'VideoURL' || sourceEffect?.type === 'AudioFile' || sourceEffect?.type === 'AudioInput' || sourceEffect?.type === 'SystemAudio' || sourceEffect?.type === 'AudioTransformer' || sourceEffect?.type === 'AudioToCV') {
-        busId = audioEdge.fromNodeId === 'source' ? layer.id : audioEdge.fromNodeId;
+        const baseId = audioEdge.fromNodeId === 'source' ? layer.id : audioEdge.fromNodeId;
+        busId = (audioEdge.fromPort === 'ch1_out' || audioEdge.fromPort === 'ch2_out') ? `${baseId}__${audioEdge.fromPort}` : baseId;
       } else {
         busId = audioEdge.fromNodeId;
       }

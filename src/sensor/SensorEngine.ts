@@ -37,6 +37,7 @@ export class SensorEngine {
   private width = 320;
   private height = 180;
   private prevFrame: Uint8ClampedArray | null = null;
+  private lastMirrored: boolean = true;
 
   // Signal state
   private sensorValues: Map<string, SensorSignals> = new Map();
@@ -193,7 +194,25 @@ export class SensorEngine {
     const w = this.width;
     const h = this.height;
 
-    this.ctx.drawImage(this.video, 0, 0, w, h);
+    const state = useEngineStore.getState();
+    const sensorSystem = state.sensorSystem;
+    const isMirrored = sensorSystem?.mirror ?? true;
+
+    if (this.lastMirrored !== isMirrored) {
+      this.lastMirrored = isMirrored;
+      this.prevFrame = null;
+    }
+
+    if (isMirrored) {
+      this.ctx.save();
+      this.ctx.translate(w, 0);
+      this.ctx.scale(-1, 1);
+      this.ctx.drawImage(this.video, 0, 0, w, h);
+      this.ctx.restore();
+    } else {
+      this.ctx.drawImage(this.video, 0, 0, w, h);
+    }
+
     let imgData: ImageData;
     try {
       imgData = this.ctx.getImageData(0, 0, w, h);
@@ -205,8 +224,6 @@ export class SensorEngine {
     const prev = this.prevFrame;
     const now = performance.now();
 
-    const state = useEngineStore.getState();
-    const sensorSystem = state.sensorSystem;
     const sensors = sensorSystem?.sensors || [];
 
     if (!prev || prev.length !== currentPixels.length) {

@@ -89,6 +89,14 @@ export class SignalDispatcher {
     return this.midiOverrides.get(`${layerId}.${moduleId}.${paramId}`) ?? null;
   }
 
+  private resolveAudioBusId(layerId: string, edge?: { fromNodeId: string; fromPort?: string }): string {
+    if (!edge) return 'master';
+    const baseBusId = edge.fromNodeId === 'source' ? layerId : edge.fromNodeId;
+    return (edge.fromPort === 'ch1_out' || edge.fromPort === 'ch2_out')
+      ? `${baseBusId}__${edge.fromPort}`
+      : baseBusId;
+  }
+
 
   public compileLayer(layer: LayerState) {
     const edges = layer.graph?.edges || [];
@@ -135,6 +143,8 @@ export class SignalDispatcher {
             const peak = ctx.audioEngine.getPeakVolume(ctx.layer.id);
             ctx.signalValues['source.peak_out'] = peak;
             ctx.signalValues['source.audio_out'] = peak;
+            ctx.signalValues['source.ch1_out'] = ctx.audioEngine.getPeakVolume(`${ctx.layer.id}__ch1_out`);
+            ctx.signalValues['source.ch2_out'] = ctx.audioEngine.getPeakVolume(`${ctx.layer.id}__ch2_out`);
           }
           if (srcType === 'VideoFile' || srcType === 'VideoURL' || srcType === 'AudioFile') {
             this.handlePlayerTriggers(ctx, 'source', ctx.layer.source as any, true);
@@ -287,6 +297,8 @@ export class SignalDispatcher {
               if (bus) {
                 ctx.signalValues[`${nodeId}.peak_out`] = bus.peak;
                 ctx.signalValues[`${nodeId}.audio_out`] = bus.peak;
+                ctx.signalValues[`${nodeId}.ch1_out`] = ctx.audioEngine.getPeakVolume(`${nodeId}__ch1_out`);
+                ctx.signalValues[`${nodeId}.ch2_out`] = ctx.audioEngine.getPeakVolume(`${nodeId}__ch2_out`);
               }
               if (effect.type === 'AudioFile') {
                 const ef = ctx.layer.effects.find(e => e.id === nodeId);
@@ -353,7 +365,7 @@ export class SignalDispatcher {
 
               const edges = ctx.layer.graph?.edges || [];
               const incomingEdge = edges.find(e => e.toNodeId === nodeId && e.toPort === 'audio_in');
-              const busId = incomingEdge ? (incomingEdge.fromNodeId === 'source' ? ctx.layer.id : incomingEdge.fromNodeId) : 'master';
+              const busId = this.resolveAudioBusId(ctx.layer.id, incomingEdge);
 
               const features = ctx.audioEngine.getSpeechFeatures(busId, ef.attackMs || 10, ef.releaseMs || 150);
               if (features) {
@@ -391,7 +403,7 @@ export class SignalDispatcher {
 
               const edges = ctx.layer.graph?.edges || [];
               const incomingEdge = edges.find(e => e.toNodeId === nodeId && e.toPort === 'audio_in');
-              const busId = incomingEdge ? (incomingEdge.fromNodeId === 'source' ? ctx.layer.id : incomingEdge.fromNodeId) : 'master';
+              const busId = this.resolveAudioBusId(ctx.layer.id, incomingEdge);
 
               const features = ctx.audioEngine.getPitchFeatures(
                 busId, 
@@ -428,7 +440,7 @@ export class SignalDispatcher {
 
               const edges = ctx.layer.graph?.edges || [];
               const incomingEdge = edges.find(e => e.toNodeId === nodeId && e.toPort === 'audio_in');
-              const busId = incomingEdge ? (incomingEdge.fromNodeId === 'source' ? ctx.layer.id : incomingEdge.fromNodeId) : 'master';
+              const busId = this.resolveAudioBusId(ctx.layer.id, incomingEdge);
 
               const features = ctx.audioEngine.getFormantFeatures(busId, ef.voiceProfile);
               if (features) {
@@ -479,7 +491,7 @@ export class SignalDispatcher {
 
               const edges = ctx.layer.graph?.edges || [];
               const incomingEdge = edges.find(e => e.toNodeId === nodeId && e.toPort === 'audio_in');
-              const busId = incomingEdge ? (incomingEdge.fromNodeId === 'source' ? ctx.layer.id : incomingEdge.fromNodeId) : 'master';
+              const busId = this.resolveAudioBusId(ctx.layer.id, incomingEdge);
 
               const speech = ctx.audioEngine.getSpeechFeatures(busId, 10, 150);
               const pitch = ctx.audioEngine.getPitchFeatures(busId, 80, 800);
@@ -582,10 +594,8 @@ export class SignalDispatcher {
                 const fromEffect = ctx.layer.effects.find(e => e.id === fromNodeId);
                 if (fromEffect?.type === 'AudioSource') {
                   busId = (fromEffect as any).busId || 'master';
-                } else if (fromEffect?.type === 'AudioTransformer' || fromEffect?.type === 'AudioFile' || fromEffect?.type === 'AudioInput' || fromEffect?.type === 'SystemAudio') {
-                  busId = fromNodeId; // These node IDs are used as bus IDs
-                } else if (fromNodeId === 'source' || fromEffect?.type === 'VideoFile' || fromEffect?.type === 'VideoURL') {
-                  busId = fromNodeId === 'source' ? ctx.layer.id : fromNodeId;
+                } else {
+                  busId = this.resolveAudioBusId(ctx.layer.id, inputEdge);
                 }
               }
 
@@ -632,8 +642,7 @@ export class SignalDispatcher {
               const edges = ctx.layer.graph?.edges || [];
               const inputEdge = edges.find(e => e.toNodeId === nodeId && e.toPort === 'audio_in');
               if (inputEdge) {
-                const fromNodeId = inputEdge.fromNodeId;
-                ctx.audioEngine.connectTransformer(nodeId, fromNodeId === 'source' ? ctx.layer.id : fromNodeId);
+                ctx.audioEngine.connectTransformer(nodeId, this.resolveAudioBusId(ctx.layer.id, inputEdge));
               } else {
                 ctx.audioEngine.connectTransformer(nodeId, 'master'); // Default/idle
               }
@@ -699,8 +708,7 @@ export class SignalDispatcher {
               const edges = ctx.layer.graph?.edges || [];
               const inputEdge = edges.find(e => e.toNodeId === nodeId && e.toPort === 'audio_in');
               if (inputEdge) {
-                const fromNodeId = inputEdge.fromNodeId;
-                ctx.audioEngine.connectModulator(nodeId, fromNodeId === 'source' ? ctx.layer.id : fromNodeId);
+                ctx.audioEngine.connectModulator(nodeId, this.resolveAudioBusId(ctx.layer.id, inputEdge));
               } else {
                 ctx.audioEngine.connectModulator(nodeId, 'master');
               }
@@ -732,8 +740,7 @@ export class SignalDispatcher {
               const edges = ctx.layer.graph?.edges || [];
               const inputEdge = edges.find(e => e.toNodeId === nodeId && e.toPort === 'audio_in');
               if (inputEdge) {
-                const fromNodeId = inputEdge.fromNodeId;
-                ctx.audioEngine.connectGate(nodeId, fromNodeId === 'source' ? ctx.layer.id : fromNodeId);
+                ctx.audioEngine.connectGate(nodeId, this.resolveAudioBusId(ctx.layer.id, inputEdge));
               } else {
                 ctx.audioEngine.connectGate(nodeId, 'master');
               }
@@ -1293,8 +1300,8 @@ export class SignalDispatcher {
         pipeline.push((ctx: DispatchContext) => {
           let rawValue = ctx.signalValues[`${edge.fromNodeId}.${edge.fromPort}`] ?? 0;
           
-          if (edge.signalType === 'audio' || edge.fromPort === 'audio_out' || edge.fromPort === 'peak_out') {
-            const busId = edge.fromNodeId === 'source' ? ctx.layer.id : edge.fromNodeId;
+          if (edge.signalType === 'audio' || edge.fromPort === 'audio_out' || edge.fromPort === 'peak_out' || edge.fromPort === 'ch1_out' || edge.fromPort === 'ch2_out') {
+            const busId = this.resolveAudioBusId(ctx.layer.id, edge);
             rawValue = ctx.audioEngine.getPeakVolume(busId);
           } else if (edge.signalType === 'video' || edge.toPort === 'map_in' || edge.toPort === 'video_in') {
             // Video connections carry active video streams without expensive CPU readbacks
@@ -1333,8 +1340,7 @@ export class SignalDispatcher {
       const edges = ctx.layer.graph?.edges || [];
       const audioOutEdge = edges.find(e => e.toNodeId === '__output__' && e.toPort === 'audio_in');
       if (audioOutEdge) {
-        const fromId = audioOutEdge.fromNodeId;
-        ctx.audioEngine.setLayerAudioTarget(ctx.layer.id, fromId === 'source' ? ctx.layer.id : fromId);
+        ctx.audioEngine.setLayerAudioTarget(ctx.layer.id, this.resolveAudioBusId(ctx.layer.id, audioOutEdge));
       } else {
         ctx.audioEngine.setLayerAudioTarget(ctx.layer.id, null);
       }

@@ -267,6 +267,23 @@ export class MediaManager {
       }
     }
 
+    if (source.type !== 'AudioInput' && source.type !== 'SystemAudio') {
+      if (this.activeStreams[key]) {
+        this.stopStream(key);
+      }
+    }
+
+    if (source.type === 'AudioInput') {
+      const aud = this.audioElements[key];
+      if (aud) {
+        aud.pause();
+        aud.srcObject = null;
+        aud.src = '';
+        aud.remove();
+        delete this.audioElements[key];
+      }
+    }
+
     if (source.type === 'VideoURL' || source.type === 'VideoFile' || source.type === 'WebcamCapture') {
       let vid = this.videoElements[key] as any;
       if (!vid) {
@@ -387,29 +404,58 @@ export class MediaManager {
       return null;
     } else if (source.type === 'AudioInput') {
       const src = source as any;
+      const deviceIdChanged = this.activeDeviceIds[key] !== (src.deviceId || '');
       let stream = this.activeStreams[key];
-      if (!stream && !this.requestingStreams.has(key) && !this.deniedStreams.has(key)) {
+
+      if (deviceIdChanged || (!stream && !this.requestingStreams.has(key) && !this.deniedStreams.has(key))) {
+        this.activeDeviceIds[key] = src.deviceId || '';
+        if (stream) {
+          stream.getTracks().forEach(t => t.stop());
+          delete this.activeStreams[key];
+        }
+        if (this.audioElements[key]) {
+          this.audioElements[key].pause();
+          this.audioElements[key].srcObject = null;
+          this.audioElements[key].remove();
+          delete this.audioElements[key];
+        }
+        AudioEngine.getInstance().unregisterMediaElement(key);
+
         this.requestingStreams.add(key);
-        const constraints = {
-          audio: src.deviceId
-            ? { deviceId: src.deviceId, echoCancellation: false, noiseSuppression: false, autoGainControl: false }
-            : { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
-        };
-        navigator.mediaDevices?.getUserMedia?.(constraints)
-          ?.then(s => {
+        const audioConstraint: MediaTrackConstraints = src.deviceId
+          ? { deviceId: { exact: src.deviceId }, echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: { ideal: 2 } }
+          : { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: { ideal: 2 } };
+
+        navigator.mediaDevices?.getUserMedia?.({ audio: audioConstraint })
+          ?.catch(err => {
+            if (src.deviceId && (err?.name === 'OverconstrainedError' || err?.name === 'NotFoundError' || err?.name === 'DevicesNotFoundError')) {
+              console.warn(`[MediaManager] Specified audio device unavailable, falling back to default input:`, err);
+              return navigator.mediaDevices?.getUserMedia?.({
+                audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: { ideal: 2 } }
+              });
+            }
+            throw err;
+          })
+          ?.then(async s => {
             this.requestingStreams.delete(key);
             this.deniedStreams.delete(key);
-            this.activeStreams[key] = s;
-            let aud = this.audioElements[key];
-            if (!aud) {
-              aud = document.createElement('audio');
-              document.body.appendChild(aud);
-              aud.style.display = 'none';
-              this.audioElements[key] = aud;
+            if (!s) return;
+            if (this.activeDeviceIds[key] !== (src.deviceId || '')) {
+              s.getTracks().forEach(t => t.stop());
+              return;
             }
-            aud.srcObject = s;
-            aud.play().catch(() => {});
-            AudioEngine.getInstance().registerMediaElement(key, aud);
+            this.activeStreams[key] = s;
+            const audioTrack = s.getAudioTracks ? s.getAudioTracks()[0] : (s.getTracks?.()[0] as any);
+            if (audioTrack) {
+              audioTrack.onended = () => {
+                this.stopStream(key);
+              };
+            }
+            await AudioEngine.getInstance().resume()?.catch(() => {});
+            await AudioEngine.getInstance().registerStream(key, s);
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('terp_device_permission_granted'));
+            }
           })
           ?.catch(e => {
             this.requestingStreams.delete(key);
@@ -418,10 +464,7 @@ export class MediaManager {
           });
       }
 
-      const aud = this.audioElements[key];
-      if (aud) {
-        this.applyAudioState(aud, src, source._layerAudioMuted, key);
-      }
+      this.applyAudioState(null, src, source._layerAudioMuted, key);
       return null;
     }
     return null;

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo } from "react";
+import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import "./App.css";
 import { useEngineStore } from "./state/store";
 import { Renderer } from "./renderer/Renderer";
@@ -25,6 +25,7 @@ function App() {
   const setGlobalAudioMuted = useEngineStore(s => s.setGlobalAudioMuted);
 
   const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
+  const [audioInputs, setAudioInputs] = useState<MediaDeviceInfo[]>([]);
   const [videoProgress, setVideoProgress] = useState<Record<string, {currentTime: number, duration: number}>>({});
   const [isMidiModalOpen, setMidiModalOpen] = useState(false);
   const [isSensorModalOpen, setSensorModalOpen] = useState(false);
@@ -93,12 +94,30 @@ function App() {
 
   const activeLayer = useMemo(() => activeLayerId ? layers[activeLayerId] : null, [layers, activeLayerId]);
 
-  // Initialization
-  useEffect(() => {
+  const refreshDevices = useCallback(() => {
+    if (!navigator?.mediaDevices?.enumerateDevices) return;
     navigator.mediaDevices.enumerateDevices().then(devices => {
       setCameras(devices.filter(d => d.kind === 'videoinput'));
+      setAudioInputs(devices.filter(d => d.kind === 'audioinput'));
     }).catch(err => console.warn("Could not enumerate devices", err));
   }, []);
+
+  // Initialization & hot-plugging device discovery
+  useEffect(() => {
+    refreshDevices();
+    if (navigator?.mediaDevices?.addEventListener) {
+      navigator.mediaDevices.addEventListener('devicechange', refreshDevices);
+    }
+    const handlePermGranted = () => refreshDevices();
+    window.addEventListener('terp_device_permission_granted', handlePermGranted);
+
+    return () => {
+      if (navigator?.mediaDevices?.removeEventListener) {
+        navigator.mediaDevices.removeEventListener('devicechange', refreshDevices);
+      }
+      window.removeEventListener('terp_device_permission_granted', handlePermGranted);
+    };
+  }, [refreshDevices]);
 
   useEffect(() => {
     if (canvasRef.current && !rendererRef.current) {
@@ -494,6 +513,8 @@ function App() {
                   }
                 }}
                 cameras={cameras}
+                audioInputs={audioInputs}
+                onRefreshDevices={refreshDevices}
                 linkedScales={activeLayer?.linkedScales || {}}
                 setLinkedScales={(s) => {
                   if (activeLayerId) updateLayer(activeLayerId, { linkedScales: s });

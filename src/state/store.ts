@@ -45,6 +45,7 @@ interface EngineActions {
   // Sensor System
   setSensorSystemDevice: (deviceId: string) => void;
   setSensorSystemEnabled: (enabled: boolean) => void;
+  setSensorSystemMirror: (mirror: boolean) => void;
   addSensorZone: (zone: SensorZoneConfig) => void;
   updateSensorZone: (id: string, updates: Partial<SensorZoneConfig>) => void;
   removeSensorZone: (id: string) => void;
@@ -108,6 +109,7 @@ export const useEngineStore = create<StoreState>((set) => ({
     deviceId: '',
     enabled: true,
     sensors: [],
+    mirror: true,
   },
 
   setDirty: (dirty) => set({ isDirty: dirty }),
@@ -155,7 +157,7 @@ export const useEngineStore = create<StoreState>((set) => ({
       lastSavedAt: null,
       midiBindings: [],
       midiLearnTarget: null,
-      sensorSystem: { deviceId: '', enabled: true, sensors: [] }
+      sensorSystem: { deviceId: '', enabled: true, sensors: [], mirror: true }
     }));
   },
 
@@ -224,7 +226,7 @@ export const useEngineStore = create<StoreState>((set) => ({
       activeLayerId: project.layerOrder[0] || null,
       midiBindings: project.midiBindings || [],
       midiLearnTarget: null,
-      sensorSystem: project.sensorSystem || { deviceId: '', enabled: true, sensors: [] },
+      sensorSystem: project.sensorSystem || { deviceId: '', enabled: true, sensors: [], mirror: true },
       isDirty: false,
       lastSavedAt: new Date().toISOString()
     })),
@@ -397,6 +399,15 @@ export const useEngineStore = create<StoreState>((set) => ({
         ...(state.sensorSystem || { deviceId: '', sensors: [] }),
         enabled,
       }
+    })),
+
+  setSensorSystemMirror: (mirror) =>
+    set((state) => ({
+      sensorSystem: {
+        ...(state.sensorSystem || { deviceId: '', enabled: true, sensors: [] }),
+        mirror,
+      },
+      isDirty: true
     })),
 
   addSensorZone: (zone) =>

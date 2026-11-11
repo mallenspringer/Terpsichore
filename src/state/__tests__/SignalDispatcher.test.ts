@@ -508,5 +508,28 @@ describe('SignalDispatcher', () => {
       // Must seek to 0.0
       expect(mockVid.currentTime).toBe(0.0);
     });
+
+    it('should dispatch ch1_out and ch2_out from AudioInput and route split audio ports', () => {
+      const state = useEngineStore.getState();
+      const dispatcher = SignalDispatcher.getInstance();
+
+      state.updateLayer('layer_1', {
+        source: { type: 'AudioInput', deviceId: 'default' } as any,
+        graph: {
+          edges: [
+            { id: 'edge_ch1', fromNodeId: 'source', fromPort: 'ch1_out', toNodeId: '__output__', toPort: 'audio_in', signalType: 'audio' }
+          ],
+          disconnectedPorts: []
+        }
+      });
+
+      dispatcher.compileLayer(useEngineStore.getState().layers['layer_1']);
+      dispatcher.execute(true);
+
+      const signals = dispatcher.getLatestSignals('layer_1');
+      expect(signals['source.audio_out']).toBeDefined();
+      expect(signals['source.ch1_out']).toBeDefined();
+      expect(signals['source.ch2_out']).toBeDefined();
+    });
   });
 });

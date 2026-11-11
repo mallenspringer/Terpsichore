@@ -1,8 +1,9 @@
 export const ImageVideoSourceWGSL = `
 struct MediaUniforms {
-  objectFit: u32, // 0 = cover, 1 = contain, 2 = fill
+  objectFit: f32, // 0.0 = cover, 1.0 = contain, 2.0 = fill
   mediaRatio: f32,
   canvasRatio: f32,
+  mirror: f32,    // 0.0 = normal, 1.0 = mirrored horizontally
 };
 
 @group(0) @binding(0) var<uniform> uniforms: MediaUniforms;
@@ -17,8 +18,11 @@ struct VertexOutput {
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
   var uv = in.uv;
+  if (uniforms.mirror > 0.5) {
+    uv.x = 1.0 - uv.x;
+  }
 
-  if (uniforms.objectFit == 0u) { // Cover
+  if (uniforms.objectFit < 0.5) { // Cover
     if (uniforms.mediaRatio > uniforms.canvasRatio) {
       let scale = uniforms.canvasRatio / uniforms.mediaRatio;
       uv.x = (uv.x - 0.5) * scale + 0.5;
@@ -26,7 +30,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
       let scale = uniforms.mediaRatio / uniforms.canvasRatio;
       uv.y = (uv.y - 0.5) * scale + 0.5;
     }
-  } else if (uniforms.objectFit == 1u) { // Contain
+  } else if (uniforms.objectFit < 1.5) { // Contain
     if (uniforms.mediaRatio > uniforms.canvasRatio) {
       let scale = uniforms.mediaRatio / uniforms.canvasRatio;
       uv.y = (uv.y - 0.5) * scale + 0.5;
@@ -48,9 +52,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
 export const VideoSourceWGSL = `
 struct MediaUniforms {
-  objectFit: u32, // 0 = cover, 1 = contain, 2 = fill
+  objectFit: f32, // 0.0 = cover, 1.0 = contain, 2.0 = fill
   mediaRatio: f32,
   canvasRatio: f32,
+  mirror: f32,    // 0.0 = normal, 1.0 = mirrored horizontally
 };
 
 @group(0) @binding(0) var<uniform> uniforms: MediaUniforms;
@@ -65,8 +70,11 @@ struct VertexOutput {
 @fragment
 fn fs_video(in: VertexOutput) -> @location(0) vec4<f32> {
   var uv = in.uv;
+  if (uniforms.mirror > 0.5) {
+    uv.x = 1.0 - uv.x;
+  }
 
-  if (uniforms.objectFit == 0u) { // Cover
+  if (uniforms.objectFit < 0.5) { // Cover
     if (uniforms.mediaRatio > uniforms.canvasRatio) {
       let scale = uniforms.canvasRatio / uniforms.mediaRatio;
       uv.x = (uv.x - 0.5) * scale + 0.5;
@@ -74,7 +82,7 @@ fn fs_video(in: VertexOutput) -> @location(0) vec4<f32> {
       let scale = uniforms.mediaRatio / uniforms.canvasRatio;
       uv.y = (uv.y - 0.5) * scale + 0.5;
     }
-  } else if (uniforms.objectFit == 1u) { // Contain
+  } else if (uniforms.objectFit < 1.5) { // Contain
     if (uniforms.mediaRatio > uniforms.canvasRatio) {
       let scale = uniforms.mediaRatio / uniforms.canvasRatio;
       uv.y = (uv.y - 0.5) * scale + 0.5;

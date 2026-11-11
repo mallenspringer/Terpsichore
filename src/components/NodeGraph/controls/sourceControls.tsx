@@ -7,7 +7,6 @@ import {
   NoiseModulatorSource, NoiseVideoSource, ColorNoiseSource,
   MidiInputSource
 } from '../../../state/types';
-import { AudioEngine } from '../../../state/AudioEngine';
 import { MidiManager } from '../../../state/MidiManager';
 import { MediaManager } from '../../../renderer/MediaManager';
 import {
@@ -532,6 +531,8 @@ export const SOURCE_ROWS: Record<string, ControlRowDef[]> = {
           >
             <span className="rack-row-label">Camera Device</span>
             <select value={src<WebcamCaptureSource>(ctx).deviceId} 
+              onFocus={() => sCtx.onRefreshDevices?.()}
+              onPointerDown={() => sCtx.onRefreshDevices?.()}
               onChange={e => { e.stopPropagation(); chg(ctx)('deviceId', e.target.value); }}>
               <option value="">Default Camera</option>
               {(sCtx.cameras ?? []).map((cam: any) => (
@@ -551,6 +552,30 @@ export const SOURCE_ROWS: Record<string, ControlRowDef[]> = {
           </select>
         </div>
       )
+    },
+    { id: 'mirror', label: 'Mirror',
+      render: ctx => {
+        const s = src<WebcamCaptureSource>(ctx);
+        const isMirrored = Boolean(s.mirror);
+        return (
+          <div 
+            className="rack-row-content" 
+            onPointerDown={e => e.stopPropagation()} 
+            onDragStart={e => e.stopPropagation()} 
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
+          >
+            <span className="rack-row-label">Mirror (H-Flip)</span>
+            <input
+              type="checkbox"
+              checked={isMirrored}
+              onChange={e => {
+                e.stopPropagation();
+                chg(ctx)('mirror', e.target.checked);
+              }}
+            />
+          </div>
+        );
+      }
     },
   ],
   LFO: [
@@ -985,35 +1010,7 @@ export const SOURCE_ROWS: Record<string, ControlRowDef[]> = {
         const effectId = (ctx as any).effect?.id;
         const layerId = (ctx as any).layer?.id;
         const registrationId = effectId || layerId;
-
-        // Auto-start mic when this module is active
-        useEffect(() => {
-          if (!registrationId) return;
-          let stream: MediaStream | null = null;
-          
-          const startMic = async () => {
-            try {
-              stream = await navigator.mediaDevices.getUserMedia({ 
-                audio: deviceId 
-                  ? { deviceId: { exact: deviceId }, echoCancellation: false, noiseSuppression: false, autoGainControl: false }
-                  : { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
-              });
-              await AudioEngine.getInstance().resume();
-              AudioEngine.getInstance().registerStream(registrationId, stream);
-            } catch (err) {
-              console.error("Failed to start mic:", err);
-            }
-          };
-
-          startMic();
-
-          return () => {
-            if (stream) {
-              stream.getTracks().forEach(t => t.stop());
-              AudioEngine.getInstance().unregisterMediaElement(registrationId);
-            }
-          };
-        }, [deviceId, registrationId]);
+        const audioDevices = sCtx.audioInputs ?? [];
 
         return (
           <div className="rack-row-content" 
@@ -1023,17 +1020,21 @@ export const SOURCE_ROWS: Record<string, ControlRowDef[]> = {
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%' }}>
               <span className="rack-row-label">Input Device</span>
-              <select value={deviceId} 
+              <select value={deviceId || ''} 
+                onFocus={() => sCtx.onRefreshDevices?.()}
+                onPointerDown={() => sCtx.onRefreshDevices?.()}
                 onChange={e => { e.stopPropagation(); chg(ctx)('deviceId', e.target.value); }}
                 style={{ flex: 1 }}
               >
                 <option value="">Default Input</option>
-                {(sCtx.cameras ?? []).filter(d => d.kind === 'audioinput' || (d as any).kind === 'audio').map((cam: any) => (
-                  <option key={cam.deviceId} value={cam.deviceId}>{cam.label || `Audio (${cam.deviceId.slice(0,5)}...)`}</option>
+                {audioDevices.map((d: MediaDeviceInfo, idx: number) => (
+                  <option key={d.deviceId || `device-${idx}`} value={d.deviceId}>
+                    {d.label || `Microphone ${idx + 1} (${d.deviceId.slice(0, 5)}...)`}
+                  </option>
                 ))}
               </select>
             </div>
-            {layerId && <VUMeter busId={layerId} />}
+            {registrationId && <VUMeter busId={registrationId} />}
           </div>
         );
       }

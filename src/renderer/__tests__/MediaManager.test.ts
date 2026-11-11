@@ -231,4 +231,47 @@ describe('MediaManager', () => {
     expect(stream2).toBeNull();
     expect(mediaManager.streamStatuses['sys_cancelled']).toBe('denied');
   });
+
+  it('should switch audio input streams cleanly when deviceId changes', async () => {
+    const stopTrack1 = vi.fn();
+    const stream1 = {
+      getTracks: () => [{ stop: stopTrack1 }],
+    } as unknown as MediaStream;
+
+    const stopTrack2 = vi.fn();
+    const stream2 = {
+      getTracks: () => [{ stop: stopTrack2 }],
+    } as unknown as MediaStream;
+
+    const getUserMediaMock = vi.fn()
+      .mockResolvedValueOnce(stream1)
+      .mockResolvedValueOnce(stream2);
+
+    (globalThis as any).navigator = {
+      mediaDevices: {
+        getUserMedia: getUserMediaMock,
+      },
+    };
+
+    // First request with device "mic_1"
+    mediaManager.manageMediaSource('layer_audio', { type: 'AudioInput', deviceId: 'mic_1', volume: 1.0 });
+    await new Promise(r => setTimeout(r, 0));
+
+    expect(getUserMediaMock).toHaveBeenCalledWith(expect.objectContaining({
+      audio: expect.objectContaining({ deviceId: { exact: 'mic_1' }, channelCount: { ideal: 2 } })
+    }));
+    expect(AudioEngine.getInstance().registerStream).toHaveBeenCalledWith('layer_audio', stream1);
+    expect(mediaManager.getMediaElement('layer_audio')).toBeNull();
+
+    // Switch device to "mic_2"
+    mediaManager.manageMediaSource('layer_audio', { type: 'AudioInput', deviceId: 'mic_2', volume: 1.0 });
+    await new Promise(r => setTimeout(r, 0));
+
+    expect(stopTrack1).toHaveBeenCalled();
+    expect(AudioEngine.getInstance().unregisterMediaElement).toHaveBeenCalledWith('layer_audio');
+    expect(getUserMediaMock).toHaveBeenCalledWith(expect.objectContaining({
+      audio: expect.objectContaining({ deviceId: { exact: 'mic_2' }, channelCount: { ideal: 2 } })
+    }));
+    expect(AudioEngine.getInstance().registerStream).toHaveBeenCalledWith('layer_audio', stream2);
+  });
 });

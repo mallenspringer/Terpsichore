@@ -117,7 +117,7 @@ export function createDefaultSource(type: string): AnySource {
     case 'VideoFile':
       return { type: 'VideoFile', fileUrl: "", fileName: "No file selected", playbackSpeed: 1.0, loop: true, playState: 'pause', objectFit: 'cover', volume: 1.0, audioMuted: true, resetTarget: 'start flag' };
     case 'WebcamCapture':
-      return { type: 'WebcamCapture', deviceId: "", objectFit: 'cover' };
+      return { type: 'WebcamCapture', deviceId: "", objectFit: 'cover', mirror: false };
     case 'ImageFile':
       return { type: 'ImageFile', fileUrl: "", fileName: "No file selected", objectFit: 'cover' };
     case 'AudioInput':
