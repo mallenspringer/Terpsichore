@@ -25,6 +25,7 @@ import {
   GlyphMapNodeUI,
   OutlineNodeUI,
   BadAnalogNodeUI,
+  DataMoshNodeUI,
   OpticalSensorNodeUI,
 } from './customNodes';
 
@@ -764,6 +765,14 @@ export function ModuleNode({
           )}
           {moduleType === 'BadAnalog' && (
             <BadAnalogNodeUI
+              nodeId={nodeId}
+              layerId={layerId}
+              effect={((rowCtx as any).effect || (rowCtx as any).source) as any}
+              rowCtx={rowCtx}
+            />
+          )}
+          {moduleType === 'DataMosh' && (
+            <DataMoshNodeUI
               nodeId={nodeId}
               layerId={layerId}
               effect={((rowCtx as any).effect || (rowCtx as any).source) as any}

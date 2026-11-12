@@ -1151,6 +1151,38 @@ export interface BadAnalogEffect {
   lumaSag: number;            // 0..1 (voltage drop/bloom on bright flashes)
 }
 
+// --- DATAMOSH MODULE ---
+export type DataMoshKeyframeMode = 'manual' | 'periodic' | 'motion_thresh';
+export type DataMoshProcessTarget = 'canvas' | 'upstream_bounded';
+
+export interface DataMoshEffect {
+  id: string;
+  type: 'DataMosh';
+  name?: string;
+  enabled?: boolean;
+
+  // Processing Domain
+  processTarget: DataMoshProcessTarget;
+
+  // Motion Vector Engine
+  vectorGain: number;         // 0..3 (amplification of motion vectors, default: 1.2)
+  decay: number;              // 0.8..1.0 (persistence of smear, default: 0.985)
+  macroblockSize: number;     // 1, 4, 8, 16, 32, 64 (default: 16)
+  threshold: number;          // 0..0.5 (motion sensitivity floor, default: 0.05)
+
+  // Glitch & Distortion
+  chromaBleed: number;        // 0..1 (YUV / color subcarrier smear, default: 0.3)
+  biasX: number;              // -1..1 (continuous directional vector drift, default: 0)
+  biasY: number;              // -1..1 (continuous directional vector drift, default: 0)
+  noiseGlitch: number;        // 0..1 (macroblock bitrot / dropout flash, default: 0)
+
+  // Keyframe / Reset Engine
+  keyframeMode: DataMoshKeyframeMode; // default: 'periodic'
+  keyframeRate: number;       // 0.1..10 Hz (default: 0.5 Hz = every 2 sec)
+  motionThreshold: number;    // 0.1..1.0 (auto keyframe on scene cuts, default: 0.6)
+  manualKeyframeTrigger?: number; // timestamp trigger from UI
+}
+
 export type AnyEffect = 
   | Transform2DEffect | ColorAdjustEffect | LumaKeyEffect | SimpleFeedbackEffect
   | InterLayerOutputEffect | InterLayerInputEffect | ColorRGBEffect | LumaSplitterEffect 
@@ -1160,7 +1192,7 @@ export type AnyEffect =
   | SignalMathEffect | SampleAndHoldEffect | StepSequencerEffect | PixelProcessorEffect
   | AudioSourceEffect | OscilloscopeEffect | SpectralSplitterEffect | WaterfallSpectrogramEffect | AudioTransformerEffect | AudioModulatorEffect | AudioGateEffect | AudioToCVEffect
   | SpeechEnvelopeTrackerEffect | VocalPitchTrackerEffect | VowelFormantTrackerEffect | SpokenWordVisualizerEffect
-  | CanvasBackgroundEffect | ParticleCloudEffect | ColorPaletteEffect | GrassFieldEffect | TextMakerEffect | LumaBandsEffect | ChromaBandsEffect | GlyphMapEffect | OutlineEffect | OpticalSensorEffect | BadAnalogEffect
+  | CanvasBackgroundEffect | ParticleCloudEffect | ColorPaletteEffect | GrassFieldEffect | TextMakerEffect | LumaBandsEffect | ChromaBandsEffect | GlyphMapEffect | OutlineEffect | OpticalSensorEffect | BadAnalogEffect | DataMoshEffect
   | ShapeGeneratorSource | VideoURLSource | VideoFileSource | WebcamCaptureSource | NoiseVideoSource | ColorNoiseSource
   | AudioInputSource | AudioFileSource | SystemAudioSource | ImageLoaderSource | ImageFileSource | ImageCueSource | TextCueSource;
 
@@ -1171,7 +1203,7 @@ export type EffectType =
   | 'KeyMixer' | 'VideoMath' | 'UVDisplace'
   | 'LogicGate' | 'TriggeredGate' | 'Pattern' | 'Kaleidoscope' | 'SignalMath' | 'SampleAndHold' | 'StepSequencer' | 'AudioSource' | 'Oscilloscope' | 'SpectralSplitter' | 'WaterfallSpectrogram' | 'PixelProcessor' | 'AudioTransformer' | 'AudioModulator' | 'AudioGate' | 'AudioToCV'
   | 'SpeechEnvelopeTracker' | 'VocalPitchTracker' | 'VowelFormantTracker' | 'SpokenWordVisualizer'
-  | 'CanvasBackground' | 'ParticleCloud' | 'ColorPalette' | 'GrassField' | 'TextMaker' | 'LumaBands' | 'ChromaBands' | 'GlyphMap' | 'Outline' | 'OpticalSensor' | 'BadAnalog'
+  | 'CanvasBackground' | 'ParticleCloud' | 'ColorPalette' | 'GrassField' | 'TextMaker' | 'LumaBands' | 'ChromaBands' | 'GlyphMap' | 'Outline' | 'OpticalSensor' | 'BadAnalog' | 'DataMosh'
   | 'ShapeGenerator' | 'VideoURL' | 'VideoFile' | 'WebcamCapture' | 'NoiseSource' | 'ColorNoise' | 'AudioInput' | 'AudioFile' | 'SystemAudio' | 'ImageLoader' | 'ImageFile' | 'ImageCue' | 'TextCue';
 
 export type GraphNode = AnyEffect;

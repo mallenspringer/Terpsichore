@@ -377,6 +377,15 @@ export const ALL_MODULES: ModuleEntry[] = [
     tags: ['crt', 'vector', 'analog', 'glitch', 'vhs', 'scanlines', 'phosphor', 'tracking', 'headswitching', 'humbar', 'jitter', 'bleed', 'effect']
   },
   {
+    id: 'DataMosh',
+    glyph: '📼',
+    label: 'Data Mosh',
+    tooltip: 'Compression Artifacts, Motion Vector Smear, Macroblock Bitrot & P-Frame Loss',
+    category: 'Effects',
+    moduleType: 'effect:DataMosh',
+    tags: ['mosh', 'glitch', 'pframe', 'iframe', 'vector', 'compression', 'macroblock', 'smear', 'bleed', 'bitrot', 'effect']
+  },
+  {
     id: 'GrassField',
     glyph: '🌱',
     label: 'Grass Field',

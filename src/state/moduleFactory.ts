@@ -724,6 +724,24 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
         lumaSag: 0.0,
       };
 
+    case 'DataMosh':
+      return {
+        id,
+        type: 'DataMosh',
+        processTarget: 'canvas',
+        vectorGain: 1.2,
+        decay: 0.985,
+        macroblockSize: 16,
+        threshold: 0.05,
+        chromaBleed: 0.3,
+        biasX: 0.0,
+        biasY: 0.0,
+        noiseGlitch: 0.0,
+        keyframeMode: 'periodic',
+        keyframeRate: 0.5,
+        motionThreshold: 0.6,
+      };
+
     default:
       return { id, type: 'SimpleFeedback', feedbackAmount: 0.9, zoom: 0.95, angle: 0.05 } as any;
   }

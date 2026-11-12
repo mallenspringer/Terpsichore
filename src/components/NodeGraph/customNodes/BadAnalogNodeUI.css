@@ -33,6 +33,9 @@
   text-transform: uppercase;
   letter-spacing: 0.5px;
   user-select: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .bad-analog-val {
@@ -41,6 +44,8 @@
   font-family: monospace;
   font-weight: 600;
   user-select: none;
+  flex-shrink: 0;
+  text-align: right;
 }
 
 .bad-analog-badge {
@@ -49,6 +54,7 @@
   border-radius: 3px;
   font-weight: 700;
   letter-spacing: 0.4px;
+  flex-shrink: 0;
 }
 
 .bad-analog-select {
@@ -167,3 +173,4 @@
   box-shadow: 0 0 4px rgba(0, 200, 255, 0.4);
   cursor: pointer;
 }
+
