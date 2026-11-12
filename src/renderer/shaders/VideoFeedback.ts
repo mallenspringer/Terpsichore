@@ -10,6 +10,7 @@ struct FeedbackProUniforms {
   params2: vec4<f32>, // x = lumaWarp, y = lumaTwist, z = rgbDispersion, w = hueShiftRad
   params3: vec4<f32>, // x = softKnee, y = edgeRollOff, z = blendMode (0=normal, 1=add, 2=screen, 3=diff, 4=max), w = processTarget (0=canvas, 1=bounded)
   params4: vec4<f32>, // x = isFrozen, y = hasMask, z = aspect, w = timeSec
+  params5: vec4<f32>, // x = edgeMode (0=clamp, 1=wrap, 2=mirror), y = tunnelWarp, z = pivotOrbit, w = pivotOrbitSpeed
 };
 
 @group(0) @binding(0) var<uniform> u: FeedbackProUniforms;
@@ -47,6 +48,21 @@ fn hsv2rgb(c: vec3<f32>) -> vec3<f32> {
   return c.z * mix(K.xxx, clamp(p - K.xxx, vec3<f32>(0.0), vec3<f32>(1.0)), c.y);
 }
 
+fn wrapUV(uv: vec2<f32>, mode: f32) -> vec2<f32> {
+  if (mode > 1.5) {
+    // 2: Mirror (Kaleidoscopic triangle wave fold in [0, 1])
+    let t = fract(uv * 0.5) * 2.0;
+    let m = 1.0 - abs(t - vec2<f32>(1.0));
+    return clamp(m, vec2<f32>(0.0005), vec2<f32>(0.9995));
+  } else if (mode > 0.5) {
+    // 1: Wrap (Toroidal conveyor / infinite repeat in [0, 1))
+    let w = fract(uv);
+    return clamp(w, vec2<f32>(0.0005), vec2<f32>(0.9995));
+  }
+  // 0: Clamp (Edge boundary hold)
+  return clamp(uv, vec2<f32>(0.0005), vec2<f32>(0.9995));
+}
+
 struct FragmentOutput {
   @location(0) videoOut: vec4<f32>,
   @location(1) matteOut: vec4<f32>,
@@ -76,12 +92,29 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
   let localSample = textureSampleLevel(fbTex, smp, in.uv, 0.0);
   let localLuma = dot(localSample.rgb, vec3<f32>(0.299, 0.587, 0.114));
 
-  // Centered coordinate space around steerable Pivot (aspect corrected)
+  // Autonomous Pivot Orbit: circular gyroscopic wander
+  let orbitRadius = u.params5.z;
+  let orbitSpeed = u.params5.w;
+  var orbitOffset = vec2<f32>(0.0);
+  if (orbitRadius > 0.0001) {
+    let orbitAngle = u.params4.w * orbitSpeed * 6.2831853;
+    orbitOffset = vec2<f32>(cos(orbitAngle), sin(orbitAngle)) * orbitRadius;
+  }
+  let pivot = clamp(vec2<f32>(u.params1.z, u.params1.w) + orbitOffset, vec2<f32>(0.0), vec2<f32>(1.0));
+
+  // Centered coordinate space around steerable / orbiting Pivot (aspect corrected)
   let aspect = max(0.1, u.params4.z);
-  let pivot = vec2<f32>(u.params1.z, u.params1.w);
   let p = vec2<f32>((in.uv.x - pivot.x) * aspect, in.uv.y - pivot.y);
   let r = length(p);
   let baseAngle = atan2(p.y, p.x);
+
+  // Log-Polar Cylindrical 3D Tunnel Warp
+  let tunnelWarp = u.params5.y;
+  var rEff = r;
+  if (tunnelWarp > 0.0001) {
+    let logR = log(r * 4.0 + 1.0) * 0.35;
+    rEff = mix(r, logR, tunnelWarp);
+  }
 
   // Effective Zoom with Luma Expansion
   let lumaWarpVal = u.params2.x;
@@ -90,7 +123,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
   // Vortex Torque Twist + Luma Twist + Base Rotation
   let twistVal = u.params0.w;
   let lumaTwistVal = u.params2.y;
-  let rotAngle = baseAngle - (u.params0.z + r * twistVal + (localLuma - 0.5) * lumaTwistVal);
+  let rotAngle = baseAngle - (u.params0.z + rEff * twistVal + (localLuma - 0.5) * lumaTwistVal);
 
   let drift = vec2<f32>(u.params1.x * aspect, u.params1.y);
 
@@ -100,18 +133,19 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
   let zoomG = effZoom;
   let zoomB = effZoom * (1.0 - disp);
 
-  let pR = vec2<f32>(cos(rotAngle), sin(rotAngle)) * (r / zoomR);
-  let pG = vec2<f32>(cos(rotAngle), sin(rotAngle)) * (r / zoomG);
-  let pB = vec2<f32>(cos(rotAngle), sin(rotAngle)) * (r / zoomB);
+  let pR = vec2<f32>(cos(rotAngle), sin(rotAngle)) * (rEff / zoomR);
+  let pG = vec2<f32>(cos(rotAngle), sin(rotAngle)) * (rEff / zoomG);
+  let pB = vec2<f32>(cos(rotAngle), sin(rotAngle)) * (rEff / zoomB);
 
   let uvR = vec2<f32>(pR.x / aspect + pivot.x, pR.y + pivot.y) - drift;
   let uvG = vec2<f32>(pG.x / aspect + pivot.x, pG.y + pivot.y) - drift;
   let uvB = vec2<f32>(pB.x / aspect + pivot.x, pB.y + pivot.y) - drift;
 
-  // Sample feedback history with clamping
-  let sampR = textureSampleLevel(fbTex, smp, clamp(uvR, vec2<f32>(0.0005), vec2<f32>(0.9995)), 0.0);
-  let sampG = textureSampleLevel(fbTex, smp, clamp(uvG, vec2<f32>(0.0005), vec2<f32>(0.9995)), 0.0);
-  let sampB = textureSampleLevel(fbTex, smp, clamp(uvB, vec2<f32>(0.0005), vec2<f32>(0.9995)), 0.0);
+  // Sample feedback history using boundary wrapping mode
+  let edgeMode = u.params5.x;
+  let sampR = textureSampleLevel(fbTex, smp, wrapUV(uvR, edgeMode), 0.0);
+  let sampG = textureSampleLevel(fbTex, smp, wrapUV(uvG, edgeMode), 0.0);
+  let sampB = textureSampleLevel(fbTex, smp, wrapUV(uvB, edgeMode), 0.0);
 
   var fbRGB = vec3<f32>(sampR.r, sampG.g, sampB.b);
   var fbAlpha = (sampR.a + sampG.a + sampB.a) * 0.333333;
@@ -130,9 +164,9 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     fbRGB = fbRGB / (vec3<f32>(1.0) + fbRGB * (knee * 0.75));
   }
 
-  // Peripheral Edge Roll-off (Vignette damping)
+  // Peripheral Edge Roll-off (Vignette damping, active only in clamp mode)
   let rollOff = u.params3.y;
-  if (rollOff > 0.001) {
+  if (rollOff > 0.001 && edgeMode < 0.5) {
     let edgeDist = min(min(in.uv.x, 1.0 - in.uv.x), min(in.uv.y, 1.0 - in.uv.y));
     let fade = clamp(edgeDist / max(0.001, rollOff * 0.15), 0.0, 1.0);
     fbRGB = fbRGB * fade;

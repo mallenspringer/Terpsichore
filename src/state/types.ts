@@ -1186,6 +1186,7 @@ export interface DataMoshEffect {
 // --- FEEDBACK PRO MODULE ---
 export type FeedbackProBlendMode = 'normal' | 'add' | 'screen' | 'difference' | 'max';
 export type FeedbackProProcessTarget = 'canvas' | 'upstream_bounded';
+export type FeedbackProEdgeMode = 'clamp' | 'wrap' | 'mirror';
 
 export interface FeedbackProEffect {
   id: string;
@@ -1196,6 +1197,7 @@ export interface FeedbackProEffect {
   // Domain & Compositing
   processTarget: FeedbackProProcessTarget;
   blendMode: FeedbackProBlendMode;
+  edgeMode: FeedbackProEdgeMode; // 'clamp' | 'wrap' | 'mirror' (default: 'clamp')
 
   // Recirculation & Energy
   gain: number;            // 0..1.2 (unity=1.0, >1.0 blooms with soft-knee, default: 0.95)
@@ -1210,6 +1212,11 @@ export interface FeedbackProEffect {
   driftY: number;          // -0.1..0.1 (default: 0.0)
   pivotX: number;          // 0..1 (default: 0.5)
   pivotY: number;          // 0..1 (default: 0.5)
+
+  // Persistent Motion & Autonomous Kinetics
+  pivotOrbit: number;      // 0..0.5 (autonomous gyroscopic wander radius, default: 0.0)
+  pivotOrbitSpeed: number; // 0..3.0 Hz (autonomous wander speed, default: 0.5)
+  tunnelWarp: number;      // 0..1.0 (log-polar cylindrical 3D wormhole depth, default: 0.0)
 
   // Luma Fluidity & Optics
   lumaWarp: number;        // -1..1 (bright area expansion/flow, default: 0.2)

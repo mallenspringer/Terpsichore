@@ -2568,8 +2568,8 @@ export class Renderer {
           } else if (effect.type === 'FeedbackPro') {
               pipeline = this.feedbackProPipeline;
               const ef = effect as FeedbackProEffect;
-              const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 80);
-              const f32 = new Float32Array(20);
+              const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 96);
+              const f32 = new Float32Array(24);
 
               const width = target.width;
               const height = target.height;
@@ -2678,6 +2678,14 @@ export class Renderer {
               f32[17] = hasMaskVal;
               f32[18] = aspect;
               f32[19] = timeSec;
+
+              // params5: [edgeMode (0=clamp, 1=wrap, 2=mirror), tunnelWarp, pivotOrbit, pivotOrbitSpeed]
+              const edgeModes: Record<string, number> = { clamp: 0, wrap: 1, mirror: 2 };
+              const edgeModeVal = edgeModes[ef.edgeMode || 'clamp'] ?? 0;
+              f32[20] = edgeModeVal;
+              f32[21] = Math.max(0.0, Math.min(1.0, ef.tunnelWarp ?? 0.0));
+              f32[22] = Math.max(0.0, Math.min(0.5, ef.pivotOrbit ?? 0.0));
+              f32[23] = Math.max(0.0, Math.min(3.0, ef.pivotOrbitSpeed ?? 0.5));
 
               this.device.queue.writeBuffer(uniformBuffer, 0, f32);
 

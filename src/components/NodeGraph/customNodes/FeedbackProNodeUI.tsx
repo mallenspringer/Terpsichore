@@ -3,7 +3,8 @@ import { useEngineStore } from '../../../state/store';
 import {
   FeedbackProEffect,
   FeedbackProBlendMode,
-  FeedbackProProcessTarget
+  FeedbackProProcessTarget,
+  FeedbackProEdgeMode
 } from '../../../state/types';
 import './FeedbackProNodeUI.css';
 
@@ -28,6 +29,7 @@ export const FeedbackProNodeUI: React.FC<FeedbackProNodeUIProps> = ({
 
   const processTarget = effect.processTarget || 'canvas';
   const blendMode = effect.blendMode || 'screen';
+  const edgeMode = effect.edgeMode || 'clamp';
   const isFrozen = !!effect.frozen;
 
   const gain = effect.gain ?? 0.95;
@@ -36,6 +38,10 @@ export const FeedbackProNodeUI: React.FC<FeedbackProNodeUIProps> = ({
   const twist = effect.twist ?? 0.0;
   const driftX = effect.driftX ?? 0.0;
   const driftY = effect.driftY ?? 0.0;
+
+  const tunnelWarp = effect.tunnelWarp ?? 0.0;
+  const pivotOrbit = effect.pivotOrbit ?? 0.0;
+  const pivotOrbitSpeed = effect.pivotOrbitSpeed ?? 0.5;
 
   const lumaWarp = effect.lumaWarp ?? 0.2;
   const lumaTwist = effect.lumaTwist ?? 0.0;
@@ -122,6 +128,31 @@ export const FeedbackProNodeUI: React.FC<FeedbackProNodeUIProps> = ({
           <option value="normal">Normal (Alpha Over)</option>
           <option value="difference">Difference (Solarizing Inversion)</option>
           <option value="max">Max (Lighten Peak)</option>
+        </select>
+      </div>
+
+      {/* Edge Boundary Mode */}
+      <div className="feedback-pro-field">
+        <div className="feedback-pro-label-row">
+          <span className="feedback-pro-label">Edge Boundary</span>
+          <span
+            className="feedback-pro-badge"
+            style={{
+              background: edgeMode === 'mirror' ? '#442255' : edgeMode === 'wrap' ? '#1b3b22' : '#2b2b2b',
+              color: edgeMode === 'mirror' ? '#ddaaff' : edgeMode === 'wrap' ? '#88ffaa' : '#aaa'
+            }}
+          >
+            {edgeMode.toUpperCase()}
+          </span>
+        </div>
+        <select
+          className="feedback-pro-select"
+          value={edgeMode}
+          onChange={e => handleUpdate({ edgeMode: e.target.value as FeedbackProEdgeMode })}
+        >
+          <option value="clamp">Clamp (Edge Roll-off)</option>
+          <option value="wrap">Wrap (Toroidal Conveyor)</option>
+          <option value="mirror">Mirror (Kaleidoscopic Fold)</option>
         </select>
       </div>
 
@@ -253,6 +284,62 @@ export const FeedbackProNodeUI: React.FC<FeedbackProNodeUIProps> = ({
               title="Double-click to reset (0.000)"
             />
           </div>
+
+          <div className="feedback-pro-fader-row">
+            <div className="feedback-pro-label-row">
+              <span className="feedback-pro-label">Tunnel Warp (Depth)</span>
+              <span className="feedback-pro-val">{Math.round(tunnelWarp * 100)}%</span>
+            </div>
+            <input
+              type="range"
+              className="feedback-pro-range"
+              min="0.0"
+              max="1.0"
+              step="0.02"
+              value={tunnelWarp}
+              onChange={e => handleUpdate({ tunnelWarp: parseFloat(e.target.value) })}
+              onDoubleClick={() => handleUpdate({ tunnelWarp: 0.0 })}
+              title="Double-click to reset (0% - Linear flat plane)"
+            />
+          </div>
+
+          <div className="feedback-pro-fader-row">
+            <div className="feedback-pro-label-row">
+              <span className="feedback-pro-label">Pivot Orbit Radius</span>
+              <span className="feedback-pro-val">{Math.round(pivotOrbit * 100)}%</span>
+            </div>
+            <input
+              type="range"
+              className="feedback-pro-range"
+              min="0.0"
+              max="0.5"
+              step="0.01"
+              value={pivotOrbit}
+              onChange={e => handleUpdate({ pivotOrbit: parseFloat(e.target.value) })}
+              onDoubleClick={() => handleUpdate({ pivotOrbit: 0.0 })}
+              title="Double-click to reset (0% - Static pivot)"
+            />
+          </div>
+
+          {pivotOrbit > 0.001 && (
+            <div className="feedback-pro-fader-row">
+              <div className="feedback-pro-label-row">
+                <span className="feedback-pro-label">Orbit Speed</span>
+                <span className="feedback-pro-val">{pivotOrbitSpeed.toFixed(2)} Hz</span>
+              </div>
+              <input
+                type="range"
+                className="feedback-pro-range"
+                min="0.05"
+                max="3.0"
+                step="0.05"
+                value={pivotOrbitSpeed}
+                onChange={e => handleUpdate({ pivotOrbitSpeed: parseFloat(e.target.value) })}
+                onDoubleClick={() => handleUpdate({ pivotOrbitSpeed: 0.5 })}
+                title="Double-click to reset (0.50 Hz)"
+              />
+            </div>
+          )}
         </div>
       )}
 

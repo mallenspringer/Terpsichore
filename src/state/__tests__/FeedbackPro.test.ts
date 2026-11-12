@@ -54,6 +54,7 @@ describe('FeedbackPro Module & Engine Integration', () => {
     expect(effect.type).toBe('FeedbackPro');
     expect(effect.processTarget).toBe('canvas');
     expect(effect.blendMode).toBe('screen');
+    expect(effect.edgeMode).toBe('clamp');
     expect(effect.gain).toBe(0.95);
     expect(effect.softKnee).toBe(0.4);
     expect(effect.edgeRollOff).toBe(0.3);
@@ -64,6 +65,9 @@ describe('FeedbackPro Module & Engine Integration', () => {
     expect(effect.driftY).toBe(0.0);
     expect(effect.pivotX).toBe(0.5);
     expect(effect.pivotY).toBe(0.5);
+    expect(effect.pivotOrbit).toBe(0.0);
+    expect(effect.pivotOrbitSpeed).toBe(0.5);
+    expect(effect.tunnelWarp).toBe(0.0);
     expect(effect.lumaWarp).toBe(0.2);
     expect(effect.lumaTwist).toBe(0.0);
     expect(effect.rgbDispersion).toBe(0.005);
@@ -172,6 +176,10 @@ describe('FeedbackPro Module & Engine Integration', () => {
       lumaWarp: 0.45,
       rgbDispersion: 0.015,
       blendMode: 'difference',
+      edgeMode: 'mirror',
+      pivotOrbit: 0.25,
+      pivotOrbitSpeed: 1.2,
+      tunnelWarp: 0.65,
       processTarget: 'upstream_bounded',
       frozen: true
     });
@@ -184,6 +192,10 @@ describe('FeedbackPro Module & Engine Integration', () => {
     expect(updated.lumaWarp).toBe(0.45);
     expect(updated.rgbDispersion).toBe(0.015);
     expect(updated.blendMode).toBe('difference');
+    expect(updated.edgeMode).toBe('mirror');
+    expect(updated.pivotOrbit).toBe(0.25);
+    expect(updated.pivotOrbitSpeed).toBe(1.2);
+    expect(updated.tunnelWarp).toBe(0.65);
     expect(updated.processTarget).toBe('upstream_bounded');
     expect(updated.frozen).toBe(true);
   });
