@@ -315,6 +315,34 @@ export class AudioEngine {
     return this.buses.get(id);
   }
 
+  /**
+   * Computes normalized [0..1] band-limited RMS energy across [minHz, maxHz]
+   * using linear power averaging converted back to perceptual dB [-68..-8 dB].
+   */
+  public getBandEnergyHz(id: string, minHz: number, maxHz: number): number {
+    const bus = this.buses.get(id);
+    if (!bus || !bus.fft || (bus.peak === 0 && bus.rms === 0)) return 0;
+
+    const sampleRate = this.getSampleRate();
+    const binHz = sampleRate / this.fftSize;
+    const startBin = Math.max(0, Math.floor(minHz / binHz));
+    const endBin = Math.min(bus.fft.length, Math.max(startBin + 1, Math.ceil(maxHz / binHz)));
+    const count = endBin - startBin;
+    if (count <= 0) return 0;
+
+    let powerSum = 0;
+    for (let i = startBin; i < endBin; i++) {
+      const db = Number.isFinite(bus.fft[i]) ? Math.max(-100, Math.min(0, bus.fft[i])) : -100;
+      powerSum += Math.pow(10, db / 10);
+    }
+
+    const meanPower = Math.max(1e-10, powerSum / count);
+    const avgDb = 10 * Math.log10(meanPower);
+    const floorDb = -68;
+    const ceilDb = -8;
+    return Math.max(0, Math.min(1, (avgDb - floorDb) / (ceilDb - floorDb)));
+  }
+
   public getAllBuses(): AudioBusData[] {
     return Array.from(this.buses.values());
   }

@@ -7,8 +7,9 @@ import {
   AudioSourceEffect, OscilloscopeEffect, SpectralSplitterEffect, WaterfallSpectrogramEffect, PixelProcessorEffect,
   AudioTransformerEffect, AudioModulatorEffect, CanvasBackgroundEffect,
   AlphaAdjustEffect, ParticleCloudEffect, ColorPaletteEffect, ColorStop,
-  GrassFieldEffect, TuftStyle
+  GrassFieldEffect, GrassGrowthBandPreset, TuftStyle
 } from '../../../state/types';
+import { GRASS_GROWTH_BAND_RANGES, resolveGrowthBandHz } from '../../../utils/grassFieldUtils';
 import { AudioEngine } from '../../../state/AudioEngine';
 import { useEngineStore } from '../../../state/store';
 import { SignalDispatcher } from '../../../state/SignalDispatcher';
@@ -2876,7 +2877,7 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
               <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: '#ddd', cursor: 'pointer' }}>
                 <input
                   type="checkbox"
-                  checked={ef.showSky !== false}
+                  checked={ef.showSky === true}
                   onChange={e => upd(ctx)({ showSky: e.target.checked })}
                 />
                 Show Sky (Opaque BG)
@@ -2936,7 +2937,7 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
               />
             </div>
 
-            {/* Growth Audio Fallback Mode Toggle */}
+            {/* Growth Audio Fallback Mode Toggle & Frequency Band */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#111', padding: '3px 6px', borderRadius: 3 }}>
               <span style={{ fontSize: 9, color: '#aaa', textTransform: 'uppercase' }}>Growth Audio Mode:</span>
               <div style={{ display: 'flex', gap: 4 }}>
@@ -2952,9 +2953,9 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
                     fontWeight: audioMode === 'accumulate' ? 'bold' : 'normal'
                   }}
                   onClick={() => upd(ctx)({ growthAudioMode: 'accumulate' })}
-                  title="Accumulated sound energy charges growth upward over bars"
+                  title="Band-limited RMS drives blade birth rate and gradual meadow height"
                 >
-                  Accumulate
+                  Band RMS
                 </button>
                 <button
                   style={{
@@ -2968,12 +2969,59 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
                     fontWeight: audioMode === 'pitch' ? 'bold' : 'normal'
                   }}
                   onClick={() => upd(ctx)({ growthAudioMode: 'pitch' })}
-                  title="Melodic pitch height directly sets blade height"
+                  title="Melodic pitch scales target blade height while band RMS drives birth rate"
                 >
                   Pitch
                 </button>
               </div>
             </div>
+
+            {(() => {
+              const preset = (ef.growthBandPreset ?? 'full_mid') as GrassGrowthBandPreset;
+              const tune = ef.growthBandTune ?? 0.0;
+              const resolved = resolveGrowthBandHz(preset, tune);
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, background: '#121212', padding: '4px 6px', borderRadius: 3, border: '1px solid #262626' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                    <span style={{ fontSize: 9, color: '#aaa', textTransform: 'uppercase' }}>
+                      Growth Band ({Math.round(resolved.minHz)}–{Math.round(resolved.maxHz)} Hz)
+                    </span>
+                    <select
+                      className="rack-select"
+                      style={{ fontSize: 10, padding: '2px 4px', background: '#1c1c1c', color: '#eee', border: '1px solid #333', borderRadius: 2 }}
+                      value={preset}
+                      onChange={e => upd(ctx)({ growthBandPreset: e.target.value as GrassGrowthBandPreset })}
+                    >
+                      {(Object.keys(GRASS_GROWTH_BAND_RANGES) as GrassGrowthBandPreset[]).map(k => (
+                        <option key={k} value={k}>
+                          {GRASS_GROWTH_BAND_RANGES[k].label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <Slider
+                      label="Band Tune (oct)"
+                      min={-0.5}
+                      max={0.5}
+                      step={0.05}
+                      resetValue={0.0}
+                      value={ef.growthBandTune ?? 0.0}
+                      onChange={v => upd(ctx)({ growthBandTune: v })}
+                    />
+                    <Slider
+                      label="Band Gain"
+                      min={0.2}
+                      max={3.0}
+                      step={0.05}
+                      resetValue={1.0}
+                      value={ef.growthBandGain ?? 1.0}
+                      onChange={v => upd(ctx)({ growthBandGain: v })}
+                    />
+                  </div>
+                </div>
+              );
+            })()}
 
             <div style={{ display: 'flex', gap: 6 }}>
               <Slider
@@ -3059,9 +3107,10 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
     },
     {
       id: 'tuftsAndFlora',
-      label: 'Wildflowers & Tufts',
+      label: 'Seedheads & Tufts',
       render: ctx => {
         const ef = eff<GrassFieldEffect>(ctx);
+        const tuftValue = (ef.tuftStyle as string) === 'wildflowers' ? 'purpletop' : (ef.tuftStyle ?? 'purpletop');
         return (
           <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'column', gap: 6 }}>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -3077,10 +3126,10 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
                   borderRadius: 2,
                   padding: '0 4px'
                 }}
-                value={ef.tuftStyle ?? 'wildflowers'}
+                value={tuftValue}
                 onChange={e => upd(ctx)({ tuftStyle: e.target.value as TuftStyle })}
               >
-                <option value="wildflowers">Meadow Wildflowers</option>
+                <option value="purpletop">Purpletop Seedheads</option>
                 <option value="poppies">Red Poppies</option>
                 <option value="dandelions">Dandelion Spores</option>
                 <option value="kelp">Seaweed Kelp Bulbs</option>
@@ -3206,7 +3255,7 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
               </div>
             </div>
 
-            {/* Mode 1: Timer-based continuous decay */}
+            {/* Mode 1: Auto Turnover (Lifespan Decay) */}
             <div style={{ background: '#141414', padding: '4px 6px', borderRadius: 3, border: '1px solid #282828' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: '#ddd', cursor: 'pointer', fontWeight: 'bold' }}>
@@ -3215,12 +3264,12 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
                     checked={ef.timerDecayEnabled !== false}
                     onChange={e => upd(ctx)({ timerDecayEnabled: e.target.checked })}
                   />
-                  Timer Continuous Decay
+                  Auto Turnover (Lifespan Decay)
                 </label>
               </div>
               {ef.timerDecayEnabled !== false && (
                 <Slider
-                  label="Lifespan Duration (s)"
+                  label="Turnover Lifespan (s)"
                   min={1.0}
                   max={30.0}
                   step={0.5}
@@ -3231,7 +3280,7 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
               )}
             </div>
 
-            {/* Mode 2: Gated Prune Input */}
+            {/* Mode 2: HF Transient Prune (Cymbals / CV) */}
             <div style={{ background: '#141414', padding: '4px 6px', borderRadius: 3, border: '1px solid #282828' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: '#ddd', cursor: 'pointer', fontWeight: 'bold' }}>
@@ -3240,13 +3289,13 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
                     checked={ef.gatedPruneEnabled === true}
                     onChange={e => upd(ctx)({ gatedPruneEnabled: e.target.checked })}
                   />
-                  Gated Pruning (CV / Audio Cut)
+                  HF Transient Prune (Cymbals / CV)
                 </label>
               </div>
 
               {ef.gatedPruneEnabled && (
                 <Slider
-                  label="Gate Threshold"
+                  label="Prune Sensitivity Threshold"
                   min={0.1}
                   max={1.0}
                   step={0.02}

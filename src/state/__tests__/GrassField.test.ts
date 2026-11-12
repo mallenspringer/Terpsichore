@@ -2,8 +2,16 @@ import { describe, it, expect } from 'vitest';
 import { createDefaultEffect } from '../moduleFactory';
 import { ALL_MODULES, DEFAULT_BANK_CONFIG } from '../../components/ModuleCatalog/moduleRegistry';
 import { PORT_DEFS, MODULE_DISPLAY_NAMES } from '../../components/NodeGraph/portDefs';
-import { GrassComputeWGSL, GrassRenderWGSL } from '../../renderer/shaders/GrassField';
+import {
+  GrassComputeWGSL,
+  GrassDustComputeWGSL,
+  GrassRenderWGSL,
+  GrassTuftRenderWGSL,
+  GrassDustRenderWGSL
+} from '../../renderer/shaders/GrassField';
 import { GrassFieldEffect } from '../types';
+import { resolveGrowthBandHz, GRASS_GROWTH_BAND_RANGES } from '../../utils/grassFieldUtils';
+import { AudioEngine } from '../AudioEngine';
 
 describe('GrassField (3D Animated Procedural Meadow) Module', () => {
   it('creates default GrassField effect with valid 3D, growth, wind, tuft, and prune parameters', () => {
@@ -24,7 +32,7 @@ describe('GrassField (3D Animated Procedural Meadow) Module', () => {
     expect(gf.windSpeed).toBe(1.5);
     expect(gf.windStrength).toBe(1.0);
     expect(gf.bassCoupling).toBe(true);
-    expect(gf.tuftStyle).toBe('wildflowers');
+    expect(gf.tuftStyle).toBe('purpletop');
     expect(gf.tuftChance).toBe(0.05);
     expect(gf.tuftBurstAmount).toBe(25);
     expect(gf.tuftThreshold).toBe(0.6);
@@ -35,8 +43,11 @@ describe('GrassField (3D Animated Procedural Meadow) Module', () => {
     expect(gf.removalStyle).toBe('dissolve');
     expect(gf.pruneAudioMode).toBe('transient_cut');
     expect(gf.colorPreset).toBe('meadow');
-    expect(gf.showSky).toBe(true);
+    expect(gf.showSky).toBe(false);
     expect(gf.showGround).toBe(true);
+    expect(gf.growthBandPreset).toBe('full_mid');
+    expect(gf.growthBandTune).toBe(0.0);
+    expect(gf.growthBandGain).toBe(1.0);
   });
 
   it('is registered in module catalog and default bank loadout under Effects', () => {
@@ -114,6 +125,11 @@ describe('GrassField (3D Animated Procedural Meadow) Module', () => {
     expect(GrassComputeWGSL).toContain('struct GrassBlade');
     expect(GrassComputeWGSL).toContain('fn cs_main');
     expect(GrassComputeWGSL).toContain('windPhase');
+    expect(GrassComputeWGSL).toContain('birthRate');
+
+    expect(GrassDustComputeWGSL).toBeDefined();
+    expect(GrassDustComputeWGSL).toContain('struct DustParticle');
+    expect(GrassDustComputeWGSL).toContain('fn cs_dust');
 
     expect(GrassRenderWGSL).toBeDefined();
     expect(GrassRenderWGSL).toContain('fn vs_main');
@@ -121,5 +137,58 @@ describe('GrassField (3D Animated Procedural Meadow) Module', () => {
     expect(GrassRenderWGSL).toContain('sampleCustomPalette');
     expect(GrassRenderWGSL).toContain('showSky');
     expect(GrassRenderWGSL).toContain('showGround');
+    expect(GrassRenderWGSL).toContain('computeSpinePoint');
+
+    expect(GrassTuftRenderWGSL).toBeDefined();
+    expect(GrassTuftRenderWGSL).toContain('fn vs_main');
+    expect(GrassTuftRenderWGSL).toContain('fn fs_main');
+
+    expect(GrassDustRenderWGSL).toBeDefined();
+    expect(GrassDustRenderWGSL).toContain('fn vs_main');
+    expect(GrassDustRenderWGSL).toContain('fn fs_main');
+  });
+
+  it('resolves vocal/instrument growth frequency band presets and octave tuning cleanly', () => {
+    const baseTenor = resolveGrowthBandHz('tenor', 0);
+    expect(baseTenor.minHz).toBeCloseTo(GRASS_GROWTH_BAND_RANGES.tenor.minHz);
+    expect(baseTenor.maxHz).toBeCloseTo(GRASS_GROWTH_BAND_RANGES.tenor.maxHz);
+
+    const upHalfOct = resolveGrowthBandHz('alto', 0.5);
+    expect(upHalfOct.minHz).toBe(Math.round(GRASS_GROWTH_BAND_RANGES.alto.minHz * Math.SQRT2));
+    expect(upHalfOct.maxHz).toBe(Math.round(GRASS_GROWTH_BAND_RANGES.alto.maxHz * Math.SQRT2));
+
+    const defaultBand = resolveGrowthBandHz(undefined, undefined);
+    expect(defaultBand.minHz).toBe(GRASS_GROWTH_BAND_RANGES.full_mid.minHz);
+    expect(defaultBand.maxHz).toBe(GRASS_GROWTH_BAND_RANGES.full_mid.maxHz);
+  });
+
+  it('AudioEngine.getBandEnergyHz isolates frequency bands cleanly and returns 0 when silent or missing', () => {
+    const fft = new Float32Array(512).fill(-100);
+    const binHz = 48000 / 1024;
+    // Inject -20 dB energy only inside 300-450 Hz (tenor band)
+    for (let i = 0; i < fft.length; i++) {
+      const hz = i * binHz;
+      if (hz >= 300 && hz <= 450) {
+        fft[i] = -20;
+      }
+    }
+
+    const buses = new Map<string, any>([
+      ['active', { peak: 0.4, rms: 0.2, fft }],
+      ['silent', { peak: 0, rms: 0, fft: new Float32Array(512).fill(-20) }]
+    ]);
+    const mockEngine = {
+      buses,
+      fftSize: 1024,
+      getSampleRate: () => 48000
+    };
+
+    const getEnergy = (id: string, minHz: number, maxHz: number) =>
+      AudioEngine.prototype.getBandEnergyHz.call(mockEngine, id, minHz, maxHz);
+
+    expect(getEnergy('missing', 130, 1750)).toBe(0);
+    expect(getEnergy('silent', 130, 1750)).toBe(0);
+    expect(getEnergy('active', 130, 450)).toBeGreaterThan(0.5);
+    expect(getEnergy('active', 4500, 18000)).toBe(0);
   });
 });

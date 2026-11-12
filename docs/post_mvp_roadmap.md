@@ -19,6 +19,7 @@ This document tracks planned features and architectural improvements to be addre
 - **Dedicated Audio to CV Converter (`AudioToCV`)**: Real-time amplitude-to-modulation utility with Envelope Follower (exponential attack/release), RMS, Peak, and logarithmic dB detection, variable smoothing, bipolar scaling, and threshold gate trigger output.
 - **Tauri Native Media Stream Asset Manager (Tier 4)**: Persistent desktop project media rehydration via `convertFileSrc` and automatic web browser fallback.
 - **Image Cue Sampler & Bank Sequencer (`ImageCue`)**: Directory image queue, 8/16 bank pad matrix with 1-click MIDI Note Learn, pop-out drag-and-drop Bank Editor modal, bounded LRU GPU texture cache, and transition shaders.
+- **Grass Field Visualizer (`GrassField`)**: Depth-buffered 3D multi-segment curved grass ribbons (`16,384` instances), coherent 2D spring-damper wind field driven by sub-bass/bass gusts, vocal/instrument band-limited RMS germination & growth (`tenor`/`alto`/`soprano`/`full_mid` with octave tuning & gain), HF spectral-flux cymbal pruning alongside auto lifespan turnover, particle dust dissolve, and Purpletop panicle seedheads.
 
 ---
 
@@ -161,12 +162,4 @@ A ranked bank of candidate video synthesis modules that utilize secondary textur
 - **Concept**: A dedicated, isolated auxiliary window or worker tab that requests `getDisplayMedia` and forwards the audio stream back into the main application.
 - **Context & Motivation**: Capturing browser tab audio via `getDisplayMedia` in Chromium injects a non-dismissible top security banner ("Sharing this tab to...") that appears across both the main tab and detached pop-out windows.
 - **Tradeoffs to Balance**: Confining the banner exclusively to a sacrificial helper window keeps the main canvas and fullscreen pop-out clean, but introduces taskbar window clutter, potential background tab timer throttling, and popup blocker edge cases compared to the Tauri native build or the "Entire Screen" + `[Hide]` workaround.
-
-### 2. Grass Field (Procedural Animated Growth) Refinements & Debugging
-- **Module Context**: 3D Procedural Animated Meadow module (`GrassField`) utilizing WebGPU compute shaders and billboard quad instancing with audio energy accumulation, CV overrides, and procedural floral blossoms.
-- **Items to Debug & Refine**:
-  - **Growth & Germination Tuning**: Further calibrate audio energy thresholds, dormancy, and continuous life-cycle respawning so the transition from bare soil to lush meadow feels consistently smooth across a variety of audio inputs and dynamic ranges.
-  - **Dissolution & Decay Wavefront**: Polish the particle dust-wipe and decay rates when audio drops or during continuous timer decay, ensuring blades despawn and respawn with zero visual popping or synchronization artifacts.
-  - **Bending & Camera Perspective Optimization**: Maintain strict length-conserving curvature and camera-tangent billboard orientation while exploring subtle 2.5D depth parallax without triggering near-plane projection clipping.
-  - **Tuft Blossom Dynamics**: Tune flower cluster burst radius and petal shader geometry for high-contrast visibility at various camera angles and zoom levels.
 

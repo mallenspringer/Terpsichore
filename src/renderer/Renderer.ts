@@ -35,7 +35,18 @@ import { UVDisplaceWGSL } from './shaders/UVDisplace';
 import { CanvasBackgroundWGSL } from './shaders/CanvasBackground';
 import { AlphaAdjustWGSL } from './shaders/AlphaAdjust';
 import { ParticleComputeWGSL, ParticleRenderWGSL } from './shaders/ParticleCloud';
-import { GrassComputeWGSL, GrassRenderWGSL } from './shaders/GrassField';
+import {
+  GrassComputeWGSL,
+  GrassDustComputeWGSL,
+  GrassRenderWGSL,
+  GrassTuftRenderWGSL,
+  GrassDustRenderWGSL
+} from './shaders/GrassField';
+import {
+  GRASS_BASS_WIND_RANGE,
+  GRASS_HF_PRUNE_RANGE,
+  resolveGrowthBandHz
+} from '../utils/grassFieldUtils';
 import { LumaBandsWGSL } from './shaders/LumaBands';
 import { ChromaBandsWGSL } from './shaders/ChromaBands';
 import { GlyphMapWGSL } from './shaders/GlyphMap';
@@ -116,12 +127,19 @@ export class Renderer {
   private particleInitDone: Set<string> = new Set();
   private particleLastTime: Map<string, number> = new Map();
   private grassComputePipeline!: GPUComputePipeline;
+  private grassDustComputePipeline!: GPUComputePipeline;
   private grassRenderPipeline!: GPURenderPipeline;
+  private grassTuftRenderPipeline!: GPURenderPipeline;
+  private grassDustRenderPipeline!: GPURenderPipeline;
   private grassPingPong: Map<string, number> = new Map();
   private grassGrowthAccum: Map<string, number> = new Map();
   private grassLastTime: Map<string, number> = new Map();
   private grassWindPhase: Map<string, number> = new Map();
   private grassTuftCooldown: Map<string, number> = new Map();
+  private grassDepthTextures: Map<string, GPUTexture> = new Map();
+  private grassBandEnv: Map<string, number> = new Map();
+  private grassHfBaseline: Map<string, number> = new Map();
+  private grassPruneCooldown: Map<string, number> = new Map();
 
   // Isolated layouts to prevent 'Minimum Binding Size' collisions
   private effectLayouts: Map<string, GPUBindGroupLayout> = new Map();
@@ -337,6 +355,8 @@ export class Renderer {
     this.fpFrozenTex = {};
     this.fpWasFrozen = {};
     this.fpInitialized = {};
+    this.grassDepthTextures.forEach(t => t.destroy());
+    this.grassDepthTextures.clear();
   }
 
   private getPrevFrameFBO(layerId: string) {
@@ -972,14 +992,23 @@ export class Renderer {
       }
     });
 
+    this.grassDustComputePipeline = this.device.createComputePipeline({
+      layout: 'auto',
+      compute: {
+        module: this.device.createShaderModule({ code: GrassDustComputeWGSL }),
+        entryPoint: 'cs_dust'
+      }
+    });
+
+    const grassRenderModule = this.device.createShaderModule({ code: GrassRenderWGSL });
     this.grassRenderPipeline = this.device.createRenderPipeline({
       layout: 'auto',
       vertex: {
-        module: this.device.createShaderModule({ code: GrassRenderWGSL }),
+        module: grassRenderModule,
         entryPoint: 'vs_main'
       },
       fragment: {
-        module: this.device.createShaderModule({ code: GrassRenderWGSL }),
+        module: grassRenderModule,
         entryPoint: 'fs_main',
         targets: [{
           format: this.format,
@@ -992,6 +1021,69 @@ export class Renderer {
       primitive: {
         topology: 'triangle-list',
         cullMode: 'none'
+      },
+      depthStencil: {
+        format: 'depth24plus',
+        depthWriteEnabled: true,
+        depthCompare: 'less'
+      }
+    });
+
+    const grassTuftModule = this.device.createShaderModule({ code: GrassTuftRenderWGSL });
+    this.grassTuftRenderPipeline = this.device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: grassTuftModule,
+        entryPoint: 'vs_main'
+      },
+      fragment: {
+        module: grassTuftModule,
+        entryPoint: 'fs_main',
+        targets: [{
+          format: this.format,
+          blend: {
+            color: { operation: 'add', srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha' },
+            alpha: { operation: 'add', srcFactor: 'one', dstFactor: 'one-minus-src-alpha' }
+          }
+        }]
+      },
+      primitive: {
+        topology: 'triangle-list',
+        cullMode: 'none'
+      },
+      depthStencil: {
+        format: 'depth24plus',
+        depthWriteEnabled: true,
+        depthCompare: 'less'
+      }
+    });
+
+    const grassDustModule = this.device.createShaderModule({ code: GrassDustRenderWGSL });
+    this.grassDustRenderPipeline = this.device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: grassDustModule,
+        entryPoint: 'vs_main'
+      },
+      fragment: {
+        module: grassDustModule,
+        entryPoint: 'fs_main',
+        targets: [{
+          format: this.format,
+          blend: {
+            color: { operation: 'add', srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha' },
+            alpha: { operation: 'add', srcFactor: 'one', dstFactor: 'one-minus-src-alpha' }
+          }
+        }]
+      },
+      primitive: {
+        topology: 'triangle-list',
+        cullMode: 'none'
+      },
+      depthStencil: {
+        format: 'depth24plus',
+        depthWriteEnabled: false,
+        depthCompare: 'less'
       }
     });
   }
@@ -3504,6 +3596,16 @@ export class Renderer {
     this.analysisWeightBuffers.clear();
     this.waterfallHistory.forEach(h => h.texture.destroy());
     this.waterfallHistory.clear();
+    this.grassDepthTextures.forEach(t => t.destroy());
+    this.grassDepthTextures.clear();
+    this.grassPingPong.clear();
+    this.grassGrowthAccum.clear();
+    this.grassLastTime.clear();
+    this.grassWindPhase.clear();
+    this.grassTuftCooldown.clear();
+    this.grassBandEnv.clear();
+    this.grassHfBaseline.clear();
+    this.grassPruneCooldown.clear();
   }
 
   private renderShapeSource(layer: LayerState, nodeId: string, target: GPUTexture, timeSec: number, commandEncoder: GPUCommandEncoder) {
@@ -4844,58 +4946,82 @@ export class Renderer {
     this.grassLastTime.set(nodeId, timeSec);
 
     const totalBlades = 16384;
-    const bladeByteSize = 64;
+    const bladeByteSize = 80;
     const bufferSize = totalBlades * bladeByteSize;
 
     const ping = this.grassPingPong.get(nodeId) ?? 0;
-    const inBufKey = `${nodeId}.grass_v2_buf_${ping}`;
-    const outBufKey = `${nodeId}.grass_v2_buf_${1 - ping}`;
+    const inBufKey = `${nodeId}.grass_v3_buf_${ping}`;
+    const outBufKey = `${nodeId}.grass_v3_buf_${1 - ping}`;
     const inBuf = this.getStorageBuffer(inBufKey, bufferSize);
     const outBuf = this.getStorageBuffer(outBufKey, bufferSize);
     this.grassPingPong.set(nodeId, 1 - ping);
 
+    const dustCount = 2048;
+    const dustByteSize = 48;
+    const dustBuf = this.getStorageBuffer(`${nodeId}.grass_dust_buf`, dustCount * dustByteSize);
+
     // 1. Audio Connection & DSP Extraction
     const audioEdge = layer.graph?.edges.find(e => e.toNodeId === nodeId && e.toPort === 'audio_in');
     const isAudioConnected = !!audioEdge;
+    const audioEngine = AudioEngine.getInstance();
     let busData: any = undefined;
     let busId = 'master';
     if (isAudioConnected) {
       const sourceEffect = layer.effects.find(e => e.id === audioEdge.fromNodeId);
       if (sourceEffect?.type === 'AudioSource') {
         busId = (sourceEffect as any).busId || 'master';
-      } else if (audioEdge.fromNodeId === 'source' || sourceEffect?.type === 'VideoFile' || sourceEffect?.type === 'VideoURL' || sourceEffect?.type === 'AudioFile' || sourceEffect?.type === 'AudioInput' || sourceEffect?.type === 'SystemAudio' || sourceEffect?.type === 'AudioTransformer' || sourceEffect?.type === 'AudioToCV') {
+      } else if (
+        audioEdge.fromNodeId === 'source' ||
+        sourceEffect?.type === 'VideoFile' ||
+        sourceEffect?.type === 'VideoURL' ||
+        sourceEffect?.type === 'AudioFile' ||
+        sourceEffect?.type === 'AudioInput' ||
+        sourceEffect?.type === 'SystemAudio' ||
+        sourceEffect?.type === 'AudioTransformer' ||
+        sourceEffect?.type === 'AudioToCV'
+      ) {
         const baseId = audioEdge.fromNodeId === 'source' ? layer.id : audioEdge.fromNodeId;
         busId = (audioEdge.fromPort === 'ch1_out' || audioEdge.fromPort === 'ch2_out') ? `${baseId}__${audioEdge.fromPort}` : baseId;
       } else {
         busId = audioEdge.fromNodeId;
       }
-      busData = AudioEngine.getInstance().getBusData(busId) || AudioEngine.getInstance().getBusData(layer.id) || AudioEngine.getInstance().getBusData('master');
+      busData = audioEngine.getBusData(busId) || audioEngine.getBusData(layer.id) || audioEngine.getBusData('master');
     }
 
     const audioRms = busData?.rms ?? 0;
     const audioPeak = busData?.peak ?? 0;
-    const audioBass = busData?.bands?.bass ?? 0;
+    const busBass = busData?.bands?.bass ?? 0;
     const audioOnset = busData?.onset ?? false;
 
-    // Leaky Energy Accumulator for Growth Mode B
-    // Zero audio or below gate threshold = 0.0 growth (empty bare dirt)
-    // Sound above gate = accumulates energy, driving organic meadow growth
+    // Band-limited RMS envelope for organic growth & germination rate
+    const { minHz: growthMinHz, maxHz: growthMaxHz } = resolveGrowthBandHz(ef.growthBandPreset, ef.growthBandTune);
+    const bandGain = Math.max(0.1, Math.min(4.0, ef.growthBandGain ?? 1.0));
+    const rawBandEnergy = isAudioConnected ? audioEngine.getBandEnergyHz(busId, growthMinHz, growthMaxHz) : 0;
+    const drivenBand = Math.min(1.0, rawBandEnergy * bandGain);
+    const prevBandEnv = this.grassBandEnv.get(nodeId) ?? 0.0;
+    const envCoeff = drivenBand > prevBandEnv ? (1.0 - Math.exp(-dt * 10.0)) : (1.0 - Math.exp(-dt * 2.2));
+    const bandEnv = prevBandEnv + (drivenBand - prevBandEnv) * envCoeff;
+    this.grassBandEnv.set(nodeId, bandEnv);
+
+    // Sub-bass & bass energy for wind gusts
+    const bassBandEnergy = isAudioConnected
+      ? audioEngine.getBandEnergyHz(busId, GRASS_BASS_WIND_RANGE.minHz, GRASS_BASS_WIND_RANGE.maxHz)
+      : 0;
+    const audioBass = Math.max(bassBandEnergy, busBass * 0.85);
+
+    // Leaky energy accumulator scaled cleanly by band RMS envelope
     let accum = this.grassGrowthAccum.get(nodeId) ?? 0.0;
     const growthRate = Math.max(0.01, ef.growthRate ?? 1.0);
-    const audioGateThreshold = 0.025;
-    const rawAudioEnergy = Math.max(audioRms * 2.8, audioPeak * 1.5);
-    const isAudioActive = isAudioConnected && (rawAudioEnergy > audioGateThreshold);
+    const gateThreshold = 0.025;
+    const isBandActive = isAudioConnected && (bandEnv > gateThreshold || audioRms > 0.03);
 
     if (isAudioConnected) {
-      if (isAudioActive) {
-        // Active sound above gate: charge energy steadily scaled by growthRate
-        const normalizedEnergy = Math.min(1.0, (rawAudioEnergy - audioGateThreshold) / 0.35);
-        const chargeSpeed = 0.35 * growthRate;
-        accum = Math.min(1.0, accum + (0.20 + 0.80 * normalizedEnergy) * chargeSpeed * dt);
+      if (bandEnv > gateThreshold) {
+        const chargeSpeed = 0.42 * growthRate;
+        accum = Math.min(1.0, accum + (0.18 + 0.82 * bandEnv) * chargeSpeed * dt);
       } else {
-        // Silent / below gate: steady natural decay tied to lifetimeDuration
-        const baseLifetime = Math.max(1.0, ef.lifetimeDuration ?? 10.0);
-        const decaySpeed = (ef.timerDecayEnabled !== false) ? (1.0 / baseLifetime) : 0.05;
+        const baseLifetime = Math.max(2.0, ef.lifetimeDuration ?? 10.0);
+        const decaySpeed = (ef.timerDecayEnabled !== false) ? (1.0 / baseLifetime) : 0.06;
         accum = Math.max(0.0, accum - decaySpeed * dt);
       }
       this.grassGrowthAccum.set(nodeId, accum);
@@ -4904,7 +5030,7 @@ export class Renderer {
     // Pitch for Growth Mode C
     let pitchVal = 0.5;
     if (isAudioConnected && busData) {
-      const pitchFeat = AudioEngine.getInstance().getPitchFeatures(busId, 40, 2000, 'music');
+      const pitchFeat = audioEngine.getPitchFeatures(busId, 40, 2000, 'music');
       if (pitchFeat && pitchFeat.confidence > 0.35) {
         pitchVal = pitchFeat.midi;
       }
@@ -4913,54 +5039,67 @@ export class Renderer {
     // Curvature Normal (Spectral Centroid / Brightness)
     let centroidNorm = 0.4;
     if (isAudioConnected && busData) {
-      const speechFeat = AudioEngine.getInstance().getSpeechFeatures(busId, 20, 80);
+      const speechFeat = audioEngine.getSpeechFeatures(busId, 20, 80);
       centroidNorm = speechFeat?.timbral?.centroid ?? 0.4;
     }
     if (ef.invertCurvature) {
       centroidNorm = 1.0 - centroidNorm;
     }
 
-    // Prune Normal (Transient Spike vs Silence Drop)
+    // High-Frequency Spectral Flux Prune (cymbals / crisp transients vs silence drop)
+    const hfEnergy = isAudioConnected
+      ? audioEngine.getBandEnergyHz(busId, GRASS_HF_PRUNE_RANGE.minHz, GRASS_HF_PRUNE_RANGE.maxHz)
+      : 0;
+    const prevHfBase = this.grassHfBaseline.get(nodeId) ?? hfEnergy;
+    const hfBase = prevHfBase + (hfEnergy - prevHfBase) * (1.0 - Math.exp(-dt * 3.5));
+    this.grassHfBaseline.set(nodeId, hfBase);
+    const hfFlux = Math.max(0.0, hfEnergy - hfBase);
+
     let audioPruneTrigger = false;
+    const lastPruneTime = this.grassPruneCooldown.get(nodeId) ?? -10.0;
+    const pruneThresh = ef.pruneThreshold ?? 0.7;
     if (isAudioConnected && busData && ef.gatedPruneEnabled) {
-      if (ef.pruneAudioMode === 'transient_cut') {
-        const crestFactor = audioPeak / Math.max(0.001, audioRms);
-        audioPruneTrigger = (audioOnset && (crestFactor > 2.5 || audioPeak > (ef.pruneThreshold ?? 0.7)));
-      } else {
-        audioPruneTrigger = audioRms < 0.02 && (ef.pruneThreshold ?? 0.7) > 0.5;
+      if (ef.pruneAudioMode === 'silence_dissolve') {
+        audioPruneTrigger = audioRms < 0.02 && pruneThresh > 0.5 && (timeSec - lastPruneTime > 0.4);
+      } else if (timeSec - lastPruneTime > 0.18) {
+        const fluxGate = Math.max(0.055, pruneThresh * 0.30);
+        audioPruneTrigger = (hfFlux > fluxGate) || (hfEnergy > pruneThresh && audioOnset);
       }
     }
 
     // 2. Normalling Break-Jacks (CV Overrides)
     const baseGrowth = ef.growth ?? 0.8;
-    let targetGrowth = 0.0;
-
     const growthEdge = layer.graph?.edges.find(e => e.toNodeId === nodeId && e.toPort === 'growth_cv');
+    const isDriven = !!(growthEdge || isAudioConnected);
+    let targetGrowth = baseGrowth;
+    let birthRate = (0.9 + baseGrowth * 1.6) * growthRate;
+
     if (growthEdge) {
-      // 1. CV Jack has priority override
       targetGrowth = this.getEffectiveParam(layer, nodeId, 'growth_cv', baseGrowth, timeSec);
+      birthRate = (0.12 + Math.max(0.0, targetGrowth) * 2.8) * growthRate;
     } else if (isAudioConnected) {
-      // 2. Audio Jack normalled modulation: Audio accumulates from 0.0 to 1.0, scaled by Growth Height slider
       if (ef.growthAudioMode === 'pitch') {
-        targetGrowth = baseGrowth * (isAudioActive ? (0.2 + Math.min(1.0, pitchVal) * 0.8) : 0.0);
+        targetGrowth = baseGrowth * (isBandActive ? (0.2 + Math.min(1.0, pitchVal) * 0.8) : 0.0);
+        birthRate = (isBandActive ? (0.16 + bandEnv * 2.8) : 0.02) * growthRate;
       } else {
-        // Growth Mode B (Accumulate): Driven directly by accumulated audio energy scaled by Growth Height
-        targetGrowth = baseGrowth * accum;
+        targetGrowth = baseGrowth * Math.max(accum, bandEnv * 0.85);
+        birthRate = (bandEnv > gateThreshold ? (0.14 + bandEnv * 3.2) : 0.02) * growthRate;
       }
-    } else {
-      // 3. Fallback manual slider control
-      targetGrowth = baseGrowth;
     }
 
     const modGrowth = Math.max(0.0, Math.min(1.0, targetGrowth));
-
     const modTilt = Math.max(0.0, Math.min(1.0, this.getEffectiveParam(layer, nodeId, 'tilt_cv', ef.tilt ?? 0.5, timeSec)));
 
     const baseWindSpeed = ef.windSpeed ?? 1.5;
-    const bassGust = (isAudioConnected && ef.bassCoupling) ? Math.min(2.0, audioBass * 3.5) : 0.0;
+    const bassGust = (isAudioConnected && ef.bassCoupling) ? Math.min(2.2, audioBass * 2.6) : 0.0;
     const curPhase = this.grassWindPhase.get(nodeId) ?? 0.0;
-    const nextPhase = (curPhase + dt * baseWindSpeed * (1.0 + bassGust * 0.75)) % (Math.PI * 2000.0);
+    const nextPhase = (curPhase + dt * baseWindSpeed * (1.0 + bassGust * 0.7)) % (Math.PI * 2000.0);
     this.grassWindPhase.set(nodeId, nextPhase);
+
+    // Slowly meandering 2D breeze heading
+    const windAngle = Math.sin(timeSec * 0.13) * 0.68 + Math.cos(timeSec * 0.047) * 0.32;
+    const windDirX = Math.cos(windAngle);
+    const windDirZ = Math.sin(windAngle);
 
     const windEdge = layer.graph?.edges.find(e => e.toNodeId === nodeId && e.toPort === 'wind_cv');
     const modWind = windEdge
@@ -4977,25 +5116,21 @@ export class Renderer {
 
     const modFatness = Math.max(0.05, Math.min(2.5, this.getEffectiveParam(layer, nodeId, 'fatness_cv', ef.fatness ?? 1.0, timeSec)));
 
-    // Prune Resolution & Accumulator Reset
+    // Prune Resolution (without resetting surviving field's growth accumulator)
     const pruneEdge = layer.graph?.edges.find(e => e.toNodeId === nodeId && e.toPort === 'prune_in');
     let pruneActive = false;
-    let pruneCutRatio = 0.4;
+    let pruneCutRatio = 0.35;
     if (pruneEdge) {
       const latestSignals = SignalDispatcher.getInstance().getLatestSignals(layer.id);
       const sig = latestSignals[`${nodeId}.prune_in`] ?? 0;
-      if (sig > (ef.pruneThreshold ?? 0.7)) {
+      if (sig > pruneThresh) {
         pruneActive = true;
-        pruneCutRatio = Math.min(1.0, (sig - (ef.pruneThreshold ?? 0.7)) / Math.max(0.01, 1.0 - (ef.pruneThreshold ?? 0.7)));
+        pruneCutRatio = Math.min(1.0, (sig - pruneThresh) / Math.max(0.01, 1.0 - pruneThresh));
       }
-    } else if (isAudioConnected && ef.gatedPruneEnabled && audioPruneTrigger) {
+    } else if (audioPruneTrigger) {
       pruneActive = true;
-      pruneCutRatio = 0.5;
-    }
-
-    if (pruneActive) {
-      // Reset audio growth accumulator on prune so field must accumulate new sound to regrow
-      this.grassGrowthAccum.set(nodeId, 0.05);
+      pruneCutRatio = Math.min(0.65, 0.28 + hfFlux * 1.1);
+      this.grassPruneCooldown.set(nodeId, timeSec);
     }
 
     // Tuft Trigger: detect rising edge for beats / triggers
@@ -5025,6 +5160,7 @@ export class Renderer {
     const tuftTriggerActive = isManualRising || isCvRising || audioBeatTrigger;
 
     const tuftStyleMap: Record<string, number> = {
+      purpletop: 1,
       wildflowers: 1,
       poppies: 2,
       dandelions: 3,
@@ -5039,8 +5175,8 @@ export class Renderer {
     };
     const removalStyleVal = removalStyleMap[ef.removalStyle ?? 'dissolve'] ?? 1;
 
-    // 3. Dispatch Compute Pass
-    const computeUniformBuffer = this.getUniformBuffer(`${nodeId}.grass_compute_uniforms`, 80);
+    // 3. Dispatch Blade Compute Pass & Dust Compute Pass (separate passes for barrier visibility)
+    const computeUniformBuffer = this.getUniformBuffer(`${nodeId}.grass_compute_uniforms`, 96);
     this.device.queue.writeBuffer(computeUniformBuffer, 0, new Float32Array([
       dt,
       timeSec,
@@ -5056,12 +5192,16 @@ export class Renderer {
       pruneCutRatio,
       removalStyleVal,
       tuftTriggerActive ? 1.0 : 0.0,
-      tuftStyleMap[ef.tuftStyle ?? 'wildflowers'] ?? 1,
+      tuftStyleMap[ef.tuftStyle ?? 'purpletop'] ?? 1,
       ef.tuftChance ?? 0.05,
       ef.tuftBurstAmount ?? 25,
       totalBlades,
       growthRate,
-      nextPhase
+      nextPhase,
+      birthRate,
+      isDriven ? 1.0 : 0.0,
+      windDirX,
+      windDirZ
     ]));
 
     const computeBindGroup = this.device.createBindGroup({
@@ -5079,7 +5219,22 @@ export class Renderer {
     computePass.dispatchWorkgroups(Math.ceil(totalBlades / 64));
     computePass.end();
 
-    // 4. Dispatch 3D Render Pass
+    const dustComputeBindGroup = this.device.createBindGroup({
+      layout: this.grassDustComputePipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: computeUniformBuffer } },
+        { binding: 1, resource: { buffer: outBuf } },
+        { binding: 2, resource: { buffer: dustBuf } }
+      ]
+    });
+
+    const dustPass = commandEncoder.beginComputePass();
+    dustPass.setPipeline(this.grassDustComputePipeline);
+    dustPass.setBindGroup(0, dustComputeBindGroup);
+    dustPass.dispatchWorkgroups(Math.ceil(dustCount / 64));
+    dustPass.end();
+
+    // 4. Dispatch Unified Depth-Buffered 3D Render Pass (Blades + Ground, Tufts, Dissolve Dust)
     const renderUniformBuffer = this.getUniformBuffer(`${nodeId}.grass_render_uniforms`, 256);
     const presetMap: Record<string, number> = {
       meadow: 0,
@@ -5088,7 +5243,7 @@ export class Renderer {
       neon: 3
     };
 
-    const showSky = ef.showSky !== false;
+    const showSky = ef.showSky === true;
     const showGround = ef.showGround !== false;
 
     const pal = this.getConnectedPalette(layer, nodeId, 'palette_in');
@@ -5102,13 +5257,13 @@ export class Renderer {
     renderF32[5] = baseWindSpeed;
     renderF32[6] = modWind;
     renderF32[7] = presetMap[ef.colorPreset ?? 'meadow'] ?? 0;
-    renderF32[8] = pal ? 1.0 : 0.0; // useCustomPalette
+    renderF32[8] = pal ? 1.0 : 0.0;
     renderF32[9] = pal ? pal.count : 0.0;
     renderF32[10] = pal ? pal.interpolation : 0.0;
     renderF32[11] = showSky ? 1.0 : 0.0;
     renderF32[12] = showGround ? 1.0 : 0.0;
-    renderF32[13] = 0.0;
-    renderF32[14] = 0.0;
+    renderF32[13] = windDirX;
+    renderF32[14] = windDirZ;
     renderF32[15] = 0.0;
 
     if (pal) {
@@ -5125,6 +5280,17 @@ export class Renderer {
 
     this.device.queue.writeBuffer(renderUniformBuffer, 0, renderF32);
 
+    let depthTex = this.grassDepthTextures.get(nodeId);
+    if (!depthTex || depthTex.width !== target.width || depthTex.height !== target.height) {
+      depthTex?.destroy();
+      depthTex = this.device.createTexture({
+        size: { width: target.width, height: target.height },
+        format: 'depth24plus',
+        usage: GPUTextureUsage.RENDER_ATTACHMENT
+      });
+      this.grassDepthTextures.set(nodeId, depthTex);
+    }
+
     const renderBindGroup = this.device.createBindGroup({
       layout: this.grassRenderPipeline.getBindGroupLayout(0),
       entries: [
@@ -5133,10 +5299,26 @@ export class Renderer {
       ]
     });
 
+    const tuftBindGroup = this.device.createBindGroup({
+      layout: this.grassTuftRenderPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: renderUniformBuffer } },
+        { binding: 1, resource: { buffer: outBuf } }
+      ]
+    });
+
+    const dustBindGroup = this.device.createBindGroup({
+      layout: this.grassDustRenderPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: renderUniformBuffer } },
+        { binding: 1, resource: { buffer: dustBuf } }
+      ]
+    });
+
     let clearColor = { r: 0.0, g: 0.0, b: 0.0, a: 0.0 };
     if (showSky) {
       const preset = ef.colorPreset ?? 'meadow';
-      clearColor = { r: 0.05, g: 0.10, b: 0.16, a: 1.0 }; // Twilight sky
+      clearColor = { r: 0.05, g: 0.10, b: 0.16, a: 1.0 };
       if (preset === 'bioluminescent') {
         clearColor = { r: 0.02, g: 0.04, b: 0.09, a: 1.0 };
       } else if (preset === 'golden') {
@@ -5152,12 +5334,27 @@ export class Renderer {
         clearValue: clearColor,
         loadOp: 'clear',
         storeOp: 'store'
-      }]
+      }],
+      depthStencilAttachment: {
+        view: depthTex.createView(),
+        depthClearValue: 1.0,
+        depthLoadOp: 'clear',
+        depthStoreOp: 'discard'
+      }
     });
 
     pass.setPipeline(this.grassRenderPipeline);
     pass.setBindGroup(0, renderBindGroup);
+    pass.draw(24, totalBlades);
+
+    pass.setPipeline(this.grassTuftRenderPipeline);
+    pass.setBindGroup(0, tuftBindGroup);
     pass.draw(6, totalBlades);
+
+    pass.setPipeline(this.grassDustRenderPipeline);
+    pass.setBindGroup(0, dustBindGroup);
+    pass.draw(6, dustCount);
+
     pass.end();
   }
 }

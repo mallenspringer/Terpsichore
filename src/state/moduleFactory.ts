@@ -508,6 +508,9 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
         growth: 0.8,
         growthRate: 1.0,
         growthAudioMode: 'accumulate',
+        growthBandPreset: 'full_mid',
+        growthBandTune: 0.0,
+        growthBandGain: 1.0,
         density: 0.6,
         bend: 0.2,
         invertCurvature: false,
@@ -515,7 +518,7 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
         windSpeed: 1.5,
         windStrength: 1.0,
         bassCoupling: true,
-        tuftStyle: 'wildflowers',
+        tuftStyle: 'purpletop',
         tuftChance: 0.05,
         tuftBurstAmount: 25,
         tuftThreshold: 0.6,
@@ -526,7 +529,7 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
         removalStyle: 'dissolve',
         pruneAudioMode: 'transient_cut',
         colorPreset: 'meadow',
-        showSky: true,
+        showSky: false,
         showGround: true
       };
 

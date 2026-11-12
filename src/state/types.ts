@@ -818,8 +818,9 @@ export interface ColorPaletteEffect {
   shuffleTriggerTime?: number;
 }
 
-export type TuftStyle = 'wildflowers' | 'poppies' | 'dandelions' | 'kelp' | 'wheat';
+export type TuftStyle = 'purpletop' | 'poppies' | 'dandelions' | 'kelp' | 'wheat';
 export type GrassRemovalStyle = 'dissolve' | 'cut' | 'shrink';
+export type GrassGrowthBandPreset = 'tenor' | 'alto' | 'soprano' | 'full_mid';
 
 export interface GrassFieldEffect {
   id: string;
@@ -830,6 +831,9 @@ export interface GrassFieldEffect {
   growth: number;                 // 0.0 to 1.0, default 0.8
   growthRate?: number;            // 0.01 to 3.0, default 1.0 (down to 1% speed)
   growthAudioMode: 'accumulate' | 'pitch'; // default 'accumulate'
+  growthBandPreset?: GrassGrowthBandPreset; // default 'full_mid'
+  growthBandTune?: number;        // -0.5 to 0.5 octaves, default 0.0
+  growthBandGain?: number;        // 0.2 to 3.0, default 1.0
   density: number;                // 0.1 to 1.0, default 0.6
   bend: number;                   // -1.0 to 1.0, default 0.2
   invertCurvature: boolean;       // default false
@@ -837,7 +841,7 @@ export interface GrassFieldEffect {
   windSpeed: number;              // 0.0 to 5.0, default 1.5
   windStrength: number;           // 0.0 to 3.0, default 1.0
   bassCoupling: boolean;          // default true
-  tuftStyle: TuftStyle;           // default 'wildflowers'
+  tuftStyle: TuftStyle;           // default 'purpletop'
   tuftChance: number;             // 0.0 to 1.0, default 0.05
   tuftBurstAmount: number;        // 1 to 50, default 12
   tuftThreshold: number;          // 0.1 to 1.0, default 0.6
@@ -849,8 +853,8 @@ export interface GrassFieldEffect {
   removalStyle: GrassRemovalStyle;// 'dissolve' | 'cut' | 'shrink', default 'dissolve'
   pruneAudioMode?: 'transient_cut' | 'silence_dissolve'; // legacy compatibility
   colorPreset: 'meadow' | 'bioluminescent' | 'golden' | 'neon';
-  showSky?: boolean;              // default true (false = full alpha transparency)
-  showGround?: boolean;           // default true (false = transparent ground floor)
+  showSky?: boolean;              // default false (transparent sky)
+  showGround?: boolean;           // default true (ground plane shown)
 }
 
 export type TextMakerFontFamily = 'broadcast_sans' | 'slab_serif' | 'vcr_osd' | 'brush_script' | 'lcd_digital';
