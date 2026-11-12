@@ -1,0 +1,237 @@
+.feedback-pro-node-ui {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 4px 6px 8px 6px;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  font-size: 11px;
+  color: #e0e0e0;
+  overflow: hidden;
+}
+
+.feedback-pro-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.feedback-pro-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.feedback-pro-label {
+  font-size: 10px;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  user-select: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.feedback-pro-val {
+  font-size: 10px;
+  color: #00d4ff;
+  font-family: monospace;
+  font-weight: 600;
+  user-select: none;
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.feedback-pro-badge {
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  flex-shrink: 0;
+}
+
+.feedback-pro-select {
+  width: 100%;
+  box-sizing: border-box;
+  background: #181818;
+  color: #f0f0f0;
+  border: 1px solid #333;
+  border-radius: 3px;
+  padding: 3px 6px;
+  font-size: 11px;
+  font-family: inherit;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.12s;
+}
+
+.feedback-pro-select:hover {
+  border-color: #555;
+}
+
+.feedback-pro-select:focus {
+  border-color: #00d4ff;
+}
+
+/* Action button row (Clear & Freeze) */
+.feedback-pro-action-row {
+  display: flex;
+  gap: 5px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.feedback-pro-btn {
+  flex: 1;
+  box-sizing: border-box;
+  border-radius: 4px;
+  padding: 5px 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  transition: all 0.12s ease;
+  user-select: none;
+}
+
+.feedback-pro-btn-clear {
+  background: #241416;
+  border: 1px solid #772228;
+  color: #ff6b72;
+}
+
+.feedback-pro-btn-clear:hover {
+  background: #3a181c;
+  border-color: #ff4450;
+  color: #fff;
+}
+
+.feedback-pro-btn-clear:active {
+  background: #ff4450;
+  color: #000;
+}
+
+.feedback-pro-btn-freeze {
+  background: #122026;
+  border: 1px solid #1a5568;
+  color: #66d9ff;
+}
+
+.feedback-pro-btn-freeze:hover {
+  background: #19323d;
+  border-color: #00c8ff;
+  color: #fff;
+}
+
+.feedback-pro-btn-freeze.active {
+  background: #0088cc;
+  border-color: #00d4ff;
+  color: #fff;
+  box-shadow: 0 0 8px rgba(0, 200, 255, 0.4);
+}
+
+/* Tabs */
+.feedback-pro-tabs {
+  display: flex;
+  gap: 4px;
+  width: 100%;
+  box-sizing: border-box;
+  border-bottom: 1px solid #2a2a2a;
+  padding-bottom: 4px;
+  margin-top: 2px;
+}
+
+.feedback-pro-tab-btn {
+  flex: 1;
+  border: 1px solid #333;
+  border-radius: 3px;
+  padding: 3px 0;
+  font-size: 10px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.12s;
+  box-sizing: border-box;
+}
+
+.feedback-pro-tab-btn.active {
+  background: #2a2a2a;
+  color: #fff;
+  border-color: #00c8ff;
+  font-weight: 700;
+}
+
+.feedback-pro-tab-btn:not(.active) {
+  background: #161616;
+  color: #777;
+}
+
+.feedback-pro-tab-btn:not(.active):hover {
+  background: #202020;
+  color: #aaa;
+}
+
+/* Faders */
+.feedback-pro-fader-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.feedback-pro-range {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  height: 3px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: #2a2a2a;
+  border-radius: 2px;
+  outline: none;
+  margin: 5px 0 3px 0;
+  cursor: pointer;
+}
+
+.feedback-pro-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #00c8ff;
+  box-shadow: 0 0 4px rgba(0, 200, 255, 0.5);
+  cursor: pointer;
+  transition: transform 0.1s, background-color 0.1s;
+}
+
+.feedback-pro-range::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+  background: #4de0ff;
+}
+
+.feedback-pro-range::-webkit-slider-thumb:active {
+  transform: scale(1.3);
+  background: #ffffff;
+}
+
+.feedback-pro-range::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border: none;
+  border-radius: 50%;
+  background: #00c8ff;
+  box-shadow: 0 0 4px rgba(0, 200, 255, 0.5);
+  cursor: pointer;
+}

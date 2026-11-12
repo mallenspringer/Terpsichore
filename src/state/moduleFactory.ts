@@ -742,6 +742,29 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
         motionThreshold: 0.6,
       };
 
+    case 'FeedbackPro':
+      return {
+        id,
+        type: 'FeedbackPro',
+        processTarget: 'canvas',
+        blendMode: 'screen',
+        gain: 0.95,
+        softKnee: 0.4,
+        edgeRollOff: 0.3,
+        zoom: 1.02,
+        rotation: 0.5,
+        twist: 0.0,
+        driftX: 0.0,
+        driftY: 0.0,
+        pivotX: 0.5,
+        pivotY: 0.5,
+        lumaWarp: 0.2,
+        lumaTwist: 0.0,
+        rgbDispersion: 0.005,
+        hueShift: 0.0,
+        frozen: false,
+      };
+
     default:
       return { id, type: 'SimpleFeedback', feedbackAmount: 0.9, zoom: 0.95, angle: 0.05 } as any;
   }

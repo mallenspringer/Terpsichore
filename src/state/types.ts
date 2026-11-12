@@ -1183,6 +1183,45 @@ export interface DataMoshEffect {
   manualKeyframeTrigger?: number; // timestamp trigger from UI
 }
 
+// --- FEEDBACK PRO MODULE ---
+export type FeedbackProBlendMode = 'normal' | 'add' | 'screen' | 'difference' | 'max';
+export type FeedbackProProcessTarget = 'canvas' | 'upstream_bounded';
+
+export interface FeedbackProEffect {
+  id: string;
+  type: 'FeedbackPro';
+  name?: string;
+  enabled?: boolean;
+
+  // Domain & Compositing
+  processTarget: FeedbackProProcessTarget;
+  blendMode: FeedbackProBlendMode;
+
+  // Recirculation & Energy
+  gain: number;            // 0..1.2 (unity=1.0, >1.0 blooms with soft-knee, default: 0.95)
+  softKnee: number;        // 0..1 (anode limiter / AGC compression, default: 0.4)
+  edgeRollOff: number;     // 0..1 (peripheral vignette damping, default: 0.3)
+
+  // Geometry & Vortex
+  zoom: number;            // 0.8..1.25 (default: 1.02)
+  rotation: number;        // -15..15 deg per frame (default: 0.5)
+  twist: number;           // -2..2 (radial spiral vortex torque, default: 0.0)
+  driftX: number;          // -0.1..0.1 (default: 0.0)
+  driftY: number;          // -0.1..0.1 (default: 0.0)
+  pivotX: number;          // 0..1 (default: 0.5)
+  pivotY: number;          // 0..1 (default: 0.5)
+
+  // Luma Fluidity & Optics
+  lumaWarp: number;        // -1..1 (bright area expansion/flow, default: 0.2)
+  lumaTwist: number;       // -2..2 (luminance-driven swirl, default: 0.0)
+  rgbDispersion: number;   // 0..0.05 (chromatic prism separation, default: 0.005)
+  hueShift: number;        // 0..360 deg per recursion (default: 0)
+
+  // Live Performance State
+  frozen: boolean;         // default: false (locks loop without incoming video)
+  clearTrigger?: number;   // timestamp trigger from UI / CV to flush buffer
+}
+
 export type AnyEffect = 
   | Transform2DEffect | ColorAdjustEffect | LumaKeyEffect | SimpleFeedbackEffect
   | InterLayerOutputEffect | InterLayerInputEffect | ColorRGBEffect | LumaSplitterEffect 
@@ -1192,7 +1231,7 @@ export type AnyEffect =
   | SignalMathEffect | SampleAndHoldEffect | StepSequencerEffect | PixelProcessorEffect
   | AudioSourceEffect | OscilloscopeEffect | SpectralSplitterEffect | WaterfallSpectrogramEffect | AudioTransformerEffect | AudioModulatorEffect | AudioGateEffect | AudioToCVEffect
   | SpeechEnvelopeTrackerEffect | VocalPitchTrackerEffect | VowelFormantTrackerEffect | SpokenWordVisualizerEffect
-  | CanvasBackgroundEffect | ParticleCloudEffect | ColorPaletteEffect | GrassFieldEffect | TextMakerEffect | LumaBandsEffect | ChromaBandsEffect | GlyphMapEffect | OutlineEffect | OpticalSensorEffect | BadAnalogEffect | DataMoshEffect
+  | CanvasBackgroundEffect | ParticleCloudEffect | ColorPaletteEffect | GrassFieldEffect | TextMakerEffect | LumaBandsEffect | ChromaBandsEffect | GlyphMapEffect | OutlineEffect | OpticalSensorEffect | BadAnalogEffect | DataMoshEffect | FeedbackProEffect
   | ShapeGeneratorSource | VideoURLSource | VideoFileSource | WebcamCaptureSource | NoiseVideoSource | ColorNoiseSource
   | AudioInputSource | AudioFileSource | SystemAudioSource | ImageLoaderSource | ImageFileSource | ImageCueSource | TextCueSource;
 
@@ -1203,7 +1242,7 @@ export type EffectType =
   | 'KeyMixer' | 'VideoMath' | 'UVDisplace'
   | 'LogicGate' | 'TriggeredGate' | 'Pattern' | 'Kaleidoscope' | 'SignalMath' | 'SampleAndHold' | 'StepSequencer' | 'AudioSource' | 'Oscilloscope' | 'SpectralSplitter' | 'WaterfallSpectrogram' | 'PixelProcessor' | 'AudioTransformer' | 'AudioModulator' | 'AudioGate' | 'AudioToCV'
   | 'SpeechEnvelopeTracker' | 'VocalPitchTracker' | 'VowelFormantTracker' | 'SpokenWordVisualizer'
-  | 'CanvasBackground' | 'ParticleCloud' | 'ColorPalette' | 'GrassField' | 'TextMaker' | 'LumaBands' | 'ChromaBands' | 'GlyphMap' | 'Outline' | 'OpticalSensor' | 'BadAnalog' | 'DataMosh'
+  | 'CanvasBackground' | 'ParticleCloud' | 'ColorPalette' | 'GrassField' | 'TextMaker' | 'LumaBands' | 'ChromaBands' | 'GlyphMap' | 'Outline' | 'OpticalSensor' | 'BadAnalog' | 'DataMosh' | 'FeedbackPro'
   | 'ShapeGenerator' | 'VideoURL' | 'VideoFile' | 'WebcamCapture' | 'NoiseSource' | 'ColorNoise' | 'AudioInput' | 'AudioFile' | 'SystemAudio' | 'ImageLoader' | 'ImageFile' | 'ImageCue' | 'TextCue';
 
 export type GraphNode = AnyEffect;

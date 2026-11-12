@@ -26,6 +26,7 @@ import {
   OutlineNodeUI,
   BadAnalogNodeUI,
   DataMoshNodeUI,
+  FeedbackProNodeUI,
   OpticalSensorNodeUI,
 } from './customNodes';
 
@@ -773,6 +774,14 @@ export function ModuleNode({
           )}
           {moduleType === 'DataMosh' && (
             <DataMoshNodeUI
+              nodeId={nodeId}
+              layerId={layerId}
+              effect={((rowCtx as any).effect || (rowCtx as any).source) as any}
+              rowCtx={rowCtx}
+            />
+          )}
+          {moduleType === 'FeedbackPro' && (
+            <FeedbackProNodeUI
               nodeId={nodeId}
               layerId={layerId}
               effect={((rowCtx as any).effect || (rowCtx as any).source) as any}

@@ -42,6 +42,7 @@ import { GlyphMapWGSL } from './shaders/GlyphMap';
 import { OutlineWGSL } from './shaders/Outline';
 import { BadAnalogWGSL } from './shaders/BadAnalog';
 import { DataMoshWGSL } from './shaders/DataMosh';
+import { VideoFeedbackWGSL } from './shaders/VideoFeedback';
 import { GlyphMapRenderer } from './GlyphMapRenderer';
 import { DEFAULT_LUMA_PALETTE, DEFAULT_CHROMA_PALETTE } from '../state/moduleFactory';
 
@@ -55,7 +56,7 @@ import {
   NoiseVideoSource, ColorNoiseSource, InverterEffect, PixelProcessorEffect,
   PatternEffect, KaleidoscopeEffect, SampleAndHoldEffect, OscilloscopeEffect, SpectralSplitterEffect, WaterfallSpectrogramEffect,
   SpokenWordVisualizerEffect,
-  LayerState, AnySource, ImageCueSource, TextCueSource, TextMakerEffect, LumaBandsEffect, ChromaBandsEffect, GlyphMapEffect, OutlineEffect, BadAnalogEffect, DataMoshEffect
+  LayerState, AnySource, ImageCueSource, TextCueSource, TextMakerEffect, LumaBandsEffect, ChromaBandsEffect, GlyphMapEffect, OutlineEffect, BadAnalogEffect, DataMoshEffect, FeedbackProEffect
 } from '../state/types';
 
 export class Renderer {
@@ -147,6 +148,12 @@ export class Renderer {
   private dataMoshLastKeyframeTime: Record<string, number> = {};
   private dataMoshLastManualTrig: Record<string, number> = {};
   private dataMoshLastCVTrig: Record<string, number> = {};
+  private feedbackProPipeline!: GPURenderPipeline;
+  private fpHistoryA: Record<string, GPUTexture> = {};
+  private fpHistoryB: Record<string, GPUTexture> = {};
+  private fpPingPong: Record<string, boolean> = {};
+  private fpLastClear: Record<string, number> = {};
+  private fpLastClearCV: Record<string, number> = {};
   private glyphMapAtlasTex: GPUTexture | null = null;
   private textMakerCurrGlyphTex: Record<string, GPUTexture> = {};
   private textMakerPrevGlyphTex: Record<string, GPUTexture> = {};
@@ -314,6 +321,10 @@ export class Renderer {
     this.dataMoshHistoryB = {};
     this.dataMoshPrevInput = {};
     this.dataMoshInitialized = {};
+    Object.values(this.fpHistoryA).forEach(t => t.destroy());
+    Object.values(this.fpHistoryB).forEach(t => t.destroy());
+    this.fpHistoryA = {};
+    this.fpHistoryB = {};
   }
 
   private getPrevFrameFBO(layerId: string) {
@@ -923,6 +934,21 @@ export class Renderer {
       primitive
     });
     this.effectLayouts.set('DataMosh', this.dataMoshPipeline.getBindGroupLayout(0));
+
+    this.feedbackProPipeline = this.device.createRenderPipeline({
+      layout,
+      vertex,
+      fragment: {
+        module: this.device.createShaderModule({ code: VideoFeedbackWGSL }),
+        entryPoint: 'fs_main',
+        targets: [
+          { format: this.format },
+          { format: this.format }
+        ]
+      },
+      primitive
+    });
+    this.effectLayouts.set('FeedbackPro', this.feedbackProPipeline.getBindGroupLayout(0));
 
 
 
@@ -2539,6 +2565,154 @@ export class Renderer {
               // Toggle ping-pong
               this.dataMoshPingPong[nodeId] = !useB;
               pipeline = null;
+          } else if (effect.type === 'FeedbackPro') {
+              pipeline = this.feedbackProPipeline;
+              const ef = effect as FeedbackProEffect;
+              const uniformBuffer = this.getUniformBuffer(`${nodeId}.uniforms`, 80);
+              const f32 = new Float32Array(20);
+
+              const width = target.width;
+              const height = target.height;
+              let historyA = this.fpHistoryA[nodeId];
+              let historyB = this.fpHistoryB[nodeId];
+
+              if (!historyA || historyA.width !== width || historyA.height !== height) {
+                if (historyA) historyA.destroy();
+                if (historyB) historyB.destroy();
+                const texDesc: GPUTextureDescriptor = {
+                  size: [width, height],
+                  format: this.format,
+                  usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST
+                };
+                historyA = this.device.createTexture(texDesc);
+                historyB = this.device.createTexture(texDesc);
+                this.fpHistoryA[nodeId] = historyA;
+                this.fpHistoryB[nodeId] = historyB;
+                this.fpPingPong[nodeId] = false;
+              }
+
+              const useB = this.fpPingPong[nodeId] ?? false;
+              const historyReadTex = useB ? historyB : historyA;
+              const historyWriteTex = useB ? historyA : historyB;
+
+              // Clear Buffer handling (UI Button or CV Trigger)
+              const manualClear = ef.clearTrigger ?? 0;
+              const lastClear = this.fpLastClear[nodeId] ?? 0;
+              const clearCV = this.getEffectiveParam(layer, ef.id, 'clear_trig', 0.0, timeSec);
+              const lastClearCV = this.fpLastClearCV[nodeId] ?? 0;
+
+              let shouldClear = false;
+              if (manualClear > 0 && manualClear !== lastClear) {
+                shouldClear = true;
+                this.fpLastClear[nodeId] = manualClear;
+              }
+              if (clearCV > 0.5 && lastClearCV <= 0.5) {
+                shouldClear = true;
+              }
+              this.fpLastClearCV[nodeId] = clearCV;
+
+              if (shouldClear) {
+                const clearPass = commandEncoder.beginRenderPass({
+                  colorAttachments: [{
+                    view: historyReadTex.createView(),
+                    clearValue: { r: 0, g: 0, b: 0, a: 0 },
+                    loadOp: 'clear',
+                    storeOp: 'store'
+                  }]
+                });
+                clearPass.end();
+              }
+
+              // Freeze Gate handling
+              const freezeCV = this.getEffectiveParam(layer, ef.id, 'freeze_gate', 0.0, timeSec);
+              const isFrozen = (ef.frozen || freezeCV > 0.5) ? 1.0 : 0.0;
+
+              // CV Modulations
+              const baseGain = ef.gain ?? 0.95;
+              const gainVal = Math.max(0.0, Math.min(1.5, this.getEffectiveParam(layer, ef.id, 'gain_cv', baseGain, timeSec)));
+
+              const baseZoom = ef.zoom ?? 1.02;
+              const zoomVal = Math.max(0.5, Math.min(2.0, this.getEffectiveParam(layer, ef.id, 'zoom_cv', baseZoom, timeSec)));
+
+              const baseRotDeg = ef.rotation ?? 0.5;
+              const rotDegVal = this.getEffectiveParam(layer, ef.id, 'rotation_cv', baseRotDeg, timeSec);
+              const rotRadVal = rotDegVal * (Math.PI / 180.0);
+
+              const baseLumaWarp = ef.lumaWarp ?? 0.2;
+              const lumaWarpVal = Math.max(-2.0, Math.min(2.0, this.getEffectiveParam(layer, ef.id, 'luma_warp_cv', baseLumaWarp, timeSec)));
+
+              const blendModes: Record<string, number> = { normal: 0, add: 1, screen: 2, difference: 3, max: 4 };
+              const blendModeVal = blendModes[ef.blendMode || 'screen'] ?? 2;
+              const processTargetVal = (ef.processTarget === 'upstream_bounded') ? 1.0 : 0.0;
+
+              const maskTex = this.getConnectedInputTexture(layer, nodeId, 'mask_in');
+              const hasMaskVal = maskTex ? 1.0 : 0.0;
+              const aspect = target.width / Math.max(1, target.height);
+
+              // params0: [gain, zoom, rotationRad, twist]
+              f32[0] = gainVal;
+              f32[1] = zoomVal;
+              f32[2] = rotRadVal;
+              f32[3] = ef.twist ?? 0.0;
+
+              // params1: [driftX, driftY, pivotX, pivotY]
+              f32[4] = ef.driftX ?? 0.0;
+              f32[5] = ef.driftY ?? 0.0;
+              f32[6] = ef.pivotX ?? 0.5;
+              f32[7] = ef.pivotY ?? 0.5;
+
+              // params2: [lumaWarp, lumaTwist, rgbDispersion, hueShiftRad]
+              f32[8] = lumaWarpVal;
+              f32[9] = ef.lumaTwist ?? 0.0;
+              f32[10] = ef.rgbDispersion ?? 0.005;
+              f32[11] = ((ef.hueShift ?? 0.0) % 360.0) * (Math.PI / 180.0);
+
+              // params3: [softKnee, edgeRollOff, blendMode, processTarget]
+              f32[12] = ef.softKnee ?? 0.4;
+              f32[13] = ef.edgeRollOff ?? 0.3;
+              f32[14] = blendModeVal;
+              f32[15] = processTargetVal;
+
+              // params4: [isFrozen, hasMask, aspect, timeSec]
+              f32[16] = isFrozen;
+              f32[17] = hasMaskVal;
+              f32[18] = aspect;
+              f32[19] = timeSec;
+
+              this.device.queue.writeBuffer(uniformBuffer, 0, f32);
+
+              entries = [
+                { binding: 0, resource: { buffer: uniformBuffer } },
+                { binding: 1, resource: tex.createView() },
+                { binding: 2, resource: historyReadTex.createView() },
+                { binding: 3, resource: maskTex ? maskTex.createView() : this.blankTexture.createView() },
+                { binding: 4, resource: this.sampler }
+              ];
+
+              const isMatteConnected = (layer.graph?.edges || []).some(c => c.fromNodeId === nodeId && c.fromPort === 'matte_out');
+              const matteTex = this.ensureTexture(nodeId, 'matte_out');
+              const pass = commandEncoder.beginRenderPass({
+                colorAttachments: [
+                  { view: target.createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' },
+                  { view: matteTex.createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: isMatteConnected ? 'store' : 'discard' }
+                ]
+              });
+              const layout = this.effectLayouts.get(effect.type) || pipeline.getBindGroupLayout(0);
+              const bg = this.device.createBindGroup({ layout, entries });
+              pass.setPipeline(pipeline); pass.setBindGroup(0, bg); pass.draw(3); pass.end();
+
+              // Copy output to historyWriteTex for next frame recursion
+              if (target.width === historyWriteTex.width && target.height === historyWriteTex.height) {
+                commandEncoder.copyTextureToTexture(
+                  { texture: target },
+                  { texture: historyWriteTex },
+                  [width, height, 1]
+                );
+              }
+
+              // Toggle ping-pong
+              this.fpPingPong[nodeId] = !useB;
+              pipeline = null;
           } else {
             if (effect.type === 'Transform2D') {
               pipeline = this.transformPipeline;
@@ -3197,6 +3371,10 @@ export class Renderer {
     this.dataMoshHistoryA = {};
     this.dataMoshHistoryB = {};
     this.dataMoshPrevInput = {};
+    Object.values(this.fpHistoryA).forEach(t => t.destroy());
+    Object.values(this.fpHistoryB).forEach(t => t.destroy());
+    this.fpHistoryA = {};
+    this.fpHistoryB = {};
     this.mediaManager.dispose();
     this.simulationPipeline.reset();
     this.analysisReadbackBuffers.forEach(buf => buf.destroy());

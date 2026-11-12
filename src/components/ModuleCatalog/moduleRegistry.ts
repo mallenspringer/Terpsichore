@@ -386,6 +386,15 @@ export const ALL_MODULES: ModuleEntry[] = [
     tags: ['mosh', 'glitch', 'pframe', 'iframe', 'vector', 'compression', 'macroblock', 'smear', 'bleed', 'bitrot', 'effect']
   },
   {
+    id: 'FeedbackPro',
+    glyph: '🌀',
+    label: 'Feedback Pro',
+    tooltip: 'Advanced Recursive Video Feedback, Luma Warps, Vortex Swirl & Analog Limiting',
+    category: 'Effects',
+    moduleType: 'effect:FeedbackPro',
+    tags: ['feedback', 'vortex', 'swirl', 'luma', 'warp', 'dispersion', 'prism', 'softknee', 'limiter', 'recursion', 'loop', 'effect']
+  },
+  {
     id: 'GrassField',
     glyph: '🌱',
     label: 'Grass Field',
