@@ -124,15 +124,33 @@ fn fs_main(@location(0) uv: vec2<f32>) -> StageOutput {
     workUV.y = fract(workUV.y + glitchTrig * 0.25);
   }
 
+  // 5b. 60Hz Ground Hum Horizontal Raster Deflection
+  if (humBar > 0.001) {
+    let humPhase = workUV.y - timeSec * humBarSpeed * 0.8;
+    let humRipple = sin(humPhase * 6.2831853);
+    workUV.x += humRipple * 0.012 * humBar;
+  }
+
+  // 5c. Luma / Voltage Sag: High-beam current pulls down anode voltage, expanding raster lines horizontally
+  if (lumaSag > 0.001) {
+    let lineSample = textureSampleLevel(inTex, smp, vec2<f32>(0.5, workUV.y), 0.0);
+    let lineLuma = dot(lineSample.rgb, vec3<f32>(0.299, 0.587, 0.114));
+    let dx = workUV.x - 0.5;
+    workUV.x -= dx * (lineLuma * 0.16 * lumaSag);
+    workUV.y -= lineLuma * 0.02 * lumaSag;
+  }
+
   // 6. Sample with Chroma Bleed
   var col = sampleChromaBleed(workUV, chromaBleed);
 
-  // 7. 60Hz / 50Hz AC Ground Hum Bar
+  // 7. 60Hz / 50Hz AC Ground Hum Bar (Additive Pedestal & Contrast Ripple)
   if (humBar > 0.001) {
-    let humPhase = fract(workUV.y - timeSec * humBarSpeed * 0.25);
-    let humWave = sin(humPhase * 6.2831853);
-    let humFactor = 1.0 + humWave * 0.14 * humBar;
-    col = vec4<f32>(clamp(col.rgb * humFactor, vec3<f32>(0.0), vec3<f32>(1.0)), col.a);
+    let humPhase = workUV.y - timeSec * humBarSpeed * 0.8;
+    let humSine = sin(humPhase * 6.2831853);
+    let humWave = (humSine + 0.35 * sin(humPhase * 12.5663706)) / 1.35;
+    let humAdd = humWave * 0.25 * humBar;
+    let humGain = 1.0 + humWave * 0.22 * humBar;
+    col = vec4<f32>(clamp(col.rgb * humGain + vec3<f32>(humAdd), vec3<f32>(0.0), vec3<f32>(1.0)), max(col.a, humBar * 0.3));
   }
 
   // 8. Display Modes
@@ -194,11 +212,14 @@ fn fs_main(@location(0) uv: vec2<f32>) -> StageOutput {
     col = vec4<f32>(mix(col.rgb * 0.25, col.rgb * cellEdge + vfdGlow * (1.0 - cellEdge) * 0.15, 0.85), col.a);
   }
 
-  // 9. Luma Sag / Voltage Bloom
+  // 9. Luma Sag / Voltage Drop, DC Baseline Undershoot & Beam Flare
   if (lumaSag > 0.001) {
-    let frameLuma = dot(col.rgb, vec3<f32>(0.299, 0.587, 0.114));
-    let sagFactor = smoothstep(0.65, 1.0, frameLuma) * lumaSag;
-    col = vec4<f32>(col.rgb * (1.0 + sagFactor * 0.6), col.a);
+    let leftSamp = textureSampleLevel(inTex, smp, workUV - vec2<f32>(0.025 * lumaSag, 0.0), 0.0);
+    let leftLuma = dot(leftSamp.rgb, vec3<f32>(0.299, 0.587, 0.114));
+    let curLuma = dot(col.rgb, vec3<f32>(0.299, 0.587, 0.114));
+    let undershoot = max(0.0, leftLuma - curLuma) * 0.45 * lumaSag;
+    let flare = smoothstep(0.35, 0.95, curLuma) * lumaSag * 0.35;
+    col = vec4<f32>(clamp(col.rgb - vec3<f32>(undershoot) + vec3<f32>(flare), vec3<f32>(0.0), vec3<f32>(1.0)), col.a);
   }
 
   // 10. RF Noise Snow
@@ -243,3 +264,4 @@ fn fs_main(@location(0) uv: vec2<f32>) -> StageOutput {
   }
 }
 `;
+
