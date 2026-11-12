@@ -2519,14 +2519,16 @@ export class Renderer {
               pass.setPipeline(pipeline); pass.setBindGroup(0, bg); pass.draw(3); pass.end();
 
               // Copy output into persistent accumulation history for next frame
-              commandEncoder.copyTextureToTexture(
-                { texture: target },
-                { texture: historyWriteTex },
-                [width, height, 1]
-              );
+              if (target.width === historyWriteTex.width && target.height === historyWriteTex.height) {
+                commandEncoder.copyTextureToTexture(
+                  { texture: target },
+                  { texture: historyWriteTex },
+                  [width, height, 1]
+                );
+              }
 
               // Copy current input texture into prevInput for optical flow vector calculation
-              if (tex !== this.blankTexture && (tex.usage & GPUTextureUsage.COPY_SRC)) {
+              if (tex !== this.blankTexture && (tex.usage & GPUTextureUsage.COPY_SRC) && tex.width === prevInput.width && tex.height === prevInput.height) {
                 commandEncoder.copyTextureToTexture(
                   { texture: tex },
                   { texture: prevInput },

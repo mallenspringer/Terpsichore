@@ -50,8 +50,8 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
   var out: FragmentOutput;
   let dims = vec2<f32>(textureDimensions(currTex));
   
-  // Current frame baseline sample
-  let currRaw = textureSample(currTex, smp, in.uv);
+  // Current frame baseline sample (using textureSampleLevel for unconditional uniform control flow)
+  let currRaw = textureSampleLevel(currTex, smp, in.uv, 0.0);
 
   // Upstream bounded target: if pixel is fully transparent in source, keep clean transparent
   if (u.params0.x > 0.5 && currRaw.a < 0.002) {
@@ -78,16 +78,16 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
   // Optical Flow Motion Vector Estimation at macroblock center
   let delta = (vec2<f32>(1.0) / max(vec2<f32>(1.0), dims)) * max(1.0, blockSize * 0.5);
   
-  let currLuma = rgbToLuma(textureSample(currTex, smp, blockUV).rgb);
-  let prevLuma = rgbToLuma(textureSample(prevTex, smp, blockUV).rgb);
+  let currLuma = rgbToLuma(textureSampleLevel(currTex, smp, blockUV, 0.0).rgb);
+  let prevLuma = rgbToLuma(textureSampleLevel(prevTex, smp, blockUV, 0.0).rgb);
   let dtLuma = currLuma - prevLuma;
 
-  let lumaXPlus = rgbToLuma(textureSample(currTex, smp, blockUV + vec2<f32>(delta.x, 0.0)).rgb);
-  let lumaXMinus = rgbToLuma(textureSample(currTex, smp, blockUV - vec2<f32>(delta.x, 0.0)).rgb);
+  let lumaXPlus = rgbToLuma(textureSampleLevel(currTex, smp, blockUV + vec2<f32>(delta.x, 0.0), 0.0).rgb);
+  let lumaXMinus = rgbToLuma(textureSampleLevel(currTex, smp, blockUV - vec2<f32>(delta.x, 0.0), 0.0).rgb);
   let dxLuma = (lumaXPlus - lumaXMinus) * 0.5;
 
-  let lumaYPlus = rgbToLuma(textureSample(currTex, smp, blockUV + vec2<f32>(0.0, delta.y)).rgb);
-  let lumaYMinus = rgbToLuma(textureSample(currTex, smp, blockUV - vec2<f32>(0.0, delta.y)).rgb);
+  let lumaYPlus = rgbToLuma(textureSampleLevel(currTex, smp, blockUV + vec2<f32>(0.0, delta.y), 0.0).rgb);
+  let lumaYMinus = rgbToLuma(textureSampleLevel(currTex, smp, blockUV - vec2<f32>(0.0, delta.y), 0.0).rgb);
   let dyLuma = (lumaYPlus - lumaYMinus) * 0.5;
 
   let gradSq = dxLuma * dxLuma + dyLuma * dyLuma + 0.002;
@@ -105,7 +105,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
   // Mask attenuation
   var maskVal = 1.0;
   if (u.params2.z > 0.5) {
-    maskVal = textureSample(maskTex, smp, in.uv).r;
+    maskVal = textureSampleLevel(maskTex, smp, in.uv, 0.0).r;
   }
 
   // Amplification
@@ -125,7 +125,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
   // Displaced lookup into the accumulation texture
   let targetUV = in.uv - displacement;
   let clampedUV = clamp(targetUV, vec2<f32>(0.0005), vec2<f32>(0.9995));
-  let accumSample = textureSample(accumTex, smp, clampedUV);
+  let accumSample = textureSampleLevel(accumTex, smp, clampedUV, 0.0);
 
   // Chroma Bleed / Subcarrier YUV smear
   let bleed = u.params1.y;
@@ -133,8 +133,8 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
   if (bleed > 0.005) {
     let rUV = clamp(in.uv - displacement * (1.0 + bleed * 0.6), vec2<f32>(0.0005), vec2<f32>(0.9995));
     let bUV = clamp(in.uv - displacement * (1.0 - bleed * 0.6), vec2<f32>(0.0005), vec2<f32>(0.9995));
-    let rVal = textureSample(accumTex, smp, rUV).r;
-    let bVal = textureSample(accumTex, smp, bUV).b;
+    let rVal = textureSampleLevel(accumTex, smp, rUV, 0.0).r;
+    let bVal = textureSampleLevel(accumTex, smp, bUV, 0.0).b;
     smoshColor = vec3<f32>(mix(accumSample.r, rVal, bleed), accumSample.g, mix(accumSample.b, bVal, bleed));
   }
 
