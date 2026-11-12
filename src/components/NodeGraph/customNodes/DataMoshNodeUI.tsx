@@ -5,6 +5,7 @@ import {
   DataMoshKeyframeMode,
   DataMoshProcessTarget
 } from '../../../state/types';
+import { DATAMOSH_DEFAULTS, formatHoldDuration } from '../../../utils/dataMoshUtils';
 import './DataMoshNodeUI.css';
 
 interface DataMoshNodeUIProps {
@@ -26,20 +27,22 @@ export const DataMoshNodeUI: React.FC<DataMoshNodeUIProps> = ({
     updateEffect(layerId, nodeId, patch as any);
   };
 
-  const processTarget = effect.processTarget || 'canvas';
-  const keyframeMode = effect.keyframeMode || 'periodic';
+  const processTarget = effect.processTarget || DATAMOSH_DEFAULTS.processTarget;
+  const keyframeMode = effect.keyframeMode || DATAMOSH_DEFAULTS.keyframeMode;
 
-  const vectorGain = effect.vectorGain ?? 1.5;
-  const decay = effect.decay ?? 0.985;
-  const macroblockSize = effect.macroblockSize ?? 16;
-  const threshold = effect.threshold ?? 0.08;
+  const vectorGain = effect.vectorGain ?? DATAMOSH_DEFAULTS.vectorGain;
+  const decay = effect.decay ?? DATAMOSH_DEFAULTS.decay;
+  const macroblockSize = effect.macroblockSize ?? DATAMOSH_DEFAULTS.macroblockSize;
+  const threshold = effect.threshold ?? DATAMOSH_DEFAULTS.threshold;
+  const refreshThreshold = effect.refreshThreshold ?? DATAMOSH_DEFAULTS.refreshThreshold;
 
-  const chromaBleed = effect.chromaBleed ?? 0.3;
-  const biasX = effect.biasX ?? 0.0;
-  const biasY = effect.biasY ?? 0.0;
-  const noiseGlitch = effect.noiseGlitch ?? 0.0;
+  const chromaBleed = effect.chromaBleed ?? DATAMOSH_DEFAULTS.chromaBleed;
+  const biasX = effect.biasX ?? DATAMOSH_DEFAULTS.biasX;
+  const biasY = effect.biasY ?? DATAMOSH_DEFAULTS.biasY;
+  const noiseGlitch = effect.noiseGlitch ?? DATAMOSH_DEFAULTS.noiseGlitch;
 
-  const keyframeRate = effect.keyframeRate ?? 0.5;
+  const keyframeRate = effect.keyframeRate ?? DATAMOSH_DEFAULTS.keyframeRate;
+  const motionThreshold = effect.motionThreshold ?? DATAMOSH_DEFAULTS.motionThreshold;
 
   const handleTriggerIFrame = () => {
     handleUpdate({ manualKeyframeTrigger: Date.now() });
@@ -100,7 +103,9 @@ export const DataMoshNodeUI: React.FC<DataMoshNodeUIProps> = ({
           <span className="data-mosh-val">
             {keyframeMode === 'periodic'
               ? `${(1.0 / Math.max(0.01, keyframeRate)).toFixed(1)}s`
-              : keyframeMode.toUpperCase()}
+              : keyframeMode === 'motion_thresh'
+                ? `CUT ${Math.round(motionThreshold * 100)}%`
+                : 'MANUAL'}
           </span>
         </div>
         <select
@@ -108,9 +113,9 @@ export const DataMoshNodeUI: React.FC<DataMoshNodeUIProps> = ({
           value={keyframeMode}
           onChange={e => handleUpdate({ keyframeMode: e.target.value as DataMoshKeyframeMode })}
         >
+          <option value="motion_thresh">Motion Spike Detection</option>
           <option value="periodic">Periodic Auto-Reset</option>
           <option value="manual">Manual / Trigger Port Only</option>
-          <option value="motion_thresh">Motion Spike Detection</option>
         </select>
       </div>
 
@@ -123,13 +128,33 @@ export const DataMoshNodeUI: React.FC<DataMoshNodeUIProps> = ({
           <input
             type="range"
             className="data-mosh-range"
-            min="0.05"
+            min="0.02"
             max="5.0"
-            step="0.05"
+            step="0.02"
             value={keyframeRate}
             onChange={e => handleUpdate({ keyframeRate: parseFloat(e.target.value) })}
-            onDoubleClick={() => handleUpdate({ keyframeRate: 0.5 })}
-            title="Double-click to reset (0.50 Hz = 2 sec)"
+            onDoubleClick={() => handleUpdate({ keyframeRate: DATAMOSH_DEFAULTS.keyframeRate })}
+            title={`Double-click to reset (${DATAMOSH_DEFAULTS.keyframeRate.toFixed(2)} Hz)`}
+          />
+        </div>
+      )}
+
+      {keyframeMode === 'motion_thresh' && (
+        <div className="data-mosh-fader-row">
+          <div className="data-mosh-label-row">
+            <span className="data-mosh-label">Scene Cut Thresh</span>
+            <span className="data-mosh-val">{Math.round(motionThreshold * 100)}%</span>
+          </div>
+          <input
+            type="range"
+            className="data-mosh-range"
+            min="0.10"
+            max="1.00"
+            step="0.01"
+            value={motionThreshold}
+            onChange={e => handleUpdate({ motionThreshold: parseFloat(e.target.value) })}
+            onDoubleClick={() => handleUpdate({ motionThreshold: DATAMOSH_DEFAULTS.motionThreshold })}
+            title={`Full-frame change threshold to trigger a full I-frame reset (Double-click to reset ${Math.round(DATAMOSH_DEFAULTS.motionThreshold * 100)}%)`}
           />
         </div>
       )}
@@ -166,17 +191,15 @@ export const DataMoshNodeUI: React.FC<DataMoshNodeUIProps> = ({
               step="0.05"
               value={vectorGain}
               onChange={e => handleUpdate({ vectorGain: parseFloat(e.target.value) })}
-              onDoubleClick={() => handleUpdate({ vectorGain: 1.5 })}
-              title="Double-click to reset (1.50x)"
+              onDoubleClick={() => handleUpdate({ vectorGain: DATAMOSH_DEFAULTS.vectorGain })}
+              title={`Double-click to reset (${DATAMOSH_DEFAULTS.vectorGain.toFixed(2)}x)`}
             />
           </div>
 
           <div className="data-mosh-fader-row">
             <div className="data-mosh-label-row">
-              <span className="data-mosh-label">Smear Decay</span>
-              <span className="data-mosh-val">
-                {decay >= 0.999 ? '100% (HOLD)' : `${(decay * 100).toFixed(1)}%`}
-              </span>
+              <span className="data-mosh-label">Hold Duration</span>
+              <span className="data-mosh-val">{formatHoldDuration(decay)}</span>
             </div>
             <input
               type="range"
@@ -186,8 +209,8 @@ export const DataMoshNodeUI: React.FC<DataMoshNodeUIProps> = ({
               step="0.005"
               value={decay}
               onChange={e => handleUpdate({ decay: parseFloat(e.target.value) })}
-              onDoubleClick={() => handleUpdate({ decay: 0.985 })}
-              title="Double-click to reset (98.5% | 100% = Infinite Hold)"
+              onDoubleClick={() => handleUpdate({ decay: DATAMOSH_DEFAULTS.decay })}
+              title={`Perceptual hold duration before frozen pixels relax to live video (Double-click to reset ${formatHoldDuration(DATAMOSH_DEFAULTS.decay)} | max = ∞ HOLD)`}
             />
           </div>
 
@@ -204,8 +227,8 @@ export const DataMoshNodeUI: React.FC<DataMoshNodeUIProps> = ({
               step="1"
               value={macroblockSize}
               onChange={e => handleUpdate({ macroblockSize: parseInt(e.target.value, 10) })}
-              onDoubleClick={() => handleUpdate({ macroblockSize: 16 })}
-              title="Double-click to reset (16 px)"
+              onDoubleClick={() => handleUpdate({ macroblockSize: DATAMOSH_DEFAULTS.macroblockSize })}
+              title={`Double-click to reset (${DATAMOSH_DEFAULTS.macroblockSize} px)`}
             />
           </div>
 
@@ -218,12 +241,32 @@ export const DataMoshNodeUI: React.FC<DataMoshNodeUIProps> = ({
               type="range"
               className="data-mosh-range"
               min="0.0"
-              max="1.0"
+              max="0.50"
               step="0.01"
               value={threshold}
               onChange={e => handleUpdate({ threshold: parseFloat(e.target.value) })}
-              onDoubleClick={() => handleUpdate({ threshold: 0.08 })}
-              title="Double-click to reset (8% Noise Gate)"
+              onDoubleClick={() => handleUpdate({ threshold: DATAMOSH_DEFAULTS.threshold })}
+              title={`Minimum block motion to trigger vector drift (Double-click to reset ${Math.round(DATAMOSH_DEFAULTS.threshold * 100)}%)`}
+            />
+          </div>
+
+          <div className="data-mosh-fader-row">
+            <div className="data-mosh-label-row">
+              <span className="data-mosh-label">Block Refresh</span>
+              <span className="data-mosh-val">
+                {refreshThreshold >= 0.995 ? 'OFF' : `${Math.round(refreshThreshold * 100)}%`}
+              </span>
+            </div>
+            <input
+              type="range"
+              className="data-mosh-range"
+              min="0.05"
+              max="1.00"
+              step="0.01"
+              value={refreshThreshold}
+              onChange={e => handleUpdate({ refreshThreshold: parseFloat(e.target.value) })}
+              onDoubleClick={() => handleUpdate({ refreshThreshold: DATAMOSH_DEFAULTS.refreshThreshold })}
+              title={`Motion/residual threshold to re-drop fresh pixels into already-frozen blocks (Double-click to reset ${Math.round(DATAMOSH_DEFAULTS.refreshThreshold * 100)}% | max = OFF)`}
             />
           </div>
         </div>
@@ -245,7 +288,7 @@ export const DataMoshNodeUI: React.FC<DataMoshNodeUIProps> = ({
               step="0.01"
               value={chromaBleed}
               onChange={e => handleUpdate({ chromaBleed: parseFloat(e.target.value) })}
-              onDoubleClick={() => handleUpdate({ chromaBleed: 0.3 })}
+              onDoubleClick={() => handleUpdate({ chromaBleed: DATAMOSH_DEFAULTS.chromaBleed })}
               title="Double-click to reset (30%)"
             />
           </div>
@@ -263,7 +306,7 @@ export const DataMoshNodeUI: React.FC<DataMoshNodeUIProps> = ({
               step="0.02"
               value={biasX}
               onChange={e => handleUpdate({ biasX: parseFloat(e.target.value) })}
-              onDoubleClick={() => handleUpdate({ biasX: 0.0 })}
+              onDoubleClick={() => handleUpdate({ biasX: DATAMOSH_DEFAULTS.biasX })}
               title="Double-click to reset (0.00)"
             />
           </div>
@@ -281,7 +324,7 @@ export const DataMoshNodeUI: React.FC<DataMoshNodeUIProps> = ({
               step="0.02"
               value={biasY}
               onChange={e => handleUpdate({ biasY: parseFloat(e.target.value) })}
-              onDoubleClick={() => handleUpdate({ biasY: 0.0 })}
+              onDoubleClick={() => handleUpdate({ biasY: DATAMOSH_DEFAULTS.biasY })}
               title="Double-click to reset (0.00)"
             />
           </div>
@@ -299,7 +342,7 @@ export const DataMoshNodeUI: React.FC<DataMoshNodeUIProps> = ({
               step="0.01"
               value={noiseGlitch}
               onChange={e => handleUpdate({ noiseGlitch: parseFloat(e.target.value) })}
-              onDoubleClick={() => handleUpdate({ noiseGlitch: 0.0 })}
+              onDoubleClick={() => handleUpdate({ noiseGlitch: DATAMOSH_DEFAULTS.noiseGlitch })}
               title="Double-click to reset (0%)"
             />
           </div>
@@ -308,4 +351,3 @@ export const DataMoshNodeUI: React.FC<DataMoshNodeUIProps> = ({
     </div>
   );
 };
-

@@ -45,6 +45,7 @@ import { DataMoshWGSL } from './shaders/DataMosh';
 import { VideoFeedbackWGSL } from './shaders/VideoFeedback';
 import { GlyphMapRenderer } from './GlyphMapRenderer';
 import { DEFAULT_LUMA_PALETTE, DEFAULT_CHROMA_PALETTE } from '../state/moduleFactory';
+import { DATAMOSH_DEFAULTS, computeFrameRetention } from '../utils/dataMoshUtils';
 
 import { PORT_DEFS } from '../components/NodeGraph/portDefs';
 import { SignalDispatcher } from '../state/SignalDispatcher';
@@ -148,6 +149,8 @@ export class Renderer {
   private dataMoshLastKeyframeTime: Record<string, number> = {};
   private dataMoshLastManualTrig: Record<string, number> = {};
   private dataMoshLastCVTrig: Record<string, number> = {};
+  private dataMoshLastTime: Record<string, number> = {};
+  private dataMoshBiasAccum: Record<string, { x: number; y: number }> = {};
   private feedbackProPipeline!: GPURenderPipeline;
   private fpHistoryA: Record<string, GPUTexture> = {};
   private fpHistoryB: Record<string, GPUTexture> = {};
@@ -324,6 +327,8 @@ export class Renderer {
     this.dataMoshHistoryB = {};
     this.dataMoshPrevInput = {};
     this.dataMoshInitialized = {};
+    this.dataMoshLastTime = {};
+    this.dataMoshBiasAccum = {};
     Object.values(this.fpHistoryA).forEach(t => t.destroy());
     Object.values(this.fpHistoryB).forEach(t => t.destroy());
     Object.values(this.fpFrozenTex).forEach(t => t.destroy());
@@ -2450,9 +2455,22 @@ export class Renderer {
               const historyReadTex = useB ? historyB : historyA;
               const historyWriteTex = useB ? historyA : historyB;
 
+              // Frame delta time for frame-rate-independent decay & bias drift
+              const prevTime = this.dataMoshLastTime[nodeId];
+              let dt = 0.0;
+              let wasTransportReset = false;
+              if (prevTime !== undefined) {
+                if (timeSec < prevTime) {
+                  wasTransportReset = true;
+                } else {
+                  dt = Math.min(0.1, Math.max(0.0, timeSec - prevTime));
+                }
+              }
+              this.dataMoshLastTime[nodeId] = timeSec;
+
               // Keyframe detection
               let isKeyframe = 0.0;
-              if (!this.dataMoshInitialized[nodeId]) {
+              if (!this.dataMoshInitialized[nodeId] || wasTransportReset) {
                 isKeyframe = 1.0;
                 this.dataMoshInitialized[nodeId] = true;
                 this.dataMoshLastKeyframeTime[nodeId] = timeSec;
@@ -2478,7 +2496,7 @@ export class Renderer {
 
               // Periodic mode
               if (ef.keyframeMode === 'periodic') {
-                const rate = Math.max(0.05, Math.min(20.0, ef.keyframeRate ?? 0.5));
+                const rate = Math.max(0.02, Math.min(20.0, ef.keyframeRate ?? DATAMOSH_DEFAULTS.keyframeRate));
                 const interval = 1.0 / rate;
                 const lastKeyTime = this.dataMoshLastKeyframeTime[nodeId] ?? timeSec;
                 if (timeSec - lastKeyTime >= interval) {
@@ -2488,45 +2506,63 @@ export class Renderer {
               }
 
               // CV Modulations
-              const baseGain = ef.vectorGain ?? 1.2;
+              const baseGain = ef.vectorGain ?? DATAMOSH_DEFAULTS.vectorGain;
               const vectorGainVal = Math.max(0.0, Math.min(5.0, this.getEffectiveParam(layer, ef.id, 'mosh_cv', baseGain, timeSec)));
 
-              const baseBlock = ef.macroblockSize ?? 16;
+              const baseBlock = ef.macroblockSize ?? DATAMOSH_DEFAULTS.macroblockSize;
               const macroblockSizeVal = Math.max(1.0, Math.min(64.0, this.getEffectiveParam(layer, ef.id, 'block_size_cv', baseBlock, timeSec)));
 
-              const baseBiasX = ef.biasX ?? 0.0;
+              const baseBiasX = ef.biasX ?? DATAMOSH_DEFAULTS.biasX;
               const biasXVal = Math.max(-2.0, Math.min(2.0, this.getEffectiveParam(layer, ef.id, 'bias_x_cv', baseBiasX, timeSec)));
 
-              const baseBiasY = ef.biasY ?? 0.0;
+              const baseBiasY = ef.biasY ?? DATAMOSH_DEFAULTS.biasY;
               const biasYVal = Math.max(-2.0, Math.min(2.0, this.getEffectiveParam(layer, ef.id, 'bias_y_cv', baseBiasY, timeSec)));
+
+              // Accumulate sub-pixel directional bias into crisp integer texel steps
+              const biasAccum = this.dataMoshBiasAccum[nodeId] ?? { x: 0, y: 0 };
+              if (isKeyframe > 0.5) {
+                biasAccum.x = 0;
+                biasAccum.y = 0;
+              } else if (dt > 0) {
+                biasAccum.x += biasXVal * width * 0.35 * dt;
+                biasAccum.y += -biasYVal * height * 0.35 * dt;
+              }
+              const biasStepX = Math.trunc(biasAccum.x);
+              const biasStepY = Math.trunc(biasAccum.y);
+              biasAccum.x -= biasStepX;
+              biasAccum.y -= biasStepY;
+              this.dataMoshBiasAccum[nodeId] = biasAccum;
+
+              const decayVal = ef.decay ?? DATAMOSH_DEFAULTS.decay;
+              const frameRetentionVal = computeFrameRetention(decayVal, dt);
 
               const maskTex = this.getConnectedInputTexture(layer, nodeId, 'mask_in');
               const hasMaskVal = maskTex ? 1.0 : 0.0;
               const aspect = target.width / Math.max(1, target.height);
 
-              // params0: [processTarget, vectorGain, decay, threshold]
+              // params0: [processTarget, vectorGain, frameRetention, threshold]
               f32[0] = processTargetVal;
               f32[1] = vectorGainVal;
-              f32[2] = ef.decay ?? 0.985;
-              f32[3] = ef.threshold ?? 0.05;
+              f32[2] = frameRetentionVal;
+              f32[3] = ef.threshold ?? DATAMOSH_DEFAULTS.threshold;
 
-              // params1: [macroblockSize, chromaBleed, biasX, biasY]
+              // params1: [macroblockSize, chromaBleed, biasStepX, biasStepY]
               f32[4] = macroblockSizeVal;
-              f32[5] = ef.chromaBleed ?? 0.3;
-              f32[6] = biasXVal;
-              f32[7] = biasYVal;
+              f32[5] = ef.chromaBleed ?? DATAMOSH_DEFAULTS.chromaBleed;
+              f32[6] = biasStepX;
+              f32[7] = biasStepY;
 
               // params2: [noiseGlitch, isKeyframe, hasMask, timeSec]
-              f32[8] = ef.noiseGlitch ?? 0.0;
+              f32[8] = ef.noiseGlitch ?? DATAMOSH_DEFAULTS.noiseGlitch;
               f32[9] = isKeyframe;
               f32[10] = hasMaskVal;
               f32[11] = timeSec;
 
-              // params3: [aspect, 0, 0, 0]
+              // params3: [aspect, refreshThreshold, motionCutMode, motionThreshold]
               f32[12] = aspect;
-              f32[13] = 0.0;
-              f32[14] = 0.0;
-              f32[15] = 0.0;
+              f32[13] = ef.refreshThreshold ?? DATAMOSH_DEFAULTS.refreshThreshold;
+              f32[14] = ef.keyframeMode === 'motion_thresh' ? 1.0 : 0.0;
+              f32[15] = ef.motionThreshold ?? DATAMOSH_DEFAULTS.motionThreshold;
 
               this.device.queue.writeBuffer(uniformBuffer, 0, f32);
 
@@ -3450,6 +3486,9 @@ export class Renderer {
     this.dataMoshHistoryA = {};
     this.dataMoshHistoryB = {};
     this.dataMoshPrevInput = {};
+    this.dataMoshInitialized = {};
+    this.dataMoshLastTime = {};
+    this.dataMoshBiasAccum = {};
     Object.values(this.fpHistoryA).forEach(t => t.destroy());
     Object.values(this.fpHistoryB).forEach(t => t.destroy());
     Object.values(this.fpFrozenTex).forEach(t => t.destroy());

@@ -1165,10 +1165,11 @@ export interface DataMoshEffect {
   processTarget: DataMoshProcessTarget;
 
   // Motion Vector Engine
-  vectorGain: number;         // 0..3 (amplification of motion vectors, default: 1.2)
-  decay: number;              // 0.8..1.0 (persistence of smear, default: 0.985)
-  macroblockSize: number;     // 1, 4, 8, 16, 32, 64 (default: 16)
-  threshold: number;          // 0..0.5 (motion sensitivity floor, default: 0.05)
+  vectorGain: number;         // 0..4 (amplification of motion vectors, default: 1.5)
+  decay: number;              // 0..1 perceptual hold curve (0.1s..60s, >=0.995 = infinite hold, default: 0.75)
+  macroblockSize: number;     // 1..64 (default: 16)
+  threshold: number;          // 0..0.5 (motion sensitivity floor to start drift, default: 0.06)
+  refreshThreshold: number;   // 0.05..1.0 (higher motion/residual threshold to intra-refresh frozen blocks, default: 0.45)
 
   // Glitch & Distortion
   chromaBleed: number;        // 0..1 (YUV / color subcarrier smear, default: 0.3)
@@ -1177,9 +1178,9 @@ export interface DataMoshEffect {
   noiseGlitch: number;        // 0..1 (macroblock bitrot / dropout flash, default: 0)
 
   // Keyframe / Reset Engine
-  keyframeMode: DataMoshKeyframeMode; // default: 'periodic'
-  keyframeRate: number;       // 0.1..10 Hz (default: 0.5 Hz = every 2 sec)
-  motionThreshold: number;    // 0.1..1.0 (auto keyframe on scene cuts, default: 0.6)
+  keyframeMode: DataMoshKeyframeMode; // default: 'motion_thresh'
+  keyframeRate: number;       // 0.02..5.0 Hz (default: 0.25 Hz = every 4 sec)
+  motionThreshold: number;    // 0.1..1.0 (auto keyframe on scene cuts, default: 0.4)
   manualKeyframeTrigger?: number; // timestamp trigger from UI
 }
 

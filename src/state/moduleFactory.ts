@@ -1,4 +1,5 @@
 import { AnySource, AnyEffect, GlyphTemplatePack } from './types';
+import { DATAMOSH_DEFAULTS } from '../utils/dataMoshUtils';
 
 export function isKnownSourceType(type: string): boolean {
   if (!type) return false;
@@ -728,18 +729,7 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
       return {
         id,
         type: 'DataMosh',
-        processTarget: 'canvas',
-        vectorGain: 1.5,
-        decay: 0.985,
-        macroblockSize: 16,
-        threshold: 0.08,
-        chromaBleed: 0.3,
-        biasX: 0.0,
-        biasY: 0.0,
-        noiseGlitch: 0.0,
-        keyframeMode: 'periodic',
-        keyframeRate: 0.5,
-        motionThreshold: 0.6,
+        ...DATAMOSH_DEFAULTS,
       };
 
     case 'FeedbackPro':

@@ -5,6 +5,12 @@ import { SignalDispatcher } from '../SignalDispatcher';
 import { PORT_DEFS } from '../../components/NodeGraph/portDefs';
 import { ALL_MODULES } from '../../components/ModuleCatalog/moduleRegistry';
 import { DataMoshEffect } from '../types';
+import {
+  DATAMOSH_DEFAULTS,
+  decayToHoldSeconds,
+  formatHoldDuration,
+  computeFrameRetention
+} from '../../utils/dataMoshUtils';
 
 vi.mock('../AudioEngine', () => ({
   AudioEngine: {
@@ -48,22 +54,43 @@ describe('DataMosh Module & Engine Integration', () => {
     });
   });
 
-  it('should initialize default DataMoshEffect with balanced vector gain and macroblock settings', () => {
+  it('should initialize default DataMoshEffect with balanced vector gain, motion_thresh sync, and two-threshold settings', () => {
     const effect = createDefaultEffect('DataMosh', 'mosh_test') as DataMoshEffect;
     expect(effect.id).toBe('mosh_test');
     expect(effect.type).toBe('DataMosh');
     expect(effect.processTarget).toBe('canvas');
-    expect(effect.vectorGain).toBe(1.5);
-    expect(effect.decay).toBe(0.985);
-    expect(effect.macroblockSize).toBe(16);
-    expect(effect.threshold).toBe(0.08);
-    expect(effect.chromaBleed).toBe(0.3);
-    expect(effect.biasX).toBe(0.0);
-    expect(effect.biasY).toBe(0.0);
-    expect(effect.noiseGlitch).toBe(0.0);
-    expect(effect.keyframeMode).toBe('periodic');
-    expect(effect.keyframeRate).toBe(0.5);
-    expect(effect.motionThreshold).toBe(0.6);
+    expect(effect.vectorGain).toBe(DATAMOSH_DEFAULTS.vectorGain);
+    expect(effect.decay).toBe(DATAMOSH_DEFAULTS.decay);
+    expect(effect.macroblockSize).toBe(DATAMOSH_DEFAULTS.macroblockSize);
+    expect(effect.threshold).toBe(DATAMOSH_DEFAULTS.threshold);
+    expect(effect.refreshThreshold).toBe(DATAMOSH_DEFAULTS.refreshThreshold);
+    expect(effect.chromaBleed).toBe(DATAMOSH_DEFAULTS.chromaBleed);
+    expect(effect.biasX).toBe(DATAMOSH_DEFAULTS.biasX);
+    expect(effect.biasY).toBe(DATAMOSH_DEFAULTS.biasY);
+    expect(effect.noiseGlitch).toBe(DATAMOSH_DEFAULTS.noiseGlitch);
+    expect(effect.keyframeMode).toBe('motion_thresh');
+    expect(effect.keyframeRate).toBe(DATAMOSH_DEFAULTS.keyframeRate);
+    expect(effect.motionThreshold).toBe(DATAMOSH_DEFAULTS.motionThreshold);
+    expect(effect.refreshThreshold).toBeGreaterThan(effect.threshold);
+  });
+
+  it('should compute perceptual hold durations and frame-rate-independent retention cleanly', () => {
+    expect(decayToHoldSeconds(0.0)).toBe(0);
+    expect(decayToHoldSeconds(1.0)).toBe(Infinity);
+    expect(formatHoldDuration(0.0)).toBe('0.0s (OFF)');
+    expect(formatHoldDuration(1.0)).toBe('∞ HOLD');
+
+    const defaultHold = decayToHoldSeconds(DATAMOSH_DEFAULTS.decay);
+    expect(defaultHold).toBeGreaterThan(8);
+    expect(defaultHold).toBeLessThan(20);
+    expect(formatHoldDuration(DATAMOSH_DEFAULTS.decay)).toMatch(/^\d+\.\d+s$/);
+
+    // Frame-rate independence: 60 frames at 1/60s == 120 frames at 1/120s
+    const ret60 = Math.pow(computeFrameRetention(0.75, 1 / 60), 60);
+    const ret120 = Math.pow(computeFrameRetention(0.75, 1 / 120), 120);
+    expect(ret60).toBeCloseTo(ret120, 6);
+    expect(computeFrameRetention(1.0, 1 / 60)).toBe(1.0);
+    expect(computeFrameRetention(0.75, 0)).toBe(1.0);
   });
 
   it('should be registered in ALL_MODULES with proper metadata and tags', () => {
@@ -161,6 +188,8 @@ describe('DataMosh Module & Engine Integration', () => {
       vectorGain: 2.5,
       decay: 0.995,
       macroblockSize: 32,
+      refreshThreshold: 0.65,
+      motionThreshold: 0.55,
       processTarget: 'upstream_bounded',
       keyframeMode: 'manual',
       biasX: 0.25,
@@ -171,6 +200,8 @@ describe('DataMosh Module & Engine Integration', () => {
     expect(updated.vectorGain).toBe(2.5);
     expect(updated.decay).toBe(0.995);
     expect(updated.macroblockSize).toBe(32);
+    expect(updated.refreshThreshold).toBe(0.65);
+    expect(updated.motionThreshold).toBe(0.55);
     expect(updated.processTarget).toBe('upstream_bounded');
     expect(updated.keyframeMode).toBe('manual');
     expect(updated.biasX).toBe(0.25);

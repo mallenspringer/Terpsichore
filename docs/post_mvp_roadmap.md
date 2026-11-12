@@ -170,16 +170,3 @@ A ranked bank of candidate video synthesis modules that utilize secondary textur
   - **Bending & Camera Perspective Optimization**: Maintain strict length-conserving curvature and camera-tangent billboard orientation while exploring subtle 2.5D depth parallax without triggering near-plane projection clipping.
   - **Tuft Blossom Dynamics**: Tune flower cluster burst radius and petal shader geometry for high-contrast visibility at various camera angles and zoom levels.
 
-### 3. DataMosh (Compression Artifacts & P-Frame Smear) Refinement & Motion Vector Architecture
-- **Module Context**: Digital video compression artifact engine (`DataMosh`) emulating missing I-frames, macroblock bitrot, directional vector drift, chroma bleed, and persistent P-frame motion smear.
-- **Identified Challenges & Items to Refine**:
-  - **Dedicated Compute-Pass Motion Vector Extraction**:
-    - While directional drift bias, macroblock quantization, manual/periodic I-frame drops, and CV keyframing are functional, real-time subject movement (walking figures, hand gestures, camera pans) requires a more robust motion vector extraction engine.
-    - Investigate migrating vector search from an inline fragment shader into a dedicated multi-pass GPU Compute shader pipeline (e.g. hierarchical multi-scale pyramid block matching or optical flow velocity buffer at $1/4$ or $1/8$ resolution) to reliably extract large displacements ($10$–$50\text{px}$) while thoroughly rejecting camera sensor noise and video grain.
-  - **Discrete Macroblock Velocity Maps**:
-    - Authentic MPEG-2/H.264 datamoshing exhibits discrete block boundaries where entire $8\times 8$ or $16\times 16$ macroblocks either share a single discrete motion vector or get flagged as intra-blocks. Generating a discrete block-level velocity texture will enhance the chunky, torn-codec aesthetic.
-  - **Smear Accumulation & Motion Segmentation**:
-    - Refine foreground vs. background segmentation so moving subjects leave dense, lingering trails across the canvas without contaminating static background regions or causing premature smear erasure.
-  - **Parameter Curves & Control Ergonomics**:
-    - Re-calibrate slider throw shapes (logarithmic curves for Motion Floor and Smear Decay, non-linear throw for Vector Gain) to expand the live performance "sweet spot" between subtle transient trails and full codec collapse.
-
