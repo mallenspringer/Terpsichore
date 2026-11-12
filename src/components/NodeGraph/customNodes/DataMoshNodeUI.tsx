@@ -29,10 +29,10 @@ export const DataMoshNodeUI: React.FC<DataMoshNodeUIProps> = ({
   const processTarget = effect.processTarget || 'canvas';
   const keyframeMode = effect.keyframeMode || 'periodic';
 
-  const vectorGain = effect.vectorGain ?? 1.2;
+  const vectorGain = effect.vectorGain ?? 1.5;
   const decay = effect.decay ?? 0.985;
   const macroblockSize = effect.macroblockSize ?? 16;
-  const threshold = effect.threshold ?? 0.05;
+  const threshold = effect.threshold ?? 0.08;
 
   const chromaBleed = effect.chromaBleed ?? 0.3;
   const biasX = effect.biasX ?? 0.0;
@@ -99,7 +99,7 @@ export const DataMoshNodeUI: React.FC<DataMoshNodeUIProps> = ({
           <span className="data-mosh-label">Keyframe Sync</span>
           <span className="data-mosh-val">
             {keyframeMode === 'periodic'
-              ? `${(1.0 / Math.max(0.05, keyframeRate)).toFixed(1)}s`
+              ? `${(1.0 / Math.max(0.01, keyframeRate)).toFixed(1)}s`
               : keyframeMode.toUpperCase()}
           </span>
         </div>
@@ -123,8 +123,8 @@ export const DataMoshNodeUI: React.FC<DataMoshNodeUIProps> = ({
           <input
             type="range"
             className="data-mosh-range"
-            min="0.1"
-            max="4.0"
+            min="0.05"
+            max="5.0"
             step="0.05"
             value={keyframeRate}
             onChange={e => handleUpdate({ keyframeRate: parseFloat(e.target.value) })}
@@ -162,30 +162,32 @@ export const DataMoshNodeUI: React.FC<DataMoshNodeUIProps> = ({
               type="range"
               className="data-mosh-range"
               min="0.0"
-              max="3.0"
+              max="4.0"
               step="0.05"
               value={vectorGain}
               onChange={e => handleUpdate({ vectorGain: parseFloat(e.target.value) })}
-              onDoubleClick={() => handleUpdate({ vectorGain: 1.2 })}
-              title="Double-click to reset (1.20x)"
+              onDoubleClick={() => handleUpdate({ vectorGain: 1.5 })}
+              title="Double-click to reset (1.50x)"
             />
           </div>
 
           <div className="data-mosh-fader-row">
             <div className="data-mosh-label-row">
               <span className="data-mosh-label">Smear Decay</span>
-              <span className="data-mosh-val">{(decay * 100).toFixed(1)}%</span>
+              <span className="data-mosh-val">
+                {decay >= 0.999 ? '100% (HOLD)' : `${(decay * 100).toFixed(1)}%`}
+              </span>
             </div>
             <input
               type="range"
               className="data-mosh-range"
-              min="0.80"
-              max="0.999"
-              step="0.001"
+              min="0.0"
+              max="1.0"
+              step="0.005"
               value={decay}
               onChange={e => handleUpdate({ decay: parseFloat(e.target.value) })}
               onDoubleClick={() => handleUpdate({ decay: 0.985 })}
-              title="Double-click to reset (98.5%)"
+              title="Double-click to reset (98.5% | 100% = Infinite Hold)"
             />
           </div>
 
@@ -216,12 +218,12 @@ export const DataMoshNodeUI: React.FC<DataMoshNodeUIProps> = ({
               type="range"
               className="data-mosh-range"
               min="0.0"
-              max="0.3"
+              max="1.0"
               step="0.01"
               value={threshold}
               onChange={e => handleUpdate({ threshold: parseFloat(e.target.value) })}
-              onDoubleClick={() => handleUpdate({ threshold: 0.05 })}
-              title="Double-click to reset (5%)"
+              onDoubleClick={() => handleUpdate({ threshold: 0.08 })}
+              title="Double-click to reset (8% Noise Gate)"
             />
           </div>
         </div>

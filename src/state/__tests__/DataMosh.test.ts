@@ -53,10 +53,10 @@ describe('DataMosh Module & Engine Integration', () => {
     expect(effect.id).toBe('mosh_test');
     expect(effect.type).toBe('DataMosh');
     expect(effect.processTarget).toBe('canvas');
-    expect(effect.vectorGain).toBe(1.2);
+    expect(effect.vectorGain).toBe(1.5);
     expect(effect.decay).toBe(0.985);
     expect(effect.macroblockSize).toBe(16);
-    expect(effect.threshold).toBe(0.05);
+    expect(effect.threshold).toBe(0.08);
     expect(effect.chromaBleed).toBe(0.3);
     expect(effect.biasX).toBe(0.0);
     expect(effect.biasY).toBe(0.0);
