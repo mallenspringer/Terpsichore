@@ -371,3 +371,6 @@ export const FeedbackProNodeUI: React.FC<FeedbackProNodeUIProps> = ({
     </div>
   );
 };
+
+export default FeedbackProNodeUI;
+

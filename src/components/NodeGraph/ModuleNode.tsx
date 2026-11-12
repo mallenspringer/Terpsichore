@@ -26,9 +26,9 @@ import {
   OutlineNodeUI,
   BadAnalogNodeUI,
   DataMoshNodeUI,
-  FeedbackProNodeUI,
   OpticalSensorNodeUI,
 } from './customNodes';
+import { FeedbackProNodeUI } from './customNodes/FeedbackProNodeUI';
 
 
 import { NodeUIState } from './useNodeLayout';

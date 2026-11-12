@@ -188,3 +188,4 @@ describe('FeedbackPro Module & Engine Integration', () => {
     expect(updated.frozen).toBe(true);
   });
 });
+

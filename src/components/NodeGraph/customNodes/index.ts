@@ -17,5 +17,6 @@ export * from './GlyphMapModal';
 export * from './OutlineNodeUI';
 export * from './BadAnalogNodeUI';
 export * from './DataMoshNodeUI';
+export { FeedbackProNodeUI } from './FeedbackProNodeUI';
 export * from './FeedbackProNodeUI';
 export * from './OpticalSensorNodeUI';
