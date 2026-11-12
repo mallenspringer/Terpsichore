@@ -154,6 +154,9 @@ export class Renderer {
   private fpPingPong: Record<string, boolean> = {};
   private fpLastClear: Record<string, number> = {};
   private fpLastClearCV: Record<string, number> = {};
+  private fpFrozenTex: Record<string, GPUTexture> = {};
+  private fpWasFrozen: Record<string, boolean> = {};
+  private fpInitialized: Record<string, boolean> = {};
   private glyphMapAtlasTex: GPUTexture | null = null;
   private textMakerCurrGlyphTex: Record<string, GPUTexture> = {};
   private textMakerPrevGlyphTex: Record<string, GPUTexture> = {};
@@ -323,8 +326,12 @@ export class Renderer {
     this.dataMoshInitialized = {};
     Object.values(this.fpHistoryA).forEach(t => t.destroy());
     Object.values(this.fpHistoryB).forEach(t => t.destroy());
+    Object.values(this.fpFrozenTex).forEach(t => t.destroy());
     this.fpHistoryA = {};
     this.fpHistoryB = {};
+    this.fpFrozenTex = {};
+    this.fpWasFrozen = {};
+    this.fpInitialized = {};
   }
 
   private getPrevFrameFBO(layerId: string) {
@@ -2623,9 +2630,72 @@ export class Renderer {
                 clearPass.end();
               }
 
-              // Freeze Gate handling
+              // Freeze Gate / Button handling
               const freezeCV = this.getEffectiveParam(layer, ef.id, 'freeze_gate', 0.0, timeSec);
-              const isFrozen = (ef.frozen || freezeCV > 0.5) ? 1.0 : 0.0;
+              const isFrozen = !!(ef.frozen || freezeCV > 0.5);
+
+              if (isFrozen) {
+                let frozenTex = this.fpFrozenTex[nodeId];
+                if (!frozenTex || frozenTex.width !== width || frozenTex.height !== height) {
+                  if (frozenTex) frozenTex.destroy();
+                  frozenTex = this.device.createTexture({
+                    size: [width, height],
+                    format: this.format,
+                    usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST
+                  });
+                  this.fpFrozenTex[nodeId] = frozenTex;
+                }
+
+                const wasFrozen = this.fpWasFrozen[nodeId] ?? false;
+                if (!wasFrozen) {
+                  // Rising edge of freeze: capture the current valid live output frame into frozen buffer
+                  const srcTex = (this.fpInitialized[nodeId] && target.width === width && target.height === height)
+                    ? target
+                    : tex;
+                  commandEncoder.copyTextureToTexture(
+                    { texture: srcTex },
+                    { texture: frozenTex },
+                    [width, height, 1]
+                  );
+                }
+                this.fpWasFrozen[nodeId] = true;
+
+                // Blit/copy frozen frame directly into target so output holds the frozen frame
+                commandEncoder.copyTextureToTexture(
+                  { texture: frozenTex },
+                  { texture: target },
+                  [width, height, 1]
+                );
+
+                // Matte out handling if connected
+                const isMatteConnected = (layer.graph?.edges || []).some(c => c.fromNodeId === nodeId && c.fromPort === 'matte_out');
+                if (isMatteConnected) {
+                  const matteTex = this.ensureTexture(nodeId, 'matte_out');
+                  const mattePass = commandEncoder.beginRenderPass({
+                    colorAttachments: [{
+                      view: matteTex.createView(),
+                      clearValue: { r: 1, g: 1, b: 1, a: 1 },
+                      loadOp: 'clear',
+                      storeOp: 'store'
+                    }]
+                  });
+                  mattePass.end();
+                }
+
+                // Keep historyWriteTex refreshed with the frozen frame so when un-freezing, feedback resumes seamlessly
+                if (historyWriteTex.width === width && historyWriteTex.height === height) {
+                  commandEncoder.copyTextureToTexture(
+                    { texture: frozenTex },
+                    { texture: historyWriteTex },
+                    [width, height, 1]
+                  );
+                }
+
+                pipeline = null;
+                return;
+              }
+
+              this.fpWasFrozen[nodeId] = false;
 
               // CV Modulations
               const baseGain = ef.gain ?? 0.95;
@@ -2674,7 +2744,7 @@ export class Renderer {
               f32[15] = processTargetVal;
 
               // params4: [isFrozen, hasMask, aspect, timeSec]
-              f32[16] = isFrozen;
+              f32[16] = isFrozen ? 1.0 : 0.0;
               f32[17] = hasMaskVal;
               f32[18] = aspect;
               f32[19] = timeSec;
@@ -2720,6 +2790,7 @@ export class Renderer {
 
               // Toggle ping-pong
               this.fpPingPong[nodeId] = !useB;
+              this.fpInitialized[nodeId] = true;
               pipeline = null;
           } else {
             if (effect.type === 'Transform2D') {
@@ -3381,8 +3452,12 @@ export class Renderer {
     this.dataMoshPrevInput = {};
     Object.values(this.fpHistoryA).forEach(t => t.destroy());
     Object.values(this.fpHistoryB).forEach(t => t.destroy());
+    Object.values(this.fpFrozenTex).forEach(t => t.destroy());
     this.fpHistoryA = {};
     this.fpHistoryB = {};
+    this.fpFrozenTex = {};
+    this.fpWasFrozen = {};
+    this.fpInitialized = {};
     this.mediaManager.dispose();
     this.simulationPipeline.reset();
     this.analysisReadbackBuffers.forEach(buf => buf.destroy());

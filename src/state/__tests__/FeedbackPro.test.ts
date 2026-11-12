@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useEngineStore } from '../store';
 import { createDefaultEffect } from '../moduleFactory';
 import { SignalDispatcher } from '../SignalDispatcher';
+import { AudioEngine } from '../AudioEngine';
 import { PORT_DEFS } from '../../components/NodeGraph/portDefs';
 import { ALL_MODULES } from '../../components/ModuleCatalog/moduleRegistry';
 import { FeedbackProEffect } from '../types';
@@ -198,6 +199,66 @@ describe('FeedbackPro Module & Engine Integration', () => {
     expect(updated.tunnelWarp).toBe(0.65);
     expect(updated.processTarget).toBe('upstream_bounded');
     expect(updated.frozen).toBe(true);
+  });
+
+  it('should toggle frozen state on rising edge of freeze_gate trigger', () => {
+    const state = useEngineStore.getState();
+    const dispatcher = SignalDispatcher.getInstance();
+    const feedbackPro = createDefaultEffect('FeedbackPro', 'fp_freeze_test') as FeedbackProEffect;
+
+    state.updateLayer('layer_1', {
+      effects: [feedbackPro],
+      graph: {
+        edges: [
+          {
+            id: 'edge_v',
+            fromNodeId: 'fp_freeze_test',
+            fromPort: 'video_out',
+            toNodeId: '__output__',
+            toPort: 'video_in',
+            signalType: 'video'
+          }
+        ],
+        disconnectedPorts: []
+      }
+    });
+
+    dispatcher.compileLayer(useEngineStore.getState().layers['layer_1']);
+    const pipeline = (dispatcher as any).pipelines['layer_1'];
+    expect(pipeline).toBeDefined();
+
+    // Initially not frozen
+    expect((useEngineStore.getState().layers['layer_1'].effects[0] as FeedbackProEffect).frozen).toBe(false);
+
+    // Send rising edge to freeze_gate
+    const ctx1 = {
+      layer: useEngineStore.getState().layers['layer_1'],
+      signalValues: { 'fp_freeze_test.freeze_gate': 1.0 },
+      audioEngine: AudioEngine.getInstance() as any
+    };
+    pipeline.forEach((fn: any) => fn(ctx1, 0.016));
+
+    // Should now be frozen
+    expect((useEngineStore.getState().layers['layer_1'].effects[0] as FeedbackProEffect).frozen).toBe(true);
+
+    // Next frame trigger drops to 0
+    const ctx2 = {
+      layer: useEngineStore.getState().layers['layer_1'],
+      signalValues: { 'fp_freeze_test.freeze_gate': 0.0 },
+      audioEngine: AudioEngine.getInstance() as any
+    };
+    pipeline.forEach((fn: any) => fn(ctx2, 0.016));
+    // Stays frozen
+    expect((useEngineStore.getState().layers['layer_1'].effects[0] as FeedbackProEffect).frozen).toBe(true);
+
+    // Next rising edge to freeze_gate toggles back off
+    const ctx3 = {
+      layer: useEngineStore.getState().layers['layer_1'],
+      signalValues: { 'fp_freeze_test.freeze_gate': 1.0 },
+      audioEngine: AudioEngine.getInstance() as any
+    };
+    pipeline.forEach((fn: any) => fn(ctx3, 0.016));
+    expect((useEngineStore.getState().layers['layer_1'].effects[0] as FeedbackProEffect).frozen).toBe(false);
   });
 });
 

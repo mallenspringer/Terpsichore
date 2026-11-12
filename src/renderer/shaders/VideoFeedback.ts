@@ -82,11 +82,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     return out;
   }
 
-  // Freeze check: when frozen, input video is cut so the loop spins endlessly
-  var inputColor = currRaw;
-  if (u.params4.x > 0.5) {
-    inputColor = vec4<f32>(0.0);
-  }
+  let inputColor = currRaw;
 
   // Sample feedback history luminance at current coordinate to drive luma warping & twisting
   let localSample = textureSampleLevel(fbTex, smp, in.uv, 0.0);

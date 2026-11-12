@@ -5,7 +5,7 @@ import {
   SpectralSplitterEffect, AlphaAdjustEffect, AudioTransformerEffect, AudioModulatorEffect,
   AudioGateEffect, SpeechEnvelopeTrackerEffect, VocalPitchTrackerEffect, VowelFormantTrackerEffect,
   SpokenWordVisualizerEffect, AudioToCVEffect, ColorPaletteEffect, ImageCueSource, TextCueSource,
-  OpticalSensorEffect
+  OpticalSensorEffect, FeedbackProEffect
 } from './types';
 import { AudioEngine } from './AudioEngine';
 import { MidiManager } from './MidiManager';
@@ -333,8 +333,29 @@ export class SignalDispatcher {
               ctx.signalValues[`${nodeId}.video_out`] = 1.0;
               ctx.signalValues[`${nodeId}.matte_out`] = 1.0;
             });
-          } else if (effect.type === 'LumaBands' || effect.type === 'ChromaBands' || effect.type === 'Outline' || effect.type === 'BadAnalog' || effect.type === 'DataMosh' || effect.type === 'FeedbackPro') {
+          } else if (effect.type === 'LumaBands' || effect.type === 'ChromaBands' || effect.type === 'Outline' || effect.type === 'BadAnalog' || effect.type === 'DataMosh') {
             pipeline.push((ctx: DispatchContext) => {
+              ctx.signalValues[`${nodeId}.video_out`] = 1.0;
+              ctx.signalValues[`${nodeId}.matte_out`] = 1.0;
+            });
+          } else if (effect.type === 'FeedbackPro') {
+            pipeline.push((ctx: DispatchContext) => {
+              const ef = ctx.layer.effects.find(e => e.id === nodeId) as FeedbackProEffect;
+              if (ef) {
+                const trig = ctx.signalValues[`${nodeId}.freeze_gate`] ?? 0;
+                const lastTrig = this.lastTriggerVals.get(`${ctx.layer.id}.${nodeId}.freeze_gate`) ?? 0;
+                if (trig > 0.5 && lastTrig <= 0.5) {
+                  useEngineStore.getState().updateEffect(ctx.layer.id, nodeId, { frozen: !ef.frozen } as any);
+                }
+                this.lastTriggerVals.set(`${ctx.layer.id}.${nodeId}.freeze_gate`, trig);
+
+                const clearTrig = ctx.signalValues[`${nodeId}.clear_trig`] ?? 0;
+                const lastClear = this.lastTriggerVals.get(`${ctx.layer.id}.${nodeId}.clear_trig`) ?? 0;
+                if (clearTrig > 0.5 && lastClear <= 0.5) {
+                  useEngineStore.getState().updateEffect(ctx.layer.id, nodeId, { clearTrigger: Date.now() } as any);
+                }
+                this.lastTriggerVals.set(`${ctx.layer.id}.${nodeId}.clear_trig`, clearTrig);
+              }
               ctx.signalValues[`${nodeId}.video_out`] = 1.0;
               ctx.signalValues[`${nodeId}.matte_out`] = 1.0;
             });

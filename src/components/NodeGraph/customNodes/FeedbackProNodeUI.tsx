@@ -85,7 +85,7 @@ export const FeedbackProNodeUI: React.FC<FeedbackProNodeUIProps> = ({
         <button
           className={`feedback-pro-btn feedback-pro-btn-freeze ${isFrozen ? 'active' : ''}`}
           onClick={handleToggleFreeze}
-          title="Disconnect incoming video and let feedback loop recirculate purely"
+          title="Freeze and hold the current feedback frame"
         >
           <span>❄ {isFrozen ? 'FROZEN' : 'FREEZE'}</span>
         </button>
