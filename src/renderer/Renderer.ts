@@ -47,6 +47,18 @@ import {
   GRASS_HF_PRUNE_RANGE,
   resolveGrowthBandHz
 } from '../utils/grassFieldUtils';
+import { ArabesqueRenderWGSL } from './shaders/Arabesque';
+import {
+  ArabesqueSimulation,
+  MAX_ARABESQUE_SEGMENTS,
+  ARABESQUE_SEGMENT_FLOATS,
+  ARABESQUE_SEGMENT_BYTES
+} from './ArabesqueSimulation';
+import {
+  ARABESQUE_BASS_SURGE_RANGE,
+  ARABESQUE_HF_BRANCH_RANGE,
+  resolveArabesqueCurlBandHz
+} from '../utils/arabesqueUtils';
 import { LumaBandsWGSL } from './shaders/LumaBands';
 import { ChromaBandsWGSL } from './shaders/ChromaBands';
 import { GlyphMapWGSL } from './shaders/GlyphMap';
@@ -64,7 +76,7 @@ import {
   ShapeGeneratorSource, Transform2DEffect, ColorAdjustEffect, LumaKeyEffect,
   SimpleFeedbackEffect, ColorRGBEffect, LumaSplitterEffect, VideoMixerEffect,
   KeyMixerEffect, VideoMathEffect, UVDisplaceEffect, CanvasBackgroundEffect,
-  AlphaAdjustEffect, ParticleCloudEffect, ColorPaletteEffect, GrassFieldEffect,
+  AlphaAdjustEffect, ParticleCloudEffect, ColorPaletteEffect, GrassFieldEffect, ArabesqueEffect,
   NoiseVideoSource, ColorNoiseSource, InverterEffect, PixelProcessorEffect,
   PatternEffect, KaleidoscopeEffect, SampleAndHoldEffect, OscilloscopeEffect, SpectralSplitterEffect, WaterfallSpectrogramEffect,
   SpokenWordVisualizerEffect,
@@ -140,6 +152,11 @@ export class Renderer {
   private grassBandEnv: Map<string, number> = new Map();
   private grassHfBaseline: Map<string, number> = new Map();
   private grassPruneCooldown: Map<string, number> = new Map();
+
+  private arabesqueRenderPipeline!: GPURenderPipeline;
+  private arabesqueSims: Map<string, ArabesqueSimulation> = new Map();
+  private arabesqueLastTime: Map<string, number> = new Map();
+  private arabesqueStaging: Float32Array = new Float32Array(MAX_ARABESQUE_SEGMENTS * ARABESQUE_SEGMENT_FLOATS);
 
   // Isolated layouts to prevent 'Minimum Binding Size' collisions
   private effectLayouts: Map<string, GPUBindGroupLayout> = new Map();
@@ -1086,6 +1103,30 @@ export class Renderer {
         depthCompare: 'less'
       }
     });
+
+    const arabesqueModule = this.device.createShaderModule({ code: ArabesqueRenderWGSL });
+    this.arabesqueRenderPipeline = this.device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: arabesqueModule,
+        entryPoint: 'vs_main'
+      },
+      fragment: {
+        module: arabesqueModule,
+        entryPoint: 'fs_main',
+        targets: [{
+          format: this.format,
+          blend: {
+            color: { operation: 'add', srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha' },
+            alpha: { operation: 'add', srcFactor: 'one', dstFactor: 'one-minus-src-alpha' }
+          }
+        }]
+      },
+      primitive: {
+        topology: 'triangle-list',
+        cullMode: 'none'
+      }
+    });
   }
 
   private storageBufferGenerations = new Map<string, number>();
@@ -1442,7 +1483,7 @@ export class Renderer {
           if (!effect) return;
 
           // Category A: Generators (Sources or Visualizers that don't REQUIRE an input texture)
-          if (['ShapeGenerator', 'VideoFile', 'VideoURL', 'WebcamCapture', 'NoiseSource', 'ColorNoise', 'ImageCue', 'TextCue', 'TextMaker', 'SpectralSplitter', 'Oscilloscope', 'WaterfallSpectrogram', 'SpokenWordVisualizer', 'ParticleCloud', 'GrassField'].includes(effect.type)) {
+          if (['ShapeGenerator', 'VideoFile', 'VideoURL', 'WebcamCapture', 'NoiseSource', 'ColorNoise', 'ImageCue', 'TextCue', 'TextMaker', 'SpectralSplitter', 'Oscilloscope', 'WaterfallSpectrogram', 'SpokenWordVisualizer', 'ParticleCloud', 'GrassField', 'Arabesque'].includes(effect.type)) {
             const genTarget = this.ensureTexture(nodeId, 'video_out');
             if (effect.type === 'TextCue') {
               this.renderTextCueSource(layer, nodeId, genTarget, commandEncoder);
@@ -1461,6 +1502,9 @@ export class Renderer {
               return;
             } else if (effect.type === 'GrassField') {
               this.renderGrassField(layer, nodeId, effect as GrassFieldEffect, genTarget, timeSec, commandEncoder);
+              return;
+            } else if (effect.type === 'Arabesque') {
+              this.renderArabesque(layer, nodeId, effect as ArabesqueEffect, genTarget, timeSec, commandEncoder);
               return;
             } else if (effect.type === 'SpokenWordVisualizer') {
               this.renderSpokenWordVisualizer(layer, nodeId, genTarget, timeSec, commandEncoder);
@@ -3606,6 +3650,8 @@ export class Renderer {
     this.grassBandEnv.clear();
     this.grassHfBaseline.clear();
     this.grassPruneCooldown.clear();
+    this.arabesqueSims.clear();
+    this.arabesqueLastTime.clear();
   }
 
   private renderShapeSource(layer: LayerState, nodeId: string, target: GPUTexture, timeSec: number, commandEncoder: GPUCommandEncoder) {
@@ -4961,32 +5007,8 @@ export class Renderer {
     const dustBuf = this.getStorageBuffer(`${nodeId}.grass_dust_buf`, dustCount * dustByteSize);
 
     // 1. Audio Connection & DSP Extraction
-    const audioEdge = layer.graph?.edges.find(e => e.toNodeId === nodeId && e.toPort === 'audio_in');
-    const isAudioConnected = !!audioEdge;
     const audioEngine = AudioEngine.getInstance();
-    let busData: any = undefined;
-    let busId = 'master';
-    if (isAudioConnected) {
-      const sourceEffect = layer.effects.find(e => e.id === audioEdge.fromNodeId);
-      if (sourceEffect?.type === 'AudioSource') {
-        busId = (sourceEffect as any).busId || 'master';
-      } else if (
-        audioEdge.fromNodeId === 'source' ||
-        sourceEffect?.type === 'VideoFile' ||
-        sourceEffect?.type === 'VideoURL' ||
-        sourceEffect?.type === 'AudioFile' ||
-        sourceEffect?.type === 'AudioInput' ||
-        sourceEffect?.type === 'SystemAudio' ||
-        sourceEffect?.type === 'AudioTransformer' ||
-        sourceEffect?.type === 'AudioToCV'
-      ) {
-        const baseId = audioEdge.fromNodeId === 'source' ? layer.id : audioEdge.fromNodeId;
-        busId = (audioEdge.fromPort === 'ch1_out' || audioEdge.fromPort === 'ch2_out') ? `${baseId}__${audioEdge.fromPort}` : baseId;
-      } else {
-        busId = audioEdge.fromNodeId;
-      }
-      busData = audioEngine.getBusData(busId) || audioEngine.getBusData(layer.id) || audioEngine.getBusData('master');
-    }
+    const { isAudioConnected, busId, busData } = this.resolveConnectedAudioBus(layer, nodeId);
 
     const audioRms = busData?.rms ?? 0;
     const audioPeak = busData?.peak ?? 0;
@@ -5354,6 +5376,193 @@ export class Renderer {
     pass.setPipeline(this.grassDustRenderPipeline);
     pass.setBindGroup(0, dustBindGroup);
     pass.draw(6, dustCount);
+
+    pass.end();
+  }
+
+  private resolveConnectedAudioBus(layer: LayerState, nodeId: string): {
+    isAudioConnected: boolean;
+    busId: string;
+    busData: any;
+  } {
+    const audioEdge = layer.graph?.edges.find(e => e.toNodeId === nodeId && e.toPort === 'audio_in');
+    if (!audioEdge) {
+      return { isAudioConnected: false, busId: 'master', busData: undefined };
+    }
+
+    const audioEngine = AudioEngine.getInstance();
+    const sourceEffect = layer.effects.find(e => e.id === audioEdge.fromNodeId);
+    let busId = 'master';
+    if (sourceEffect?.type === 'AudioSource') {
+      busId = (sourceEffect as any).busId || 'master';
+    } else if (
+      audioEdge.fromNodeId === 'source' ||
+      sourceEffect?.type === 'VideoFile' ||
+      sourceEffect?.type === 'VideoURL' ||
+      sourceEffect?.type === 'AudioFile' ||
+      sourceEffect?.type === 'AudioInput' ||
+      sourceEffect?.type === 'SystemAudio' ||
+      sourceEffect?.type === 'AudioTransformer' ||
+      sourceEffect?.type === 'AudioToCV'
+    ) {
+      const baseId = audioEdge.fromNodeId === 'source' ? layer.id : audioEdge.fromNodeId;
+      busId = (audioEdge.fromPort === 'ch1_out' || audioEdge.fromPort === 'ch2_out')
+        ? `${baseId}__${audioEdge.fromPort}`
+        : baseId;
+    } else {
+      busId = audioEdge.fromNodeId;
+    }
+
+    const busData = audioEngine.getBusData(busId)
+      || audioEngine.getBusData(layer.id)
+      || audioEngine.getBusData('master');
+
+    return { isAudioConnected: true, busId, busData };
+  }
+
+  private renderArabesque(
+    layer: LayerState,
+    nodeId: string,
+    ef: ArabesqueEffect,
+    target: GPUTexture,
+    timeSec: number,
+    commandEncoder: GPUCommandEncoder
+  ) {
+    const prevTime = this.arabesqueLastTime.get(nodeId) ?? timeSec;
+    const dt = Math.min(0.08, Math.max(0.001, timeSec - prevTime));
+    this.arabesqueLastTime.set(nodeId, timeSec);
+
+    let sim = this.arabesqueSims.get(nodeId);
+    if (!sim) {
+      sim = new ArabesqueSimulation();
+      this.arabesqueSims.set(nodeId, sim);
+    }
+
+    const audioEngine = AudioEngine.getInstance();
+    const { isAudioConnected, busId, busData } = this.resolveConnectedAudioBus(layer, nodeId);
+
+    const { minHz: curlMinHz, maxHz: curlMaxHz } = resolveArabesqueCurlBandHz(ef.curlBandPreset, ef.curlBandTune);
+    const bandGain = Math.max(0.2, Math.min(3.5, ef.curlBandGain ?? 1.0));
+    const melodic = isAudioConnected
+      ? audioEngine.getBandSpectralCentroidHz(busId, curlMinHz, curlMaxHz)
+      : { centroidNorm: 0.5, energy: 0 };
+    const melodicCentroid = Math.max(0, Math.min(1, melodic.centroidNorm * (0.65 + 0.35 * bandGain)));
+    const melodicEnergy = Math.min(1, melodic.energy * bandGain);
+
+    const bassEnergy = isAudioConnected
+      ? Math.max(
+          audioEngine.getBandEnergyHz(busId, ARABESQUE_BASS_SURGE_RANGE.minHz, ARABESQUE_BASS_SURGE_RANGE.maxHz),
+          (busData?.bands?.bass ?? 0) * 0.85
+        )
+      : 0;
+
+    const hfEnergy = isAudioConnected
+      ? audioEngine.getBandEnergyHz(busId, ARABESQUE_HF_BRANCH_RANGE.minHz, ARABESQUE_HF_BRANCH_RANGE.maxHz)
+      : 0;
+
+    // CV Break-Jack Overrides (undefined when unpatched so audio normalling applies)
+    const edges = layer.graph?.edges ?? [];
+    const sigs = SignalDispatcher.getInstance().getLatestSignals(layer.id);
+    const readCv = (port: string): number | undefined =>
+      edges.some(e => e.toNodeId === nodeId && e.toPort === port)
+        ? (sigs[`${nodeId}.${port}`] ?? 0)
+        : undefined;
+
+    const trigVal = readCv('seed_trig') ?? 0;
+    const lastTrig = this.lastTriggerVals.get(`${nodeId}.seed_trig`) ?? 0;
+    const curManualTrig = ef.seedTriggerTime ?? 0;
+    const lastManualTrig = this.lastTriggerVals.get(`${nodeId}.manualSeed`) ?? 0;
+    const seedTrigRising = (trigVal > 0.5 && lastTrig <= 0.5) || (curManualTrig > lastManualTrig);
+    this.lastTriggerVals.set(`${nodeId}.seed_trig`, trigVal);
+    this.lastTriggerVals.set(`${nodeId}.manualSeed`, curManualTrig);
+
+    const aspect = target.width / Math.max(1, target.height);
+
+    sim.step(ef, {
+      dt,
+      timeSec,
+      aspect,
+      isAudioConnected,
+      audioRms: busData?.rms ?? 0,
+      bpm: busData?.bpm ?? 120,
+      bpmConfidence: busData?.confidence ?? 0,
+      bassEnergy,
+      melodicCentroid,
+      melodicEnergy,
+      hfEnergy,
+      growthCv: readCv('growth_cv'),
+      curlCv: readCv('curl_cv'),
+      branchCv: readCv('branch_cv'),
+      widthCv: readCv('width_cv'),
+      seedsCv: readCv('seeds_cv'),
+      pruneIn: readCv('prune_in'),
+      seedTrigRising
+    });
+
+    const segBuf = this.getStorageBuffer(`${nodeId}.arabesque_segs`, MAX_ARABESQUE_SEGMENTS * ARABESQUE_SEGMENT_BYTES);
+    const activeCount = sim.writeGpuBuffer(this.arabesqueStaging, ef);
+
+    if (activeCount > 0) {
+      this.device.queue.writeBuffer(
+        segBuf,
+        0,
+        this.arabesqueStaging.subarray(0, activeCount * ARABESQUE_SEGMENT_FLOATS) as unknown as BufferSource
+      );
+    }
+
+    const uniformBuf = this.getUniformBuffer(`${nodeId}.arabesque_uniforms`, 192);
+    const presetMap: Record<string, number> = {
+      gold_leaf: 0,
+      obsidian_ink: 1,
+      crimson_damask: 2,
+      bioluminescent: 3
+    };
+    const pal = this.getConnectedPalette(layer, nodeId, 'palette_in');
+    const uF32 = new Float32Array(48);
+    uF32[0] = aspect;
+    uF32[1] = timeSec;
+    uF32[2] = ef.ornateTips !== false ? 1.0 : 0.0;
+    uF32[3] = presetMap[ef.colorPreset ?? 'gold_leaf'] ?? 0;
+    uF32[4] = pal ? 1.0 : 0.0;
+    uF32[5] = pal ? pal.count : 0.0;
+    uF32[6] = pal ? pal.interpolation : 0.0;
+    uF32[7] = 0.0;
+
+    if (pal) {
+      for (let i = 0; i < 8; i++) {
+        uF32[8 + i * 4 + 0] = pal.colors[i][0];
+        uF32[8 + i * 4 + 1] = pal.colors[i][1];
+        uF32[8 + i * 4 + 2] = pal.colors[i][2];
+        uF32[8 + i * 4 + 3] = pal.colors[i][3];
+      }
+      for (let i = 0; i < 8; i++) {
+        uF32[40 + i] = pal.positions[i];
+      }
+    }
+
+    this.device.queue.writeBuffer(uniformBuf, 0, uF32);
+
+    const pass = commandEncoder.beginRenderPass({
+      colorAttachments: [{
+        view: target.createView(),
+        clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 0.0 },
+        loadOp: 'clear',
+        storeOp: 'store'
+      }]
+    });
+
+    if (activeCount > 0) {
+      const bindGroup = this.device.createBindGroup({
+        layout: this.arabesqueRenderPipeline.getBindGroupLayout(0),
+        entries: [
+          { binding: 0, resource: { buffer: uniformBuf } },
+          { binding: 1, resource: { buffer: segBuf } }
+        ]
+      });
+      pass.setPipeline(this.arabesqueRenderPipeline);
+      pass.setBindGroup(0, bindGroup);
+      pass.draw(6, activeCount);
+    }
 
     pass.end();
   }

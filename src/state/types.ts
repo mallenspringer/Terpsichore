@@ -857,6 +857,48 @@ export interface GrassFieldEffect {
   showGround?: boolean;           // default true (ground plane shown)
 }
 
+export type ArabesqueSeedArrangement = 'center' | 'ring' | 'horizontal' | 'vertical' | 'corners' | 'diagonal';
+export type ArabesqueCurlBandPreset = 'tenor' | 'alto' | 'soprano' | 'full_mid';
+export type ArabesqueRemovalStyle = 'chase' | 'fade' | 'retract';
+export type ArabesqueColorMode = 'wave' | 'spectral' | 'seed';
+export type ArabesqueColorPreset = 'gold_leaf' | 'obsidian_ink' | 'crimson_damask' | 'bioluminescent';
+
+export interface ArabesqueEffect {
+  id: string;
+  type: 'Arabesque';
+  // Seeds & Layout
+  seedCount: number;               // 1 to 8, default 4
+  arrangement: ArabesqueSeedArrangement; // default 'ring'
+  spread: number;                  // 0.1 to 1.2, default 0.55
+  // Growth, Tempo & Bass Surge
+  growthSpeed: number;             // 0.05 to 2.0, default 0.28 (snail-pace baseline)
+  bassSurgeGain: number;           // 0.0 to 4.0, default 1.6 (steep kick/bass surge)
+  bpmCoupling: boolean;            // default true
+  // Melodic Curling & Phrasing
+  curlAmount: number;              // 0.1 to 2.0, default 1.0
+  curlBandPreset: ArabesqueCurlBandPreset; // default 'full_mid'
+  curlBandTune: number;            // -0.5 to 0.5 octaves, default 0.0
+  curlBandGain: number;            // 0.2 to 3.0, default 1.0
+  // Branching & Structural Randomness
+  branchRate: number;              // 0.0 to 1.0, default 0.45
+  randomness: number;              // 0.0 to 1.0, default 0.30 (C1-smooth variance)
+  // Stroke & Ornamentation
+  lineWidth: number;               // 0.2 to 3.0, default 1.0
+  ornateTips: boolean;             // default true (paisley/pinstripe finials & beads)
+  // Color & Wave Timing
+  colorMode: ArabesqueColorMode;   // default 'wave' (shared color per seed wave)
+  colorStep: number;               // 0.05 to 0.5, default 0.19
+  colorPreset: ArabesqueColorPreset; // default 'gold_leaf'
+  // Dual Independent Removal Controls
+  removalStyle: ArabesqueRemovalStyle; // default 'chase' (seed-to-tip faster than growth)
+  autoDecayEnabled: boolean;       // default true
+  chaseLeadLength: number;         // 0.2 to 10.0, default 0.85
+  decaySpeedRatio: number;         // 1.1 to 3.0, default 1.65 (outpaces growth)
+  transientPruneEnabled: boolean;  // default false
+  pruneThreshold: number;          // 0.1 to 1.0, default 0.65
+  seedTriggerTime?: number;        // manual wave trigger pulse
+}
+
 export type TextMakerFontFamily = 'broadcast_sans' | 'slab_serif' | 'vcr_osd' | 'brush_script' | 'lcd_digital';
 export type TextMakerStretchMode = '1x' | '2x_wide' | '2x_tall';
 export type TextMakerColorFillMode = 'solid' | 'gradient' | 'color_cycle' | 'line_step';
@@ -1243,7 +1285,7 @@ export type AnyEffect =
   | SignalMathEffect | SampleAndHoldEffect | StepSequencerEffect | PixelProcessorEffect
   | AudioSourceEffect | OscilloscopeEffect | SpectralSplitterEffect | WaterfallSpectrogramEffect | AudioTransformerEffect | AudioModulatorEffect | AudioGateEffect | AudioToCVEffect
   | SpeechEnvelopeTrackerEffect | VocalPitchTrackerEffect | VowelFormantTrackerEffect | SpokenWordVisualizerEffect
-  | CanvasBackgroundEffect | ParticleCloudEffect | ColorPaletteEffect | GrassFieldEffect | TextMakerEffect | LumaBandsEffect | ChromaBandsEffect | GlyphMapEffect | OutlineEffect | OpticalSensorEffect | BadAnalogEffect | DataMoshEffect | FeedbackProEffect
+  | CanvasBackgroundEffect | ParticleCloudEffect | ColorPaletteEffect | GrassFieldEffect | ArabesqueEffect | TextMakerEffect | LumaBandsEffect | ChromaBandsEffect | GlyphMapEffect | OutlineEffect | OpticalSensorEffect | BadAnalogEffect | DataMoshEffect | FeedbackProEffect
   | ShapeGeneratorSource | VideoURLSource | VideoFileSource | WebcamCaptureSource | NoiseVideoSource | ColorNoiseSource
   | AudioInputSource | AudioFileSource | SystemAudioSource | ImageLoaderSource | ImageFileSource | ImageCueSource | TextCueSource;
 
@@ -1254,7 +1296,7 @@ export type EffectType =
   | 'KeyMixer' | 'VideoMath' | 'UVDisplace'
   | 'LogicGate' | 'TriggeredGate' | 'Pattern' | 'Kaleidoscope' | 'SignalMath' | 'SampleAndHold' | 'StepSequencer' | 'AudioSource' | 'Oscilloscope' | 'SpectralSplitter' | 'WaterfallSpectrogram' | 'PixelProcessor' | 'AudioTransformer' | 'AudioModulator' | 'AudioGate' | 'AudioToCV'
   | 'SpeechEnvelopeTracker' | 'VocalPitchTracker' | 'VowelFormantTracker' | 'SpokenWordVisualizer'
-  | 'CanvasBackground' | 'ParticleCloud' | 'ColorPalette' | 'GrassField' | 'TextMaker' | 'LumaBands' | 'ChromaBands' | 'GlyphMap' | 'Outline' | 'OpticalSensor' | 'BadAnalog' | 'DataMosh' | 'FeedbackPro'
+  | 'CanvasBackground' | 'ParticleCloud' | 'ColorPalette' | 'GrassField' | 'Arabesque' | 'TextMaker' | 'LumaBands' | 'ChromaBands' | 'GlyphMap' | 'Outline' | 'OpticalSensor' | 'BadAnalog' | 'DataMosh' | 'FeedbackPro'
   | 'ShapeGenerator' | 'VideoURL' | 'VideoFile' | 'WebcamCapture' | 'NoiseSource' | 'ColorNoise' | 'AudioInput' | 'AudioFile' | 'SystemAudio' | 'ImageLoader' | 'ImageFile' | 'ImageCue' | 'TextCue';
 
 export type GraphNode = AnyEffect;

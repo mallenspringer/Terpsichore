@@ -650,7 +650,7 @@ export class SignalDispatcher {
               ctx.signalValues[`${nodeId}.high_out`] = state.high;
               ctx.signalValues[`${nodeId}.video_out`] = 1.0;
             });
-          } else if (effect.type === 'WaterfallSpectrogram' || effect.type === 'GrassField') {
+          } else if (effect.type === 'WaterfallSpectrogram' || effect.type === 'GrassField' || effect.type === 'Arabesque') {
             pipeline.push((ctx: DispatchContext) => {
               ctx.signalValues[`${nodeId}.video_out`] = 1.0;
             });

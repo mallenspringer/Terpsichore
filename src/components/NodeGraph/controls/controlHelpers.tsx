@@ -148,12 +148,18 @@ export const VUMeter = ({ busId }: { busId: string }) => {
   );
 };
 
-export const Slider = ({ label, min, max, step, value, onChange, resetValue = 0, paramId, ctx }: {
+export const Slider = ({ label, min, max, step, value, onChange, resetValue = 0, paramId, ctx, logarithmic = false }: {
   label?: string; min: number; max: number; step: number; value: number;
   onChange: (v: number) => void; resetValue?: number;
-  paramId?: string; ctx?: RowCtx;
+  paramId?: string; ctx?: RowCtx; logarithmic?: boolean;
 }) => {
   const safeValue = typeof value === 'number' ? value : resetValue;
+  const useLog = logarithmic && min > 0 && max > min;
+  const clampedSafe = Math.max(min, Math.min(max, safeValue));
+  const LOG_STEPS = 1000;
+  const sliderVal = useLog
+    ? Math.round((Math.log(clampedSafe / min) / Math.log(max / min)) * LOG_STEPS)
+    : safeValue;
 
   const midiBindings = useEngineStore(s => s.midiBindings) || [];
   const midiLearnTarget = useEngineStore(s => s.midiLearnTarget);
@@ -208,14 +214,22 @@ export const Slider = ({ label, min, max, step, value, onChange, resetValue = 0,
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
         <input 
           type="range" 
-          min={min} 
-          max={max} 
-          step={step} 
-          value={safeValue}
+          min={useLog ? 0 : min} 
+          max={useLog ? LOG_STEPS : max} 
+          step={useLog ? 1 : step} 
+          value={sliderVal}
           style={{ flex: 1, minWidth: 50 }}
           onChange={e => {
             e.stopPropagation();
-            onChange(parseFloat(e.target.value));
+            const raw = parseFloat(e.target.value);
+            if (useLog) {
+              const frac = Math.max(0, Math.min(1, raw / LOG_STEPS));
+              const mapped = min * Math.pow(max / min, frac);
+              const snapped = Math.round(mapped / step) * step;
+              onChange(Math.max(min, Math.min(max, Number(snapped.toFixed(4)))));
+            } else {
+              onChange(raw);
+            }
           }} 
         />
         {isMidiMappable && (

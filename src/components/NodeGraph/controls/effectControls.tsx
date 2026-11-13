@@ -7,9 +7,12 @@ import {
   AudioSourceEffect, OscilloscopeEffect, SpectralSplitterEffect, WaterfallSpectrogramEffect, PixelProcessorEffect,
   AudioTransformerEffect, AudioModulatorEffect, CanvasBackgroundEffect,
   AlphaAdjustEffect, ParticleCloudEffect, ColorPaletteEffect, ColorStop,
-  GrassFieldEffect, GrassGrowthBandPreset, TuftStyle
+  GrassFieldEffect, GrassGrowthBandPreset, TuftStyle,
+  ArabesqueEffect, ArabesqueSeedArrangement, ArabesqueCurlBandPreset,
+  ArabesqueRemovalStyle, ArabesqueColorMode, ArabesqueColorPreset
 } from '../../../state/types';
 import { GRASS_GROWTH_BAND_RANGES, resolveGrowthBandHz } from '../../../utils/grassFieldUtils';
+import { ARABESQUE_CURL_BAND_RANGES, resolveArabesqueCurlBandHz } from '../../../utils/arabesqueUtils';
 import { AudioEngine } from '../../../state/AudioEngine';
 import { useEngineStore } from '../../../state/store';
 import { SignalDispatcher } from '../../../state/SignalDispatcher';
@@ -3341,6 +3344,405 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
             <div style={{ fontSize: 9, color: '#666', fontStyle: 'italic' }}>
               Tip: Patch a ColorPalette into [palette_in] for dynamic live gradient mapping.
             </div>
+          </div>
+        );
+      }
+    }
+  ],
+  Arabesque: [
+    {
+      id: 'seedsAndLayout',
+      label: 'Seeds & Spatial Layout',
+      render: ctx => {
+        const ef = eff<ArabesqueEffect>(ctx);
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'column', gap: 6 }}>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <label style={{ fontSize: 10, color: '#aaa', minWidth: 68 }}>Arrangement:</label>
+              <select
+                style={{
+                  flex: 1,
+                  height: 22,
+                  background: '#222',
+                  border: '1px solid #444',
+                  color: '#fff',
+                  fontSize: 10,
+                  borderRadius: 2,
+                  padding: '0 4px'
+                }}
+                value={ef.arrangement ?? 'ring'}
+                onChange={e => upd(ctx)({ arrangement: e.target.value as ArabesqueSeedArrangement })}
+              >
+                <option value="ring">Ring (Radial Outward)</option>
+                <option value="center">Center Starburst</option>
+                <option value="horizontal">Horizontal Axis</option>
+                <option value="vertical">Vertical Axis</option>
+                <option value="corners">Corners & Edges (Inward)</option>
+                <option value="diagonal">Diagonal Lattice</option>
+              </select>
+              <button
+                style={{
+                  fontSize: 9,
+                  padding: '3px 8px',
+                  borderRadius: 2,
+                  cursor: 'pointer',
+                  background: '#e5a93c',
+                  color: '#000',
+                  border: 'none',
+                  fontWeight: 'bold'
+                }}
+                onClick={() => upd(ctx)({ seedTriggerTime: performance.now() })}
+                title="Launch a synchronized filigree burst across all seeds"
+              >
+                Seed Burst
+              </button>
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <Slider
+                label="Seeds"
+                min={1}
+                max={8}
+                step={1}
+                resetValue={4}
+                value={ef.seedCount ?? 4}
+                onChange={v => upd(ctx)({ seedCount: Math.round(v) })}
+                paramId="seeds_cv"
+                ctx={ctx}
+              />
+              <Slider
+                label="Spread"
+                min={0.1}
+                max={1.2}
+                step={0.02}
+                resetValue={0.55}
+                value={ef.spread ?? 0.55}
+                onChange={v => upd(ctx)({ spread: v })}
+              />
+            </div>
+          </div>
+        );
+      }
+    },
+    {
+      id: 'growthAndBassSurge',
+      label: 'Tempo Baseline & Bass Surge',
+      render: ctx => {
+        const ef = eff<ArabesqueEffect>(ctx);
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'column', gap: 6 }}>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <Slider
+                label="Base Speed"
+                min={0.05}
+                max={2.0}
+                step={0.01}
+                resetValue={0.28}
+                value={ef.growthSpeed ?? 0.28}
+                onChange={v => upd(ctx)({ growthSpeed: v })}
+                paramId="growth_cv"
+                ctx={ctx}
+              />
+              <Slider
+                label="Bass Surge"
+                min={0.0}
+                max={4.0}
+                step={0.05}
+                resetValue={1.2}
+                value={ef.bassSurgeGain ?? 1.2}
+                onChange={v => upd(ctx)({ bassSurgeGain: v })}
+              />
+              <Slider
+                label="Branch Rate"
+                min={0.0}
+                max={1.0}
+                step={0.02}
+                resetValue={0.45}
+                value={ef.branchRate ?? 0.45}
+                onChange={v => upd(ctx)({ branchRate: v })}
+                paramId="branch_cv"
+                ctx={ctx}
+              />
+            </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10, color: '#ddd', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={ef.bpmCoupling !== false}
+                onChange={e => upd(ctx)({ bpmCoupling: e.target.checked })}
+              />
+              Couple Baseline Speed to Estimated BPM (65-175)
+            </label>
+          </div>
+        );
+      }
+    },
+    {
+      id: 'melodicCurling',
+      label: 'Melodic Curling & Variance',
+      render: ctx => {
+        const ef = eff<ArabesqueEffect>(ctx);
+        const preset = (ef.curlBandPreset ?? 'full_mid') as ArabesqueCurlBandPreset;
+        const resolved = resolveArabesqueCurlBandHz(preset, ef.curlBandTune ?? 0.0);
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'column', gap: 6 }}>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <Slider
+                label="Curl Tightness"
+                min={0.1}
+                max={2.0}
+                step={0.02}
+                resetValue={1.0}
+                value={ef.curlAmount ?? 1.0}
+                onChange={v => upd(ctx)({ curlAmount: v })}
+                paramId="curl_cv"
+                ctx={ctx}
+              />
+              <Slider
+                label="Variance"
+                min={0.0}
+                max={1.0}
+                step={0.02}
+                resetValue={0.30}
+                value={ef.randomness ?? 0.30}
+                onChange={v => upd(ctx)({ randomness: v })}
+              />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, background: '#121212', padding: '4px 6px', borderRadius: 3, border: '1px solid #262626' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                <span style={{ fontSize: 9, color: '#aaa', textTransform: 'uppercase' }}>
+                  Curl Band ({Math.round(resolved.minHz)}-{Math.round(resolved.maxHz)} Hz)
+                </span>
+                <select
+                  className="rack-select"
+                  style={{ fontSize: 10, padding: '2px 4px', background: '#1c1c1c', color: '#eee', border: '1px solid #333', borderRadius: 2 }}
+                  value={preset}
+                  onChange={e => upd(ctx)({ curlBandPreset: e.target.value as ArabesqueCurlBandPreset })}
+                >
+                  {(Object.keys(ARABESQUE_CURL_BAND_RANGES) as ArabesqueCurlBandPreset[]).map(k => (
+                    <option key={k} value={k}>
+                      {ARABESQUE_CURL_BAND_RANGES[k].label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <Slider
+                  label="Band Tune (oct)"
+                  min={-0.5}
+                  max={0.5}
+                  step={0.05}
+                  resetValue={0.0}
+                  value={ef.curlBandTune ?? 0.0}
+                  onChange={v => upd(ctx)({ curlBandTune: v })}
+                />
+                <Slider
+                  label="Band Gain"
+                  min={0.2}
+                  max={3.0}
+                  step={0.05}
+                  resetValue={1.0}
+                  value={ef.curlBandGain ?? 1.0}
+                  onChange={v => upd(ctx)({ curlBandGain: v })}
+                />
+              </div>
+            </div>
+          </div>
+        );
+      }
+    },
+    {
+      id: 'strokeAndOrnaments',
+      label: 'Stroke & Paisley Detail',
+      render: ctx => {
+        const ef = eff<ArabesqueEffect>(ctx);
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'column', gap: 6 }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <Slider
+                label="Line Width"
+                min={0.2}
+                max={3.0}
+                step={0.02}
+                resetValue={1.0}
+                value={ef.lineWidth ?? 1.0}
+                onChange={v => upd(ctx)({ lineWidth: v })}
+                paramId="width_cv"
+                ctx={ctx}
+              />
+              <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: '#ddd', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                <input
+                  type="checkbox"
+                  checked={ef.ornateTips !== false}
+                  onChange={e => upd(ctx)({ ornateTips: e.target.checked })}
+                />
+                Ornate Finials & Beads
+              </label>
+            </div>
+          </div>
+        );
+      }
+    },
+    {
+      id: 'removalAndUnravel',
+      label: 'Removal & Unraveling',
+      render: ctx => {
+        const ef = eff<ArabesqueEffect>(ctx);
+        const style = ef.removalStyle ?? 'chase';
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'column', gap: 6 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+              <label style={{ fontSize: 9, color: '#aaa', textTransform: 'uppercase' }}>Removal Animation:</label>
+              <div style={{ display: 'flex', gap: 4 }}>
+                {([
+                  ['chase', 'Seed-Chase Unravel', 'Erosion chases out from the seed faster than growth'],
+                  ['fade', 'Ink Thinning', 'Mature weaves thin out & fade uniformly'],
+                  ['retract', 'Tip Retract', 'Scroll tips cleanly coil back to the seed']
+                ] as const).map(([val, lbl, title]) => (
+                  <button
+                    key={val}
+                    style={{
+                      flex: 1,
+                      fontSize: 9,
+                      padding: '3px 0',
+                      borderRadius: 2,
+                      cursor: 'pointer',
+                      background: style === val ? '#f58c18' : '#222',
+                      color: style === val ? '#000' : '#aaa',
+                      border: 'none',
+                      fontWeight: style === val ? 'bold' : 'normal'
+                    }}
+                    onClick={() => upd(ctx)({ removalStyle: val as ArabesqueRemovalStyle })}
+                    title={title}
+                  >
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <Slider
+              label="Chase Speed Ratio"
+              min={1.1}
+              max={3.0}
+              step={0.05}
+              resetValue={1.65}
+              value={ef.decaySpeedRatio ?? 1.65}
+              onChange={v => upd(ctx)({ decaySpeedRatio: v })}
+            />
+
+            <div style={{ background: '#141414', padding: '4px 6px', borderRadius: 3, border: '1px solid #282828' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: '#ddd', cursor: 'pointer', fontWeight: 'bold', marginBottom: 4 }}>
+                <input
+                  type="checkbox"
+                  checked={ef.autoDecayEnabled !== false}
+                  onChange={e => upd(ctx)({ autoDecayEnabled: e.target.checked })}
+                />
+                Auto Seed-Chase Turnover
+              </label>
+              {ef.autoDecayEnabled !== false && (
+                <Slider
+                  label="Chase Lead Length"
+                  min={0.2}
+                  max={10.0}
+                  step={0.01}
+                  resetValue={0.85}
+                  value={ef.chaseLeadLength ?? 0.85}
+                  logarithmic
+                  onChange={v => upd(ctx)({ chaseLeadLength: v })}
+                />
+              )}
+            </div>
+
+            <div style={{ background: '#141414', padding: '4px 6px', borderRadius: 3, border: '1px solid #282828' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: '#ddd', cursor: 'pointer', fontWeight: 'bold', marginBottom: 4 }}>
+                <input
+                  type="checkbox"
+                  checked={ef.transientPruneEnabled === true}
+                  onChange={e => upd(ctx)({ transientPruneEnabled: e.target.checked })}
+                />
+                Transient Prune Release (Audio / CV)
+              </label>
+              {ef.transientPruneEnabled && (
+                <Slider
+                  label="Prune Threshold"
+                  min={0.1}
+                  max={1.0}
+                  step={0.02}
+                  resetValue={0.65}
+                  value={ef.pruneThreshold ?? 0.65}
+                  onChange={v => upd(ctx)({ pruneThreshold: v })}
+                />
+              )}
+            </div>
+          </div>
+        );
+      }
+    },
+    {
+      id: 'paletteAndWaveColor',
+      label: 'Wave Color & Palette',
+      render: ctx => {
+        const ef = eff<ArabesqueEffect>(ctx);
+        const colorMode = ef.colorMode ?? 'wave';
+        return (
+          <div className="rack-row-content" onPointerDown={e => e.stopPropagation()} style={{ flexDirection: 'column', gap: 6 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#111', padding: '3px 6px', borderRadius: 3 }}>
+              <span style={{ fontSize: 9, color: '#aaa', textTransform: 'uppercase' }}>Color Assign:</span>
+              <div style={{ display: 'flex', gap: 4 }}>
+                {([
+                  ['wave', 'Sync Wave'],
+                  ['spectral', 'Melodic Snapshot'],
+                  ['seed', 'Per Seed']
+                ] as const).map(([val, lbl]) => (
+                  <button
+                    key={val}
+                    style={{
+                      fontSize: 9,
+                      padding: '2px 6px',
+                      borderRadius: 2,
+                      cursor: 'pointer',
+                      background: colorMode === val ? '#e5a93c' : '#222',
+                      color: colorMode === val ? '#000' : '#888',
+                      border: 'none',
+                      fontWeight: colorMode === val ? 'bold' : 'normal'
+                    }}
+                    onClick={() => upd(ctx)({ colorMode: val as ArabesqueColorMode })}
+                  >
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <label style={{ fontSize: 10, color: '#aaa', minWidth: 52 }}>Preset:</label>
+              <select
+                style={{
+                  flex: 1,
+                  height: 22,
+                  background: '#222',
+                  border: '1px solid #444',
+                  color: '#fff',
+                  fontSize: 10,
+                  borderRadius: 2,
+                  padding: '0 4px'
+                }}
+                value={ef.colorPreset ?? 'gold_leaf'}
+                onChange={e => upd(ctx)({ colorPreset: e.target.value as ArabesqueColorPreset })}
+              >
+                <option value="gold_leaf">Gold Leaf & Ivory</option>
+                <option value="obsidian_ink">Obsidian Ink & Silver</option>
+                <option value="crimson_damask">Crimson Damask</option>
+                <option value="bioluminescent">Bioluminescent Filigree</option>
+              </select>
+            </div>
+            <Slider
+              label="Wave Color Step"
+              min={0.05}
+              max={0.5}
+              step={0.01}
+              resetValue={0.19}
+              value={ef.colorStep ?? 0.19}
+              onChange={v => upd(ctx)({ colorStep: v })}
+            />
           </div>
         );
       }

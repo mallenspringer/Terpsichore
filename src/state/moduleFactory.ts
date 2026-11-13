@@ -81,6 +81,7 @@ export function isKnownEffectType(type: string): boolean {
     case 'ParticleCloud':
     case 'ColorPalette':
     case 'GrassField':
+    case 'Arabesque':
     case 'TextMaker':
     case 'LumaBands':
     case 'GlyphMap':
@@ -531,6 +532,35 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
         colorPreset: 'meadow',
         showSky: false,
         showGround: true
+      };
+
+    case 'Arabesque':
+      return {
+        id,
+        type: 'Arabesque',
+        seedCount: 4,
+        arrangement: 'ring',
+        spread: 0.55,
+        growthSpeed: 0.28,
+        bassSurgeGain: 1.2,
+        bpmCoupling: true,
+        curlAmount: 1.0,
+        curlBandPreset: 'full_mid',
+        curlBandTune: 0.0,
+        curlBandGain: 1.0,
+        branchRate: 0.45,
+        randomness: 0.30,
+        lineWidth: 1.0,
+        ornateTips: true,
+        colorMode: 'wave',
+        colorStep: 0.19,
+        colorPreset: 'gold_leaf',
+        removalStyle: 'chase',
+        autoDecayEnabled: true,
+        chaseLeadLength: 0.85,
+        decaySpeedRatio: 1.65,
+        transientPruneEnabled: false,
+        pruneThreshold: 0.65
       };
 
     case 'TextMaker':

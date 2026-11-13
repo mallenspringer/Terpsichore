@@ -75,6 +75,13 @@ export class AudioEngine {
 
   // Global Audio Bus Registry
   private buses: Map<string, AudioBusData> = new Map();
+  private tempoTrackers: WeakMap<AudioBusData, {
+    lowEma: number;
+    fluxEma: number;
+    lastOnsetSec: number;
+    onsets: number[];
+    wasRising: boolean;
+  }> = new WeakMap();
   private fftSize = 1024;
   private _masterMuted = false;
 
@@ -341,6 +348,148 @@ export class AudioEngine {
     const floorDb = -68;
     const ceilDb = -8;
     return Math.max(0, Math.min(1, (avgDb - floorDb) / (ceilDb - floorDb)));
+  }
+
+  /**
+   * Computes log-frequency weighted spectral centroid [0..1] and normalized RMS energy [0..1]
+   * within [minHz, maxHz]. Returns centroidNorm = 0.5 and energy = 0 when bus is silent or missing.
+   */
+  public getBandSpectralCentroidHz(id: string, minHz: number, maxHz: number): { centroidNorm: number; energy: number } {
+    const bus = this.buses.get(id);
+    if (!bus || !bus.fft || (bus.peak === 0 && bus.rms === 0)) {
+      return { centroidNorm: 0.5, energy: 0 };
+    }
+
+    const sampleRate = this.getSampleRate();
+    const binHz = sampleRate / this.fftSize;
+    const safeMin = Math.max(20, minHz);
+    const safeMax = Math.max(safeMin + 20, maxHz);
+    const startBin = Math.max(1, Math.floor(safeMin / binHz));
+    const endBin = Math.min(bus.fft.length, Math.max(startBin + 1, Math.ceil(safeMax / binHz)));
+    const count = endBin - startBin;
+    if (count <= 0) return { centroidNorm: 0.5, energy: 0 };
+
+    const logMin = Math.log2(safeMin);
+    const logSpan = Math.max(0.05, Math.log2(safeMax) - logMin);
+
+    let powerSum = 0;
+    let weightedLogSum = 0;
+    for (let i = startBin; i < endBin; i++) {
+      const db = Number.isFinite(bus.fft[i]) ? Math.max(-100, Math.min(0, bus.fft[i])) : -100;
+      const p = Math.pow(10, db / 10);
+      const hz = i * binHz;
+      powerSum += p;
+      weightedLogSum += p * Math.log2(Math.max(safeMin, hz));
+    }
+
+    const meanPower = Math.max(1e-10, powerSum / count);
+    const avgDb = 10 * Math.log10(meanPower);
+    const energy = Math.max(0, Math.min(1, (avgDb - (-68)) / ((-8) - (-68))));
+
+    if (powerSum <= 1e-8) {
+      return { centroidNorm: 0.5, energy };
+    }
+
+    const meanLogHz = weightedLogSum / powerSum;
+    const centroidNorm = Math.max(0, Math.min(1, (meanLogHz - logMin) / logSpan));
+    return { centroidNorm, energy };
+  }
+
+  /**
+   * Lightweight rolling Inter-Onset Interval (IOI) tempo tracker on low-frequency flux.
+   * Updates bus.bpm (65..175) and bus.confidence (0..1) cleanly without heavy CPU load.
+   */
+  public updateTempoEstimate(bus: AudioBusData, nowSec: number): void {
+    let tracker = this.tempoTrackers.get(bus);
+    if (!tracker) {
+      tracker = {
+        lowEma: bus.bands.bass,
+        fluxEma: 0.04,
+        lastOnsetSec: -10,
+        onsets: [],
+        wasRising: false
+      };
+      this.tempoTrackers.set(bus, tracker);
+    }
+
+    const lowEnergy = Math.max(bus.bands.bass, bus.bands.low * 0.9);
+    const flux = Math.max(0, lowEnergy - tracker.lowEma);
+    tracker.lowEma = tracker.lowEma + (lowEnergy > tracker.lowEma ? 0.35 : 0.08) * (lowEnergy - tracker.lowEma);
+    tracker.fluxEma = tracker.fluxEma + 0.06 * (flux - tracker.fluxEma);
+
+    const thresh = Math.max(0.055, tracker.fluxEma * 1.9);
+    const isHit = flux > thresh && bus.rms > 0.015;
+    if (isHit && !tracker.wasRising && (nowSec - tracker.lastOnsetSec) > 0.24) {
+      tracker.lastOnsetSec = nowSec;
+      tracker.onsets.push(nowSec);
+      if (tracker.onsets.length > 16) {
+        tracker.onsets.shift();
+      }
+      // Trim stale onsets older than 8s
+      while (tracker.onsets.length > 0 && (nowSec - tracker.onsets[0]) > 8.0) {
+        tracker.onsets.shift();
+      }
+    }
+    tracker.wasRising = isHit;
+
+    // Decay confidence gracefully if no beats detected for > 2.5s
+    if (nowSec - tracker.lastOnsetSec > 2.5 || tracker.onsets.length < 4) {
+      bus.confidence = Math.max(0, bus.confidence * 0.96);
+      if (tracker.onsets.length < 4) return;
+    }
+
+    // Collect octave-folded BPM candidates (65..175 BPM) from consecutive & skip-1 IOIs
+    const candidates: number[] = [];
+    const n = tracker.onsets.length;
+    for (let i = 1; i < n; i++) {
+      const dt1 = tracker.onsets[i] - tracker.onsets[i - 1];
+      if (dt1 >= 0.25 && dt1 <= 1.85) {
+        let bpm = 60 / dt1;
+        while (bpm < 65) bpm *= 2;
+        while (bpm > 175) bpm *= 0.5;
+        candidates.push(bpm);
+      }
+      if (i >= 2) {
+        const dt2 = tracker.onsets[i] - tracker.onsets[i - 2];
+        if (dt2 >= 0.34 && dt2 <= 1.85) {
+          let bpm2 = 60 / dt2;
+          while (bpm2 < 65) bpm2 *= 2;
+          while (bpm2 > 175) bpm2 *= 0.5;
+          candidates.push(bpm2);
+        }
+      }
+    }
+
+    if (candidates.length === 0) return;
+
+    // Pick densest histogram cluster within +/-6% tolerance
+    let bestClusterSum = 0;
+    let bestClusterWeight = 0;
+    for (let i = 0; i < candidates.length; i++) {
+      const anchor = candidates[i];
+      const tol = anchor * 0.06;
+      let sum = 0;
+      let wSum = 0;
+      for (let j = 0; j < candidates.length; j++) {
+        if (Math.abs(candidates[j] - anchor) <= tol) {
+          // Slight bias toward natural musical mid-tempo range (95..138 BPM)
+          const octBias = (candidates[j] >= 92 && candidates[j] <= 142) ? 1.15 : 1.0;
+          sum += candidates[j] * octBias;
+          wSum += octBias;
+        }
+      }
+      if (wSum > bestClusterWeight) {
+        bestClusterWeight = wSum;
+        bestClusterSum = sum;
+      }
+    }
+
+    if (bestClusterWeight > 0) {
+      const targetBpm = bestClusterSum / bestClusterWeight;
+      const conf = Math.min(1, bestClusterWeight / Math.max(4, candidates.length * 0.72));
+      bus.bpm = bus.bpm + 0.18 * (targetBpm - bus.bpm);
+      bus.confidence = Math.max(0, Math.min(1, bus.confidence + 0.12 * (conf - bus.confidence)));
+    }
   }
 
   public getAllBuses(): AudioBusData[] {
@@ -852,6 +1001,8 @@ export class AudioEngine {
 
     const prevOnset = bus.onset;
     bus.onset = bus.bands.bass > 0.4 && peak > 0.6 && !prevOnset;
+    const nowSec = typeof performance !== 'undefined' ? performance.now() * 0.001 : Date.now() * 0.001;
+    this.updateTempoEstimate(bus, nowSec);
   }
 
   public getPeakVolume(id: string): number {

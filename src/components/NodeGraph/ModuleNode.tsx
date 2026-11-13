@@ -107,7 +107,7 @@ export function ModuleNode({
       const effect = (rowCtx as EffectCtx).effect as AudioSourceEffect;
       return effect?.busId || 'master';
     }
-    if (moduleType === 'Oscilloscope' || moduleType === 'SpectralSplitter' || moduleType === 'WaterfallSpectrogram' || moduleType === 'GrassField') {
+    if (moduleType === 'Oscilloscope' || moduleType === 'SpectralSplitter' || moduleType === 'WaterfallSpectrogram' || moduleType === 'GrassField' || moduleType === 'Arabesque') {
       const edge = layer?.graph?.edges.find(e => e.toNodeId === nodeId && e.toPort === 'audio_in');
       if (!edge) return ((moduleType === 'SpectralSplitter' || moduleType === 'WaterfallSpectrogram') ? ((rowCtx as EffectCtx).effect as any).busId || 'master' : null);
       const sourceEffect = layer?.effects.find(e => e.id === edge.fromNodeId);

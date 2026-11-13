@@ -404,6 +404,15 @@ export const ALL_MODULES: ModuleEntry[] = [
     tags: ['growth', 'grass', 'flora', 'meadow', 'procedural', '3d', 'tufts', 'field', 'generator', 'effect']
   },
   {
+    id: 'Arabesque',
+    glyph: '❦',
+    label: 'Arabesque',
+    tooltip: 'Contiguous Audio-Reactive Filigree & Scrollwork Generator with Seed-Chase Unraveling',
+    category: 'Effects',
+    moduleType: 'effect:Arabesque',
+    tags: ['arabesque', 'filigree', 'scrollwork', 'paisley', 'pinstripe', 'vines', 'growth', 'procedural', 'generator', 'effect']
+  },
+  {
     id: 'Transform2D',
     glyph: '✥',
     label: 'Transform',
@@ -643,7 +652,7 @@ export const DEFAULT_BANK_CONFIG: BankConfig = {
     collapsed: false
   },
   Effects: {
-    order: ['GrassField', 'Transform2D', 'ColorAdjust', 'SimpleFeedback', 'UVDisplace', 'Pattern', 'LumaKey'],
+    order: ['GrassField', 'Arabesque', 'Transform2D', 'ColorAdjust', 'SimpleFeedback', 'UVDisplace', 'Pattern', 'LumaKey'],
     sort: 'custom',
     collapsed: false
   },
