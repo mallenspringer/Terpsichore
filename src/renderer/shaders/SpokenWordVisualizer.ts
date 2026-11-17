@@ -66,7 +66,7 @@ fn renderConstellation(p: vec2<f32>) -> vec4<f32> {
   let starCount = 8;
   for (var i = 0; i < starCount; i = i + 1) {
     let fi = f32(i);
-    let angle = fi * (6.28318 / f32(starCount)) + uniforms.time * (0.3 + uniforms.cadence * 0.5);
+    let angle = fi * (6.28318 / f32(starCount)) + uniforms.time * 0.35;
     let orbitDist = (0.15 + fi * 0.04) * (0.8 + env * 0.6);
     let starPos = center + vec2<f32>(cos(angle), sin(angle)) * orbitDist;
     
@@ -106,7 +106,7 @@ fn renderFlowingRibbon(p: vec2<f32>, uv: vec2<f32>) -> vec4<f32> {
 
   for (var i = 0; i < layers; i = i + 1) {
     let fi = f32(i);
-    let speed = uniforms.time * (1.2 + uniforms.cadence * 0.8) + fi * 0.4;
+    let speed = uniforms.time * 1.25 + fi * 0.4;
     let waveFreq = 2.5 + fi * 1.5 + brightness * 2.0;
     
     // Wave displacement
@@ -141,7 +141,7 @@ fn renderRadialWaterfall(p: vec2<f32>) -> vec4<f32> {
   var totalColor = vec3<f32>(0.0);
 
   // Concentric Formant Ring Waves expanding outward
-  let speed = uniforms.time * (0.6 + uniforms.cadence * 0.5);
+  let speed = uniforms.time * 0.65;
   let ringCount = 6;
 
   for (var i = 0; i < ringCount; i = i + 1) {

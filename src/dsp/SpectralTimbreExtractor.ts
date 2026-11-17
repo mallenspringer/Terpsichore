@@ -1,5 +1,6 @@
 export class SpectralTimbreExtractor {
   private sampleRate: number;
+  private amplitudes = new Float32Array(0);
 
   constructor(sampleRate: number) {
     this.sampleRate = sampleRate;
@@ -15,19 +16,24 @@ export class SpectralTimbreExtractor {
       return { centroid: 0, flatness: 0, sibilance: 0 };
     }
 
-    const binWidth = (this.sampleRate / 2) / numBins;
+    if (this.amplitudes.length !== numBins) {
+      this.amplitudes = new Float32Array(numBins);
+    }
 
-    // Convert decibels to linear amplitude for correct DSP calculations
-    // Decibels typically range from -140dB (silence) to 0dB (peak)
-    const amplitudes = new Float32Array(numBins);
+    const binWidth = (this.sampleRate / 2) / numBins;
+    const amplitudes = this.amplitudes;
     let sumAmps = 0;
     let sumLnAmps = 0;
     let sumCentroidNumerator = 0;
+    let maxDb = -Infinity;
 
     for (let i = 0; i < numBins; i++) {
       const db = fftDb[i];
+      if (Number.isFinite(db) && db > maxDb) {
+        maxDb = db;
+      }
       // Bound the decibel values to avoid extremely small numbers or positive infinity/NaN
-      const safeDb = Math.max(-100, Math.min(0, db));
+      const safeDb = Number.isFinite(db) ? Math.max(-100, Math.min(0, db)) : -100;
       const amp = Math.pow(10, safeDb / 20);
 
       amplitudes[i] = amp;
@@ -38,6 +44,11 @@ export class SpectralTimbreExtractor {
 
       // Add small epsilon for log calculation to avoid -Infinity
       sumLnAmps += Math.log(amp + 1e-6);
+    }
+
+    // Silence / ambient-floor gate: prevent -Infinity/-100 dB bins from pegging centroid, flatness, and sibilance
+    if (maxDb <= -90) {
+      return { centroid: 0, flatness: 0, sibilance: 0 };
     }
 
     // 1. Spectral Centroid

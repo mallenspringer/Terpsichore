@@ -14,6 +14,13 @@ import { ImageCueManager } from './ImageCueManager';
 import { TextCueRenderer } from './TextCueRenderer';
 import { TextMakerRenderer } from './TextMakerRenderer';
 import { TextMakerStage1WGSL, TextMakerStage2WGSL } from './shaders/TextMaker';
+import { BlackoutRenderer } from './BlackoutRenderer';
+import { BlackoutWordsWGSL, BlackoutCompositeWGSL } from './shaders/Blackout';
+import {
+  evaluateWordTargetConcealment,
+  hashBlackoutWord,
+  MAX_BLACKOUT_WORDS,
+} from '../utils/blackoutUtils';
 import { AudioEngine } from '../state/AudioEngine';
 import { GLYPH_TEMPLATE_PACKS } from '../state/moduleFactory';
 import { LumaSplitterWGSL } from './shaders/LumaSplitter';
@@ -79,7 +86,7 @@ import {
   AlphaAdjustEffect, ParticleCloudEffect, ColorPaletteEffect, GrassFieldEffect, ArabesqueEffect,
   NoiseVideoSource, ColorNoiseSource, InverterEffect, PixelProcessorEffect,
   PatternEffect, KaleidoscopeEffect, SampleAndHoldEffect, OscilloscopeEffect, SpectralSplitterEffect, WaterfallSpectrogramEffect,
-  SpokenWordVisualizerEffect,
+  SpokenWordVisualizerEffect, PoetrySequencerEffect, BlackoutPoetryEffect,
   LayerState, AnySource, ImageCueSource, TextCueSource, TextMakerEffect, LumaBandsEffect, ChromaBandsEffect, GlyphMapEffect, OutlineEffect, BadAnalogEffect, DataMoshEffect, FeedbackProEffect
 } from '../state/types';
 
@@ -157,6 +164,7 @@ export class Renderer {
   private arabesqueSims: Map<string, ArabesqueSimulation> = new Map();
   private arabesqueLastTime: Map<string, number> = new Map();
   private arabesqueStaging: Float32Array = new Float32Array(MAX_ARABESQUE_SEGMENTS * ARABESQUE_SEGMENT_FLOATS);
+  private spokenWordPhases: Map<string, { phase: number; lastTime: number }> = new Map();
 
   // Isolated layouts to prevent 'Minimum Binding Size' collisions
   private effectLayouts: Map<string, GPUBindGroupLayout> = new Map();
@@ -170,6 +178,10 @@ export class Renderer {
   private textCueTextures: Record<string, GPUTexture> = {};
   private textMakerStage1Pipeline!: GPURenderPipeline;
   private textMakerStage2Pipeline!: GPURenderPipeline;
+  private blackoutWordsPipeline!: GPURenderPipeline;
+  private blackoutCompositePipeline!: GPURenderPipeline;
+  private blackoutAtlasTex: Record<string, GPUTexture> = {};
+  private blackoutWordRuntime = new Map<string, { conceal: Float32Array; lastTime: number; lastTextGen: number }>();
   private lumaBandsPipeline!: GPURenderPipeline;
   private chromaBandsPipeline!: GPURenderPipeline;
   private glyphMapPipeline!: GPURenderPipeline;
@@ -883,6 +895,55 @@ export class Renderer {
       primitive
     });
 
+    const blackoutWordsLayout = this.device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+        { binding: 1, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
+        { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+        { binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: {} }
+      ]
+    });
+    const blackoutWordsMod = this.device.createShaderModule({ code: BlackoutWordsWGSL });
+    this.blackoutWordsPipeline = this.device.createRenderPipeline({
+      layout: this.device.createPipelineLayout({ bindGroupLayouts: [blackoutWordsLayout] }),
+      vertex: { module: blackoutWordsMod, entryPoint: 'vs_main' },
+      fragment: {
+        module: blackoutWordsMod,
+        entryPoint: 'fs_main',
+        targets: [{
+          format: this.format,
+          blend: {
+            color: { srcFactor: 'one', dstFactor: 'one', operation: 'max' },
+            alpha: { srcFactor: 'one', dstFactor: 'one', operation: 'max' }
+          }
+        }]
+      },
+      primitive: { topology: 'triangle-list' }
+    });
+
+    const blackoutCompLayout = this.device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+        { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+        { binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: {} }
+      ]
+    });
+    const blackoutCompMod = this.device.createShaderModule({ code: BlackoutCompositeWGSL });
+    this.blackoutCompositePipeline = this.device.createRenderPipeline({
+      layout: this.device.createPipelineLayout({ bindGroupLayouts: [blackoutCompLayout] }),
+      vertex: { module: blackoutCompMod, entryPoint: 'vs_main' },
+      fragment: {
+        module: blackoutCompMod,
+        entryPoint: 'fs_main',
+        targets: [
+          { format: this.format },
+          { format: this.format }
+        ]
+      },
+      primitive
+    });
+
     this.lumaBandsPipeline = this.device.createRenderPipeline({
       layout,
       vertex,
@@ -1483,13 +1544,16 @@ export class Renderer {
           if (!effect) return;
 
           // Category A: Generators (Sources or Visualizers that don't REQUIRE an input texture)
-          if (['ShapeGenerator', 'VideoFile', 'VideoURL', 'WebcamCapture', 'NoiseSource', 'ColorNoise', 'ImageCue', 'TextCue', 'TextMaker', 'SpectralSplitter', 'Oscilloscope', 'WaterfallSpectrogram', 'SpokenWordVisualizer', 'ParticleCloud', 'GrassField', 'Arabesque'].includes(effect.type)) {
+          if (['ShapeGenerator', 'VideoFile', 'VideoURL', 'WebcamCapture', 'NoiseSource', 'ColorNoise', 'ImageCue', 'TextCue', 'TextMaker', 'BlackoutPoetry', 'SpectralSplitter', 'Oscilloscope', 'WaterfallSpectrogram', 'SpokenWordVisualizer', 'ParticleCloud', 'GrassField', 'Arabesque'].includes(effect.type)) {
             const genTarget = this.ensureTexture(nodeId, 'video_out');
             if (effect.type === 'TextCue') {
               this.renderTextCueSource(layer, nodeId, genTarget, commandEncoder);
               return;
             } else if (effect.type === 'TextMaker') {
               this.renderTextMaker(layer, nodeId, effect as TextMakerEffect, genTarget, timeSec, commandEncoder);
+              return;
+            } else if (effect.type === 'BlackoutPoetry') {
+              this.renderBlackoutPoetry(layer, nodeId, effect as BlackoutPoetryEffect, genTarget, timeSec, commandEncoder);
               return;
             } else if (effect.type === 'ImageCue') {
               this.renderImageCueSource(layer, nodeId, genTarget, timeSec, commandEncoder);
@@ -1624,7 +1688,7 @@ export class Renderer {
             }
 
             const busData = AudioEngine.getInstance().getBusData(busId);
-            const waveform = busData ? busData.waveform : new Float32Array(1024);
+            const waveform = busData ? busData.waveform : new Float32Array(2048);
 
             // 2. Upload waveform to storage buffer
             const storageBuffer = this.getStorageBuffer(`${nodeId}.waveform`, waveform.byteLength);
@@ -1700,7 +1764,7 @@ export class Renderer {
               busData = AudioEngine.getInstance().getBusData(ef.busId || 'master');
             }
 
-            const fft = busData ? busData.fft : new Float32Array(512);
+            const fft = busData ? busData.fft : new Float32Array(1024);
 
             const storageBuffer = this.getStorageBuffer(`${nodeId}.fft`, fft.byteLength);
             this.device.queue.writeBuffer(storageBuffer, 0, fft as any);
@@ -2035,16 +2099,22 @@ export class Renderer {
               // 2. Text Source detection (TextCue via text_in or layer source)
               const textEdge = layer?.graph?.edges.find(e => e.toNodeId === nodeId && e.toPort === 'text_in');
               let textCueSrc: TextCueSource | null = null;
+              let poetrySeqSrc: PoetrySequencerEffect | null = null;
               if (textEdge) {
                 if (textEdge.fromNodeId === 'source' && layer.source.type === 'TextCue') {
                   textCueSrc = layer.source as TextCueSource;
                 } else {
                   const fe = layer.effects.find(e => e.id === textEdge.fromNodeId);
                   if (fe && fe.type === 'TextCue') textCueSrc = fe as unknown as TextCueSource;
+                  else if (fe && fe.type === 'PoetrySequencer') poetrySeqSrc = fe as PoetrySequencerEffect;
                 }
               } else if (layer.source.type === 'TextCue') {
                 textCueSrc = layer.source as TextCueSource;
               }
+
+              const poetryRt = poetrySeqSrc
+                ? SignalDispatcher.getInstance().getPoetrySequencerRuntime(layer.id, poetrySeqSrc.id)
+                : null;
 
               // Extract 8 layer strings:
               const layerStrings: string[] = [];
@@ -2052,8 +2122,15 @@ export class Renderer {
 
               for (let i = 0; i < 8; i++) {
                 let s = '';
-                // 1. Text Bank input (takes precedence when connected, unless user explicitly selected manual)
-                if (textCueSrc && ef.sourceMode !== 'manual') {
+                // 1. Text Bank or Poetry Sequencer input (takes precedence when connected, unless user explicitly selected manual)
+                if (poetrySeqSrc && ef.sourceMode !== 'manual') {
+                  if (poetryRt && poetryRt.tokens.length > 0) {
+                    const tokIdx = (poetryRt.currentStepIndex + i) % poetryRt.tokens.length;
+                    s = poetryRt.tokens[tokIdx]?.text || poetryRt.currentText || '';
+                  } else {
+                    s = poetrySeqSrc.currentText || '';
+                  }
+                } else if (textCueSrc && ef.sourceMode !== 'manual') {
                   const b = textCueSrc.banks?.[textCueSrc.activeBankIndex ?? 0];
                   s = b?.cards?.[i]?.text || '';
                 }
@@ -3971,6 +4048,24 @@ export class Renderer {
         : (activeBank?.cards?.[activeBank?.activeCardIndex ?? 0]?.text ?? '');
       return { ...src, currentText: resolvedText };
     }
+    if (effect.type === 'PoetrySequencer') {
+      const ps = effect as PoetrySequencerEffect;
+      const rt = SignalDispatcher.getInstance().getPoetrySequencerRuntime(layer.id, ps.id);
+      return {
+        ...ps,
+        currentText: rt?.currentText ?? ps.currentText ?? '',
+        prevText: rt?.prevText ?? '',
+        stepCount: rt?.stepCount ?? ps.stepCount ?? 0,
+      };
+    }
+    if (effect.type === 'BlackoutPoetry') {
+      const bp = effect as BlackoutPoetryEffect;
+      return {
+        ...bp,
+        currentText: bp.localText ?? '',
+        stepCount: bp.seed ?? 1,
+      };
+    }
     if (effect.type === 'TextMaker') {
       const tm = effect as TextMakerEffect;
       const rt = this.textMakerRuntime.get(`${layer.id}.${tm.id}`);
@@ -4673,7 +4768,7 @@ export class Renderer {
     f32[14] = angleRad;
 
     const spreadMod = this.getSignalValue(layer, nodeId, 'spread_cv', 0);
-    const spread = Math.max(0.01, Math.min(0.99, (ef.spread ?? 0.5) + spreadMod));
+    const spread = Math.max(0.01, Math.min(0.99, (ef.spread ?? 0.5) + spreadMod * 0.49));
     f32[15] = spread;
 
     f32[16] = ef.radialCenterX ?? 0.5;
@@ -4748,13 +4843,21 @@ export class Renderer {
     const modeMap: Record<string, number> = { Constellation: 0, FlowingRibbon: 1, RadialWaterfall: 2 };
     const palMap: Record<string, number> = { vibrant: 0, neon: 1, cyber: 1, warm: 2, fire: 2, monochrome: 3 };
 
+    const sigs = SignalDispatcher.getInstance().getLatestSignals(layer.id);
+    const cadence = Math.max(0, Math.min(1, sigs[`${nodeId}.cadence_out`] ?? 0));
+    const phaseKey = `${layer.id}.${nodeId}`;
+    const pState = this.spokenWordPhases.get(phaseKey) ?? { phase: 0, lastTime: timeSec };
+    const dt = timeSec >= pState.lastTime ? Math.min(0.1, timeSec - pState.lastTime) : 0;
+    pState.phase += dt * (1.0 + cadence * 1.2);
+    pState.lastTime = timeSec;
+    this.spokenWordPhases.set(phaseKey, pState);
+
     u32[0] = modeMap[ef.renderMode] ?? 0;
     f32[1] = this.canvas.width / this.canvas.height;
-    f32[2] = timeSec;
+    f32[2] = pState.phase;
 
-    const sigs = SignalDispatcher.getInstance().getLatestSignals(layer.id);
     f32[3] = sigs[`${nodeId}.envelope_out`] ?? 0;
-    f32[4] = sigs[`${nodeId}.cadence_out`] ?? 0;
+    f32[4] = cadence;
     f32[5] = sigs[`${nodeId}.timbre_brightness`] ?? 0;
     f32[6] = sigs[`${nodeId}.timbre_flatness`] ?? 0;
     f32[7] = sigs[`${nodeId}.pitch_hz`] ?? 0;
@@ -5418,6 +5521,275 @@ export class Renderer {
       || audioEngine.getBusData('master');
 
     return { isAudioConnected: true, busId, busData };
+  }
+
+  private renderBlackoutPoetry(
+    layer: LayerState,
+    nodeId: string,
+    ef: BlackoutPoetryEffect,
+    target: GPUTexture,
+    timeSec: number,
+    commandEncoder: GPUCommandEncoder
+  ) {
+    const texKey = `${layer.id}.${nodeId}`;
+    const extSource = this.getConnectedTextSource(layer, nodeId, 'text_in');
+    const rawText: string = extSource !== null ? (extSource.currentText ?? '') : (ef.localText ?? '');
+
+    const w = Math.max(128, this.canvas.width || 1280);
+    const h = Math.max(128, this.canvas.height || 720);
+    const aspect = w / h;
+
+    const styleMap: Record<string, number> = {
+      fade: 0,
+      dissolve: 1,
+      whiteout_glow: 2,
+      spotlight_negative: 3,
+      sharpie_zine: 4,
+      classified_redact: 5,
+      cutup_collage: 6,
+      acid_erasure: 7,
+      signal_censor: 8,
+    };
+    const styleId = styleMap[ef.stylePreset ?? 'sharpie_zine'] ?? 4;
+
+    const dsp = SignalDispatcher.getInstance();
+    const dspRt = dsp.getBlackoutRuntime(layer.id, nodeId);
+    const baseCursorX = dsp.getMidiOverride(layer.id, nodeId, 'cursorX') ?? ef.cursorX ?? 0.5;
+    const baseCursorY = dsp.getMidiOverride(layer.id, nodeId, 'cursorY') ?? ef.cursorY ?? 0.5;
+    const densityCvTrim = this.getSignalValue(layer, nodeId, 'density_cv', 0);
+    const rampActive = (ef.rampMode ?? 'off') !== 'off' && dspRt !== null;
+    const modDensity = rampActive
+      ? Math.max(0, Math.min(1, dspRt.progressiveDensity + densityCvTrim))
+      : Math.max(0, Math.min(1, this.getEffectiveParam(layer, nodeId, 'density_cv', ef.density ?? 0.62, timeSec)));
+    const modCursorX = Math.max(0, Math.min(1, this.getEffectiveParam(layer, nodeId, 'cursor_x_cv', baseCursorX, timeSec)));
+    const modCursorY = Math.max(0, Math.min(1, this.getEffectiveParam(layer, nodeId, 'cursor_y_cv', baseCursorY, timeSec)));
+    const modRadius = Math.max(0.05, Math.min(1.3, this.getEffectiveParam(layer, nodeId, 'radius_cv', ef.radius ?? 0.35, timeSec)));
+    const modJitter = Math.max(0, Math.min(1.5, this.getEffectiveParam(layer, nodeId, 'jitter_cv', 0, timeSec)));
+    const modFontSize = Math.max(18, Math.min(96, this.getEffectiveParam(layer, nodeId, 'fontSize' as any, ef.fontSize ?? 40, timeSec)));
+
+    const atlasLayout = BlackoutRenderer.getInstance().buildWordAtlasAndLayout(texKey, rawText, {
+      punctuationMode: ef.punctuationMode ?? 'attached',
+      fontFamily: ef.fontFamily ?? 'typewriter',
+      fontSize: modFontSize,
+      lineHeight: ef.lineHeight ?? 1.45,
+      layoutMode: ef.layoutMode ?? 'editorial',
+      width: w,
+      height: h,
+      seed: ef.seed ?? 1,
+    });
+
+    let atlasTex = this.blackoutAtlasTex[texKey];
+    let needAtlasUpload = atlasLayout.dirty;
+    if (!atlasTex || atlasTex.width !== atlasLayout.atlasW || atlasTex.height !== atlasLayout.atlasH) {
+      if (atlasTex) atlasTex.destroy();
+      atlasTex = this.device.createTexture({
+        size: [atlasLayout.atlasW, atlasLayout.atlasH],
+        format: 'rgba8unorm',
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+      });
+      this.blackoutAtlasTex[texKey] = atlasTex;
+      needAtlasUpload = true;
+    }
+    if (needAtlasUpload) {
+      this.device.queue.copyExternalImageToTexture(
+        { source: atlasLayout.canvas },
+        { texture: atlasTex },
+        [atlasLayout.atlasW, atlasLayout.atlasH]
+      );
+    }
+
+    let rt = this.blackoutWordRuntime.get(texKey);
+    const curTextGen = dspRt?.textGeneration ?? 0;
+    if (!rt) {
+      rt = { conceal: new Float32Array(MAX_BLACKOUT_WORDS), lastTime: timeSec, lastTextGen: curTextGen };
+      this.blackoutWordRuntime.set(texKey, rt);
+    }
+    if (rt.lastTextGen !== curTextGen) {
+      rt.conceal.fill(0);
+      rt.lastTextGen = curTextGen;
+    }
+    const dt = Math.max(0.001, Math.min(0.08, timeSec - rt.lastTime));
+    rt.lastTime = timeSec;
+
+    const dispatcher = SignalDispatcher.getInstance();
+    const flashAmount = dspRt?.flashEnvelope ?? 0;
+
+    const placements = atlasLayout.placements;
+    const wordCount = Math.min(MAX_BLACKOUT_WORDS, placements.length);
+    const wordDurMs = dspRt?.wordDurationMs ?? (ef.wordDurationMs ?? 400);
+    const wordDurSec = Math.max(0.015, wordDurMs / 1000);
+    const maxStep = Math.min(1.0, dt / wordDurSec);
+
+    let survivorCount = 0;
+    const evalParams = {
+      selectionMode: ef.selectionMode ?? 'entropy',
+      density: modDensity,
+      seed: ef.seed ?? 1,
+      lengthBias: ef.lengthBias ?? 0.25,
+      softness: ef.softness ?? 0.25,
+      invertMask: !!ef.invertMask,
+      ignorePins: !!ef.ignorePins,
+      cursorX: modCursorX,
+      cursorY: modCursorY,
+      radius: modRadius,
+      flashAmount,
+    };
+
+    for (let i = 0; i < wordCount; i++) {
+      const pl = placements[i];
+      const tgt = evaluateWordTargetConcealment(pl.token, pl.cx, pl.cy, wordCount, evalParams);
+      const diff = tgt - rt.conceal[i];
+      if (Math.abs(diff) <= maxStep) {
+        rt.conceal[i] = tgt;
+      } else {
+        rt.conceal[i] += Math.sign(diff) * maxStep;
+      }
+      if (rt.conceal[i] < 0.5) survivorCount += 1;
+    }
+    dispatcher.reportBlackoutStats(layer.id, nodeId, survivorCount, wordCount);
+
+    // Pack GPU WordInstance buffer (12 floats per word)
+    const instanceBufSize = Math.max(48, MAX_BLACKOUT_WORDS * 48);
+    const instBuf = this.getStorageBuffer(`${texKey}.blackout_instances`, instanceBufSize);
+    const instData = new Float32Array(Math.max(12, wordCount * 12));
+    for (let i = 0; i < wordCount; i++) {
+      const pl = placements[i];
+      const cVal = rt.conceal[i];
+      const seedHash = hashBlackoutWord(i, ef.seed ?? 1, pl.token.text);
+      const base = i * 12;
+      instData[base + 0] = pl.x;
+      instData[base + 1] = pl.y;
+      instData[base + 2] = pl.w;
+      instData[base + 3] = pl.h;
+      instData[base + 4] = pl.u0;
+      instData[base + 5] = pl.v0;
+      instData[base + 6] = pl.u1;
+      instData[base + 7] = pl.v1;
+      instData[base + 8] = cVal;
+      instData[base + 9] = seedHash;
+      instData[base + 10] = styleId === 6 ? (seedHash - 0.5) * 0.14 : styleId === 4 ? (seedHash - 0.5) * 0.04 : 0;
+      const bridgeRight =
+        (styleId === 4 || styleId === 5 || styleId === 6) &&
+        pl.sameLineAsNext &&
+        cVal > 0.35 &&
+        i + 1 < wordCount &&
+        rt.conceal[i + 1] > 0.35
+          ? pl.gapToNextNorm
+          : 0;
+      instData[base + 11] = bridgeRight;
+    }
+    if (wordCount > 0) {
+      this.device.queue.writeBuffer(instBuf, 0, instData);
+    }
+
+    // Pass 1: Render instanced per-word semantic RGBA plate
+    const plateTex = this.ensureTexture(nodeId, 'blackout_plate');
+    const wordsUniformBuf = this.getUniformBuffer(`${texKey}.blackout_words_u`, 32);
+    const wu = new Float32Array(8);
+    wu[0] = aspect;
+    wu[1] = timeSec;
+    wu[2] = styleId;
+    wu[3] = ef.styleIntensity ?? 0.6;
+    wu[4] = ef.softness ?? 0.25;
+    wu[5] = modJitter;
+    this.device.queue.writeBuffer(wordsUniformBuf, 0, wu);
+
+    const pass1 = commandEncoder.beginRenderPass({
+      colorAttachments: [{
+        view: plateTex.createView(),
+        clearValue: { r: 0, g: 0, b: 0, a: 0 },
+        loadOp: 'clear',
+        storeOp: 'store',
+      }],
+    });
+    if (wordCount > 0) {
+      const bg1 = this.device.createBindGroup({
+        layout: this.blackoutWordsPipeline.getBindGroupLayout(0),
+        entries: [
+          { binding: 0, resource: { buffer: wordsUniformBuf } },
+          { binding: 1, resource: { buffer: instBuf } },
+          { binding: 2, resource: atlasTex.createView() },
+          { binding: 3, resource: this.sampler },
+        ],
+      });
+      pass1.setPipeline(this.blackoutWordsPipeline);
+      pass1.setBindGroup(0, bg1);
+      pass1.draw(6, wordCount);
+    }
+    pass1.end();
+
+    // Pass 2: Fullscreen style bloom / paper grain / video_in composite + MRT matte_out
+    const matteTex = this.ensureTexture(nodeId, 'matte_out');
+    const pal = this.getConnectedPalette(layer, nodeId, 'palette_in');
+    const videoInEdge = layer.graph?.edges.find(e => e.toNodeId === nodeId && e.toPort === 'video_in');
+    const videoInTex = videoInEdge ? this.getTextureForNode(videoInEdge.fromNodeId, videoInEdge.fromPort) : null;
+
+    const compBuf = this.getUniformBuffer(`${texKey}.blackout_comp_u`, 288);
+    const cu = new Float32Array(68);
+    cu[0] = styleId;
+    cu[1] = ef.styleIntensity ?? 0.6;
+    cu[2] = ef.transparentBg
+      ? 0.0
+      : Math.max(0, Math.min(1, this.getEffectiveParam(layer, nodeId, 'paperOpacity' as any, ef.paperOpacity ?? 0.92, timeSec)));
+    cu[3] = timeSec;
+
+    cu[4] = videoInTex ? 1.0 : 0.0;
+    cu[5] = (ef.matteTarget ?? 'surviving') === 'redaction' ? 1.0 : 0.0;
+    cu[6] = aspect;
+    cu[7] = modJitter;
+
+    cu[8] = pal ? 1.0 : 0.0;
+    cu[9] = pal ? pal.count : 0.0;
+    cu[10] = pal ? pal.interpolation : 0.0;
+    cu[11] = ef.invertMask ? 1.0 : 0.0;
+
+    cu.set(ef.paperColor || [0.94, 0.91, 0.84, 1.0], 12);
+    cu.set(ef.textColor || [0.09, 0.09, 0.11, 1.0], 16);
+    cu.set(ef.barColor || [0.05, 0.05, 0.06, 1.0], 20);
+    cu.set(ef.accentColor || [0.96, 0.82, 0.24, 1.0], 24);
+
+    if (pal) {
+      for (let i = 0; i < 8; i++) {
+        cu[28 + i * 4 + 0] = pal.colors[i][0];
+        cu[28 + i * 4 + 1] = pal.colors[i][1];
+        cu[28 + i * 4 + 2] = pal.colors[i][2];
+        cu[28 + i * 4 + 3] = pal.colors[i][3];
+      }
+      for (let i = 0; i < 8; i++) {
+        cu[60 + i] = pal.positions[i];
+      }
+    }
+    this.device.queue.writeBuffer(compBuf, 0, cu);
+
+    const pass2 = commandEncoder.beginRenderPass({
+      colorAttachments: [
+        {
+          view: target.createView(),
+          clearValue: { r: 0, g: 0, b: 0, a: 0 },
+          loadOp: 'clear',
+          storeOp: 'store',
+        },
+        {
+          view: matteTex.createView(),
+          clearValue: { r: 0, g: 0, b: 0, a: 1 },
+          loadOp: 'clear',
+          storeOp: 'store',
+        },
+      ],
+    });
+    const bg2 = this.device.createBindGroup({
+      layout: this.blackoutCompositePipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: compBuf } },
+        { binding: 1, resource: plateTex.createView() },
+        { binding: 2, resource: (videoInTex || this.blankTexture).createView() },
+        { binding: 3, resource: this.sampler },
+      ],
+    });
+    pass2.setPipeline(this.blackoutCompositePipeline);
+    pass2.setBindGroup(0, bg2);
+    pass2.draw(3);
+    pass2.end();
   }
 
   private renderArabesque(

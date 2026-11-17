@@ -4,8 +4,8 @@ import { useEngineStore } from '../../../state/store';
 export function SpokenWordVisualizerUI({
   nodeId,
   layerId,
-  effect: _effect,
-  onUpdate: _onUpdate,
+  effect,
+  onUpdate,
   inputSettings: _inputSettings
 }: {
   nodeId: string;
@@ -71,10 +71,33 @@ export function SpokenWordVisualizerUI({
           <div className="spoken-word-sub-header">Continuous Signals</div>
           {renderMeter('ENV FOLLOW', envVal, envVal.toFixed(3))}
           {renderMeter('CADENCE', cadenceVal, cadenceVal.toFixed(2))}
-          {renderMeter('TIMB BRIGHT', brightnessVal, `${Math.round(brightnessVal)} Hz`, 8000)}
+          {renderMeter('TIMB BRIGHT', brightnessVal, `${Math.round(brightnessVal * 4000)} Hz`, 1)}
           {renderMeter('TIMB FLAT', flatnessVal, flatnessVal.toFixed(3))}
           {renderMeter('SIBILANCE', sibilanceVal, sibilanceVal.toFixed(3))}
           {renderMeter('STABILITY', stabilityVal, stabilityVal.toFixed(2))}
+
+          <div className="spoken-word-sub-header" style={{ marginTop: 4 }}>Fallback Visual</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <select
+              value={effect.renderMode ?? 'Constellation'}
+              onChange={e => onUpdate({ renderMode: e.target.value as any })}
+              style={{ width: '100%', background: '#151515', color: '#18e4f5', border: '1px solid #333', borderRadius: 3, fontSize: 8, fontFamily: 'monospace', padding: '2px 4px', outline: 'none', cursor: 'pointer' }}
+            >
+              <option value="Constellation">Constellation</option>
+              <option value="FlowingRibbon">Flowing Ribbon</option>
+              <option value="RadialWaterfall">Radial Waterfall</option>
+            </select>
+            <select
+              value={effect.colorPalette ?? 'vibrant'}
+              onChange={e => onUpdate({ colorPalette: e.target.value })}
+              style={{ width: '100%', background: '#151515', color: '#d918f5', border: '1px solid #333', borderRadius: 3, fontSize: 8, fontFamily: 'monospace', padding: '2px 4px', outline: 'none', cursor: 'pointer' }}
+            >
+              <option value="vibrant">Vibrant</option>
+              <option value="neon">Neon Cyber</option>
+              <option value="warm">Warm Fire</option>
+              <option value="monochrome">Monochrome Opal</option>
+            </select>
+          </div>
         </div>
 
         <div className="spoken-word-column">

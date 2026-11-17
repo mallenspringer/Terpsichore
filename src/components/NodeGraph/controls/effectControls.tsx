@@ -2179,6 +2179,8 @@ export const EFFECT_ROWS: Record<string, ControlRowDef[]> = {
     }
   ],
   SpeechEnvelopeTracker: [],
+  PoetrySequencer: [],
+  BlackoutPoetry: [],
   VocalPitchTracker: [],
   VowelFormantTracker: [],
   SpokenWordVisualizer: [],

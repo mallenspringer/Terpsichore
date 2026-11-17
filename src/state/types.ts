@@ -194,6 +194,9 @@ export interface AudioInputSource {
   deviceId: string;
   volume: number;
   muted: boolean;
+  gateEnabled?: boolean;
+  gateThresholdDb?: number;
+  gateMode?: 'voice' | 'music';
 }
 
 export interface AudioFileSource {
@@ -616,8 +619,102 @@ export interface SpeechEnvelopeTrackerEffect {
   attackMs: number;
   releaseMs: number;
   sensitivityDb: number;
+  prominenceDb?: number;
+  microGapMs?: number;
   speechContinuous?: boolean;
   silenceContinuous?: boolean;
+}
+
+export type PoetrySequencerCadenceMode = 'breath_resume' | 'breath_pause' | 'syllable' | 'external_trig';
+export type PoetrySequencerEndAction = 'loop' | 'hold' | 'advance_text_bank';
+export type PoetrySequencerCaesuraAction = 'none' | 'step' | 'reset' | 'advance_text_bank';
+
+export type BlackoutStylePreset =
+  | 'fade'
+  | 'dissolve'
+  | 'whiteout_glow'
+  | 'spotlight_negative'
+  | 'sharpie_zine'
+  | 'classified_redact'
+  | 'cutup_collage'
+  | 'acid_erasure'
+  | 'signal_censor';
+
+export type BlackoutSelectionMode = 'entropy' | 'spotlight' | 'walk' | 'glimpse';
+export type BlackoutPunctuationMode = 'attached' | 'strip' | 'preserve';
+export type BlackoutFontFamily = 'typewriter' | 'editorial_serif' | 'brutalist_sans' | 'zine_mono' | 'brush_script';
+export type BlackoutLayoutMode = 'editorial' | 'centered_verse' | 'column';
+export type BlackoutMatteTarget = 'surviving' | 'redaction';
+export type BlackoutRampMode = 'off' | 'once' | 'loop' | 'pingpong';
+
+export interface BlackoutPoetryEffect {
+  id: string;
+  type: 'BlackoutPoetry';
+  layerId: string;
+  localText: string;
+  stylePreset: BlackoutStylePreset;
+  selectionMode: BlackoutSelectionMode;
+  punctuationMode: BlackoutPunctuationMode;
+  density: number;              // 0..1 blackout fraction
+  seed: number;                 // integer entropy seed
+  lengthBias: number;           // -1..1 (favor short vs long surviving words)
+  softness: number;             // 0..1 edge/transition softness
+  styleIntensity: number;       // 0..1 bleed / bloom / grain / CRT intensity
+  transitionSpeed: number;      // legacy 0..1 fallback
+  wordDurationMs?: number;      // 20..3000 ms duration for each individual word blackout animation
+  rampMode?: BlackoutRampMode;  // auto-progressive sweep from rampFloor to rampCeiling
+  rampPaused?: boolean;
+  rampFloor?: number;           // 0..1 start density
+  rampCeiling?: number;         // 0..1 end density
+  rampDurationSec?: number;     // 1..120 sec to sweep floor -> ceiling
+  resetOnCardChange?: boolean;  // reset sweep to rampFloor when card/text changes
+  manualRampResetTrigger?: number;
+  invertMask: boolean;
+  ignorePins: boolean;
+  cursorX: number;              // 0..1 spatial spotlight center X
+  cursorY: number;              // 0..1 spatial spotlight center Y
+  radius: number;               // 0.05..1.2 spatial spotlight radius
+  flashReleaseMs: number;       // 40..2000 ms for Glimpse Flash decay
+  fontFamily: BlackoutFontFamily;
+  fontSize: number;             // 18..96 px ref @ 720p
+  lineHeight: number;           // 1.0..2.2
+  layoutMode: BlackoutLayoutMode;
+  transparentBg?: boolean;      // true = alpha background across all 9 styles
+  paperOpacity: number;         // 0..1 (0 = transparent overlay on video_in/layer)
+  paperColor: [number, number, number, number];
+  textColor: [number, number, number, number];
+  barColor: [number, number, number, number];
+  accentColor: [number, number, number, number];
+  matteTarget: BlackoutMatteTarget;
+  triggerThreshold: number;
+  survivorCount?: number;
+  totalWordCount?: number;
+}
+
+export interface PoetrySequencerEffect {
+  id: string;
+  type: 'PoetrySequencer';
+  layerId: string;
+  localText: string;
+  parseUnit: 'word' | 'line' | 'stanza';
+  revealMode: 'single' | 'accumulate_line' | 'accumulate_stanza';
+  cadenceMode: PoetrySequencerCadenceMode;
+  sensitivityDb: number;
+  prominenceDb: number;
+  lockoutMs: number;
+  microGapMs: number;
+  breathPauseMs: number;
+  caesuraPauseMs: number;
+  endAction: PoetrySequencerEndAction;
+  caesuraAction: PoetrySequencerCaesuraAction;
+  triggerThreshold: number;
+  currentStepIndex?: number;
+  totalSteps?: number;
+  currentText?: string;
+  stepCount?: number;
+  manualStepTrigger?: number;
+  manualPrevTrigger?: number;
+  manualResetTrigger?: number;
 }
 
 export interface VocalPitchTrackerEffect {
@@ -628,6 +725,8 @@ export interface VocalPitchTrackerEffect {
   maxPitchHz: number;
   tolerance: number;
   pitchRangeMode?: 'voice' | 'music';
+  holdOnSilence?: boolean;
+  holdTimeoutMs?: number;
 }
 
 export interface VowelFormantTrackerEffect {
@@ -636,6 +735,8 @@ export interface VowelFormantTrackerEffect {
   layerId: string;
   smoothing: number;
   voiceProfile?: 'universal' | 'baritone_bass' | 'tenor_contralto_alto' | 'mezzo_soprano';
+  holdOnSilence?: boolean;
+  holdTimeoutMs?: number;
 }
 
 export interface SpokenWordVisualizerEffect {
@@ -646,7 +747,7 @@ export interface SpokenWordVisualizerEffect {
   colorPalette: string;
 }
 
-export type SignalType = 'video' | 'audio' | 'modulation' | 'trigger' | 'midi' | 'generic' | 'trajectory' | 'palette' | 'text';
+export type SignalType = 'video' | 'audio' | 'modulation' | 'trigger' | 'midi' | 'generic' | 'trajectory' | 'pitchHz' | 'palette' | 'text';
 
 export interface InterLayerEdge {
   id: string;
@@ -1284,7 +1385,7 @@ export type AnyEffect =
   | LogicGateEffect | TriggeredGateEffect | PatternEffect | KaleidoscopeEffect 
   | SignalMathEffect | SampleAndHoldEffect | StepSequencerEffect | PixelProcessorEffect
   | AudioSourceEffect | OscilloscopeEffect | SpectralSplitterEffect | WaterfallSpectrogramEffect | AudioTransformerEffect | AudioModulatorEffect | AudioGateEffect | AudioToCVEffect
-  | SpeechEnvelopeTrackerEffect | VocalPitchTrackerEffect | VowelFormantTrackerEffect | SpokenWordVisualizerEffect
+  | SpeechEnvelopeTrackerEffect | VocalPitchTrackerEffect | VowelFormantTrackerEffect | SpokenWordVisualizerEffect | PoetrySequencerEffect | BlackoutPoetryEffect
   | CanvasBackgroundEffect | ParticleCloudEffect | ColorPaletteEffect | GrassFieldEffect | ArabesqueEffect | TextMakerEffect | LumaBandsEffect | ChromaBandsEffect | GlyphMapEffect | OutlineEffect | OpticalSensorEffect | BadAnalogEffect | DataMoshEffect | FeedbackProEffect
   | ShapeGeneratorSource | VideoURLSource | VideoFileSource | WebcamCaptureSource | NoiseVideoSource | ColorNoiseSource
   | AudioInputSource | AudioFileSource | SystemAudioSource | ImageLoaderSource | ImageFileSource | ImageCueSource | TextCueSource;
@@ -1295,7 +1396,7 @@ export type EffectType =
   | 'ColorRGB' | 'LumaSplitter' | 'Spawn' | 'Path' | 'Inverter' | 'VideoMixer' | 'AlphaAdjust'
   | 'KeyMixer' | 'VideoMath' | 'UVDisplace'
   | 'LogicGate' | 'TriggeredGate' | 'Pattern' | 'Kaleidoscope' | 'SignalMath' | 'SampleAndHold' | 'StepSequencer' | 'AudioSource' | 'Oscilloscope' | 'SpectralSplitter' | 'WaterfallSpectrogram' | 'PixelProcessor' | 'AudioTransformer' | 'AudioModulator' | 'AudioGate' | 'AudioToCV'
-  | 'SpeechEnvelopeTracker' | 'VocalPitchTracker' | 'VowelFormantTracker' | 'SpokenWordVisualizer'
+  | 'SpeechEnvelopeTracker' | 'VocalPitchTracker' | 'VowelFormantTracker' | 'SpokenWordVisualizer' | 'PoetrySequencer' | 'BlackoutPoetry'
   | 'CanvasBackground' | 'ParticleCloud' | 'ColorPalette' | 'GrassField' | 'Arabesque' | 'TextMaker' | 'LumaBands' | 'ChromaBands' | 'GlyphMap' | 'Outline' | 'OpticalSensor' | 'BadAnalog' | 'DataMosh' | 'FeedbackPro'
   | 'ShapeGenerator' | 'VideoURL' | 'VideoFile' | 'WebcamCapture' | 'NoiseSource' | 'ColorNoise' | 'AudioInput' | 'AudioFile' | 'SystemAudio' | 'ImageLoader' | 'ImageFile' | 'ImageCue' | 'TextCue';
 

@@ -3,7 +3,7 @@ import { PORT_DEFS, SIGNAL_COLORS, PortDef } from './portDefs';
 import { ControlRowDef, RowCtx, EffectCtx } from './moduleControls';
 import { 
   SpawnEffect, StepSequencerEffect, AudioSourceEffect, OscilloscopeEffect, SpectralSplitterEffect, WaterfallSpectrogramEffect,
-  SpeechEnvelopeTrackerEffect, VocalPitchTrackerEffect, VowelFormantTrackerEffect, SpokenWordVisualizerEffect,
+  SpeechEnvelopeTrackerEffect, VocalPitchTrackerEffect, VowelFormantTrackerEffect, SpokenWordVisualizerEffect, PoetrySequencerEffect, BlackoutPoetryEffect,
   AudioGateEffect, ImageCueSource, TextCueSource, TextMakerEffect, LumaBandsEffect, ChromaBandsEffect, GlyphMapEffect
 } from '../../state/types';
 import { useEngineStore } from '../../state/store';
@@ -12,6 +12,8 @@ import {
   Knob,
   SignalMeter,
   SpeechEnvelopeTrackerUI,
+  PoetrySequencerUI,
+  BlackoutNodeUI,
   AudioGateUI,
   VocalPitchTrackerUI,
   VowelFormantTrackerUI,
@@ -691,6 +693,22 @@ export function ModuleNode({
               onUpdate={((rowCtx as EffectCtx).onUpdate as any)}
             />
           )}
+          {moduleType === 'PoetrySequencer' && (
+            <PoetrySequencerUI
+              nodeId={nodeId}
+              layerId={layerId}
+              effect={((rowCtx as EffectCtx).effect as PoetrySequencerEffect)}
+              onUpdate={((rowCtx as EffectCtx).onUpdate as any)}
+            />
+          )}
+          {moduleType === 'BlackoutPoetry' && (
+            <BlackoutNodeUI
+              nodeId={nodeId}
+              layerId={layerId}
+              effect={((rowCtx as EffectCtx).effect as BlackoutPoetryEffect)}
+              onUpdate={((rowCtx as EffectCtx).onUpdate as any)}
+            />
+          )}
           {moduleType === 'AudioGate' && (
             <AudioGateUI
               nodeId={nodeId}
@@ -828,6 +846,8 @@ export function ModuleNode({
           )}
 
           {moduleType !== 'SpeechEnvelopeTracker' &&
+           moduleType !== 'PoetrySequencer' &&
+           moduleType !== 'BlackoutPoetry' &&
            moduleType !== 'AudioGate' &&
            moduleType !== 'VocalPitchTracker' &&
            moduleType !== 'VowelFormantTracker' &&
@@ -858,6 +878,8 @@ export function ModuleNode({
           {/* Expand / collapse footer */}
           {moduleType !== 'StepSequencer' &&
            moduleType !== 'SpeechEnvelopeTracker' &&
+           moduleType !== 'PoetrySequencer' &&
+           moduleType !== 'BlackoutPoetry' &&
            moduleType !== 'AudioGate' &&
            moduleType !== 'VocalPitchTracker' &&
            moduleType !== 'VowelFormantTracker' &&

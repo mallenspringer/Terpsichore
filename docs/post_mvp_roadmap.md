@@ -20,12 +20,18 @@ This document tracks planned features and architectural improvements to be addre
 - **Tauri Native Media Stream Asset Manager (Tier 4)**: Persistent desktop project media rehydration via `convertFileSrc` and automatic web browser fallback.
 - **Image Cue Sampler & Bank Sequencer (`ImageCue`)**: Directory image queue, 8/16 bank pad matrix with 1-click MIDI Note Learn, pop-out drag-and-drop Bank Editor modal, bounded LRU GPU texture cache, and transition shaders.
 - **Grass Field Visualizer (`GrassField`)**: Depth-buffered 3D multi-segment curved grass ribbons (`16,384` instances), coherent 2D spring-damper wind field driven by sub-bass/bass gusts, vocal/instrument band-limited RMS germination & growth (`tenor`/`alto`/`soprano`/`full_mid` with octave tuning & gain), HF spectral-flux cymbal pruning alongside auto lifespan turnover, particle dust dissolve, and Purpletop panicle seedheads.
+- **Arabesque Visualizer (`Arabesque`)**: $C^1$-smooth Euler scrollwork & filigree generator with `1–8` arranged seeds, rolling IOI BPM tempo estimation (`65–175 BPM`) + steep kick/bass velocity surges, phrase-smoothed melodic band curling, HF transient branching, paisley/pinstripe SDF ornamentation, synchronized wave coloring, and independent auto seed-chase vs. transient prune removal.
 
 ---
 
 ## 🎯 Immediate Execution Sequence
 
 Before adding more video synthesis effects, the development sequence is prioritized as follows:
+
+0. **Spoken Word & Performative Typography Pipeline**:
+   - **Audit & Refactor of Vocal Processing Chain**: Fix underlying DSP, envelope/cadence tracking, sample-rate/buffer, port routing, and visualizer bugs across `SpeechEnvelopeTracker`, `VocalPitchTracker`, `VowelFormantTracker`, `SpokenWordVisualizer`, and `AudioEngine`.
+   - **Cadence-Stepped Poetry Sequencer**: Speech-clocked stanza/line/word sequencer synced with `TextCue` / `TextMaker`, using syllable/word-onset cadence detection, silence/breath tension tracking, and MIDI pedal/trigger overrides.
+   - **Blackout / Erasure Poetry Synthesizer**: Live audio-, CV-, and spoken-word-driven page redaction & illumination synthesizer turning loaded prose/text blocks into dynamic blackout/erasure poetry.
 
 1. **Quality of Life (QOL) & Non-Effect Features**:
    - **Rendered Video Pop-out**: External browser pop-out window for output display / secondary projector.
@@ -126,7 +132,12 @@ A ranked bank of candidate video synthesis modules that utilize secondary textur
 - **Physics Engine**: Add mass, gravity, buoyancy, and friction to spawned objects.
 - **Attractors/Repellers**: Modules that influence the movement of all objects on a layer based on spatial coordinates.
 
-### 2. Effects Modules
+### 2. Effects & Performative Spoken-Word Modules
+- **Voice-Shaped Typography ("Elastic Lead Type")**: Split `VowelFormantTracker` / `SpectralTimbreExtractor` / `VocalPitchTracker` across typographic deformation — sibilance edge-shatter (`s`/`sh`/`f`), plosive micro-shockwaves (`p`/`t`/`k`), and sustained vowel weight/width morphing.
+- **Interactive Palimpsest Buffer**: Layered temporal text buffer preserving the crisp present phrase over decaying, analog-degraded historical lines.
+- **Illuminated Marginalia (`Arabesque` + Text Anchors)**: Export anchor coordinates from punctuation, line breaks, and drop caps so `Arabesque` filigree flourishes sprout directly out of written text and unravel between stanzas.
+- **Kinetic "Magnetic Poetry" Physics Stage**: Instanced word/glyph stage driven by acoustic gravity/buoyancy (chest-voice weight vs. high-brightness float) and vocal transient scattering.
+- **Letters as Optical Windows**: High-contrast text mattes wired directly into `KeyMixer` / `UVDisplace` workflows for live footage and generative worlds inside moving letterforms.
 - **Eternal Zoom**: A procedural noise effect that cross-fades octaves during scale changes to create an illusion of infinite inward or outward motion.
 - **Complex and Compound Symmetry**: Advanced tiling and mirroring modules (Kaleidoscopes, Mandalas, and multi-axis reflections).
 - **Outliner**: Stylized edge detection that creates "slabby" or bold outlines at contrast boundaries.

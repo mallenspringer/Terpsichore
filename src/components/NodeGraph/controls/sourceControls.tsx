@@ -1042,6 +1042,59 @@ export const SOURCE_ROWS: Record<string, ControlRowDef[]> = {
     { id: 'volume', label: 'Volume',
       render: ctx => <Slider label="Volume" min={0} max={2} step={0.01} value={src<AudioInputSource>(ctx).volume} onChange={v => chg(ctx)('volume', v)} paramId="volume" ctx={ctx} />
     },
+    { id: 'gateEnabled', label: 'Noise Gate',
+      render: ctx => {
+        const s = src<AudioInputSource>(ctx);
+        const enabled = !!s.gateEnabled;
+        const mode = s.gateMode ?? 'voice';
+        return (
+          <div className="rack-row-content"
+            onPointerDown={e => { if (!(e.target instanceof HTMLInputElement)) e.stopPropagation(); }}
+            onDragStart={e => e.stopPropagation()}
+            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span className="rack-row-label">Noise Gate</span>
+              <input
+                type="checkbox"
+                checked={enabled}
+                onChange={e => { e.stopPropagation(); chg(ctx)('gateEnabled', e.target.checked); }}
+              />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span className="rack-row-label" style={{ opacity: enabled ? 1 : 0.45 }}>Mode</span>
+              <select
+                value={mode}
+                disabled={!enabled}
+                onChange={e => { e.stopPropagation(); chg(ctx)('gateMode', e.target.value as 'voice' | 'music'); }}
+                style={{ opacity: enabled ? 1 : 0.45 }}
+              >
+                <option value="voice">Voice</option>
+                <option value="music">Music</option>
+              </select>
+            </div>
+          </div>
+        );
+      }
+    },
+    { id: 'gateThresholdDb', label: 'Gate Thresh',
+      render: ctx => {
+        const s = src<AudioInputSource>(ctx);
+        return (
+          <Slider
+            label="Gate Thresh (dB)"
+            min={-80}
+            max={0}
+            step={0.5}
+            resetValue={-40}
+            value={s.gateThresholdDb ?? -40}
+            onChange={v => chg(ctx)('gateThresholdDb', v)}
+            paramId="gateThresholdDb"
+            ctx={ctx}
+          />
+        );
+      }
+    },
   ],
 
   AudioFile: [

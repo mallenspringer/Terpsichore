@@ -531,5 +531,43 @@ describe('SignalDispatcher', () => {
       expect(signals['source.ch1_out']).toBeDefined();
       expect(signals['source.ch2_out']).toBeDefined();
     });
+
+    it('should resolve AudioSource.busId for vocal trackers and honor VocalPitchTracker hold-on-silence decay', () => {
+      const state = useEngineStore.getState();
+      const dispatcher = SignalDispatcher.getInstance();
+      const pitchStep = (dispatcher as any).stepVocalPitchState.bind(dispatcher);
+
+      // Direct unit check on hold-on-silence with timed rolloff
+      const active = pitchStep('test_pitch_hold', 220, 0.45, 0.9, 0.35, true, 500, 0.016);
+      expect(active.hz).toBe(220);
+      expect(active.midi).toBe(0.45);
+
+      // Brief silence (16ms < 500ms timeout): must hold pitch
+      const briefGap = pitchStep('test_pitch_hold', 0, 0, 0, 0.35, true, 500, 0.016);
+      expect(briefGap.hz).toBe(220);
+      expect(briefGap.midi).toBe(0.45);
+
+      // Longer pause exceeding holdTimeoutMs: starts rolling off toward 0
+      const afterTimeout = pitchStep('test_pitch_hold', 0, 0, 0, 0.35, true, 500, 0.6);
+      expect(afterTimeout.midi).toBeLessThan(0.45);
+
+      // Instant-drop mode resets immediately
+      const dropInstant = pitchStep('test_pitch_instant', 220, 0.45, 0.9, 0.35, false, 500, 0.016);
+      expect(dropInstant.hz).toBe(220);
+      const afterDrop = pitchStep('test_pitch_instant', 0, 0, 0, 0.35, false, 500, 0.016);
+      expect(afterDrop.hz).toBe(0);
+      expect(afterDrop.midi).toBe(0);
+
+      // Resolve AudioSource busId through graph edge
+      const resolved = (dispatcher as any).resolveAudioBusId(
+        'layer_1',
+        { fromNodeId: 'as_1', fromPort: 'audio_out' },
+        [{ id: 'as_1', type: 'AudioSource', busId: 'layer_voice_bus' } as any]
+      );
+      expect(resolved).toBe('layer_voice_bus');
+
+      // Keep clean layer state for any subsequent test
+      state.updateLayer('layer_1', { effects: [], graph: { edges: [], disconnectedPorts: [] } });
+    });
   });
 });

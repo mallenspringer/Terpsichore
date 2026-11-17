@@ -1,12 +1,14 @@
 import { useEngineStore } from './store';
 import {
-  LayerState, TriggerPadSource, LogicGateEffect, TriggeredGateEffect, InverterEffect,
+  LayerState, TriggerPadSource, AudioInputSource, LogicGateEffect, TriggeredGateEffect, InverterEffect,
   SignalMathEffect, SampleAndHoldEffect, StepSequencerEffect, OscilloscopeEffect,
   SpectralSplitterEffect, AlphaAdjustEffect, AudioTransformerEffect, AudioModulatorEffect,
   AudioGateEffect, SpeechEnvelopeTrackerEffect, VocalPitchTrackerEffect, VowelFormantTrackerEffect,
-  SpokenWordVisualizerEffect, AudioToCVEffect, ColorPaletteEffect, ImageCueSource, TextCueSource,
-  OpticalSensorEffect, FeedbackProEffect
+  SpokenWordVisualizerEffect, PoetrySequencerEffect, BlackoutPoetryEffect, AudioToCVEffect, ColorPaletteEffect, ImageCueSource, TextCueSource,
+  TextMakerEffect, OpticalSensorEffect, FeedbackProEffect
 } from './types';
+import { tokenizePoetry, formatPoetryStep, PoetryToken } from '../utils/poetryUtils';
+import { findConnectedTextCue, stepTextCueCardBy, stepTextCueBankBy } from '../utils/textCueUtils';
 import { AudioEngine } from './AudioEngine';
 import { MidiManager } from './MidiManager';
 import { MediaManager } from '../renderer/MediaManager';
@@ -23,7 +25,7 @@ interface DispatchContext {
 
 export class SignalDispatcher {
   private static instance: SignalDispatcher;
-  
+
   private pipelines: Record<string, SignalFunction[]> = {};
   private interLayerBus: Record<string, number> = {};
 
@@ -44,12 +46,47 @@ export class SignalDispatcher {
   private transformerEnvelopes = new Map<string, number>();
   private latestSignals: Record<string, Record<string, number>> = {};
   private speechStateMap = new Map<string, boolean>();
-  private pitchStateMap = new Map<string, number>();
-  private vowelStateMap = new Map<string, string>();
+  private pitchHoldState = new Map<string, { hz: number; midi: number; lastNoteMidi: number; silenceMs: number }>();
+  private vowelHoldState = new Map<string, { x: number; y: number; f1: number; f2: number; lastZone: string; silenceMs: number; initialized?: boolean }>();
   private audioToCvSmoothed = new Map<string, number>();
   private midiOverrides = new Map<string, number>();
   private imageCueStates = new Map<string, { dirTimer: number; bankTimer: number; intraBankTimer: number; gateTimer: number }>();
   private textCueStates = new Map<string, { bankTimer: number; intraBankTimer: number; gateTimer: number }>();
+  private poetrySeqStates = new Map<string, {
+    currentStepIndex: number;
+    stepCount: number;
+    currentText: string;
+    prevText: string;
+    totalSteps: number;
+    lastTextKey: string;
+    lastManualStep: number;
+    lastManualPrev: number;
+    lastManualReset: number;
+    cadence: number;
+    syllableRateHz: number;
+    pauseTensionCv: number;
+    inSpeech: boolean;
+    silenceDurationMs: number;
+    stepPulseMs: number;
+    caesuraPulseMs: number;
+    tokens: PoetryToken[];
+  }>();
+  private blackoutStates = new Map<string, {
+    flashEnvelope: number;
+    survivorRatio: number;
+    survivorCount: number;
+    totalWordCount: number;
+    lastSourceStepCount: number;
+    lastTextValue: string;
+    rerollPulseMs: number;
+    rampProgress: number;
+    rampDir: 1 | -1;
+    progressiveDensity: number;
+    wordDurationMs: number;
+    textGeneration: number;
+    lastManualRampReset: number;
+    rampDoneLatched: boolean;
+  }>();
 
   private constructor() {
     MidiManager.getInstance().initialize();
@@ -74,6 +111,24 @@ export class SignalDispatcher {
     return this.latestSignals[layerId] || {};
   }
 
+  public getPoetrySequencerRuntime(layerId: string, nodeId: string) {
+    return this.poetrySeqStates.get(`${layerId}.${nodeId}`) ?? null;
+  }
+
+  public getBlackoutRuntime(layerId: string, nodeId: string) {
+    return this.blackoutStates.get(`${layerId}.${nodeId}`) ?? null;
+  }
+
+  public reportBlackoutStats(layerId: string, nodeId: string, survivorCount: number, totalWordCount: number) {
+    const key = `${layerId}.${nodeId}`;
+    const st = this.blackoutStates.get(key);
+    if (st) {
+      st.survivorCount = survivorCount;
+      st.totalWordCount = totalWordCount;
+      st.survivorRatio = totalWordCount > 0 ? survivorCount / totalWordCount : 0;
+    }
+  }
+
   public resolveTargetModuleId(target: any, layer: LayerState): string | null {
     if (!target) return null;
     if (target.type === 'absolute') {
@@ -89,18 +144,159 @@ export class SignalDispatcher {
     return this.midiOverrides.get(`${layerId}.${moduleId}.${paramId}`) ?? null;
   }
 
-  private resolveAudioBusId(layerId: string, edge?: { fromNodeId: string; fromPort?: string }): string {
+  private syncAudioInputGate(ctx: DispatchContext, busId: string, moduleId: string, cfg: AudioInputSource) {
+    const thresholdDb = this.getMidiOverride(ctx.layer.id, moduleId, 'gateThresholdDb') ?? cfg.gateThresholdDb ?? -40;
+    ctx.audioEngine.updateStreamGate?.(busId, {
+      enabled: !!cfg.gateEnabled,
+      thresholdDb,
+      mode: cfg.gateMode || 'voice'
+    });
+  }
+
+  private resolveAudioBusId(
+    layerId: string,
+    edge?: { fromNodeId: string; fromPort?: string },
+    effects?: LayerState['effects']
+  ): string {
     if (!edge) return 'master';
+    if (edge.fromNodeId !== 'source') {
+      const layerEffects = effects ?? useEngineStore.getState().layers[layerId]?.effects;
+      const fromEffect = layerEffects?.find(e => e.id === edge.fromNodeId);
+      if (fromEffect?.type === 'AudioSource') {
+        return (fromEffect as any).busId || 'master';
+      }
+    }
     const baseBusId = edge.fromNodeId === 'source' ? layerId : edge.fromNodeId;
     return (edge.fromPort === 'ch1_out' || edge.fromPort === 'ch2_out')
       ? `${baseBusId}__${edge.fromPort}`
       : baseBusId;
   }
 
+  private stepVocalPitchState(
+    stateKey: string,
+    hz: number,
+    midi: number,
+    confidence: number,
+    tolerance: number,
+    holdOnSilence: boolean,
+    holdTimeoutMs: number,
+    dt: number
+  ) {
+    const state = this.pitchHoldState.get(stateKey) ?? { hz: 0, midi: 0, lastNoteMidi: 0, silenceMs: 0 };
+    const isVoiced = hz > 20 && confidence >= tolerance;
+    let isNoteChange = false;
+
+    if (isVoiced) {
+      const midiNote = 12 * Math.log2(hz / 440) + 69;
+      if (state.lastNoteMidi > 0 && Math.abs(midiNote - state.lastNoteMidi) >= 0.5) {
+        isNoteChange = true;
+      }
+      state.hz = hz;
+      state.midi = midi;
+      state.lastNoteMidi = midiNote;
+      state.silenceMs = 0;
+    } else {
+      state.silenceMs += dt * 1000;
+      if (!holdOnSilence) {
+        state.hz = 0;
+        state.midi = 0;
+        state.lastNoteMidi = 0;
+      } else if (state.silenceMs >= holdTimeoutMs) {
+        const rolloff = 1.0 - Math.exp(-Math.max(0.001, dt) / 0.18);
+        state.midi = state.midi * (1.0 - rolloff);
+        if (state.midi < 0.005) {
+          state.midi = 0;
+          state.hz = 0;
+          state.lastNoteMidi = 0;
+        }
+      }
+    }
+
+    this.pitchHoldState.set(stateKey, state);
+    return { hz: state.hz, midi: state.midi, isNoteChange };
+  }
+
+  private stepVowelFormantState(
+    stateKey: string,
+    formant: { f1: number; f2: number; x: number; y: number; voiced?: boolean },
+    busRms: number | undefined,
+    smoothing: number,
+    holdOnSilence: boolean,
+    holdTimeoutMs: number,
+    dt: number
+  ) {
+    const state = this.vowelHoldState.get(stateKey) ?? {
+      x: 0.5,
+      y: 0.5,
+      f1: 0,
+      f2: 0,
+      lastZone: 'none',
+      silenceMs: 0
+    };
+
+    const getVowelZone = (x: number, y: number): string => {
+      if (x < 0.5) {
+        return y >= 0.5 ? 'Oo' : 'Oh';
+      } else {
+        return y >= 0.5 ? 'Ee' : 'Ah';
+      }
+    };
+
+    const isSilent = (busRms !== undefined && busRms < 0.005) || formant.voiced === false;
+    let isVowelChange = false;
+
+    if (!isSilent) {
+      state.silenceMs = 0;
+      if (!state.initialized) {
+        state.x = formant.x;
+        state.y = formant.y;
+        state.f1 = formant.f1;
+        state.f2 = formant.f2;
+        state.initialized = true;
+      } else {
+        const frameSteps = Math.max(0.05, Math.min(4.0, dt * 60));
+        const alpha = 1.0 - Math.pow(Math.max(0, Math.min(0.99, smoothing)), frameSteps);
+        state.x = state.x + alpha * (formant.x - state.x);
+        state.y = state.y + alpha * (formant.y - state.y);
+        state.f1 = state.f1 === 0 ? formant.f1 : state.f1 + alpha * (formant.f1 - state.f1);
+        state.f2 = state.f2 === 0 ? formant.f2 : state.f2 + alpha * (formant.f2 - state.f2);
+      }
+
+      const currentZone = getVowelZone(state.x, state.y);
+      if (state.lastZone !== 'none' && currentZone !== state.lastZone) {
+        isVowelChange = true;
+      }
+      state.lastZone = currentZone;
+    } else {
+      state.silenceMs += dt * 1000;
+      if (!holdOnSilence) {
+        state.x = 0.5;
+        state.y = 0.5;
+        state.f1 = 0;
+        state.f2 = 0;
+        state.lastZone = 'none';
+        state.initialized = false;
+      } else if (state.silenceMs >= holdTimeoutMs) {
+        const rolloff = 1.0 - Math.exp(-Math.max(0.001, dt) / 0.18);
+        state.x = state.x + rolloff * (0.5 - state.x);
+        state.y = state.y + rolloff * (0.5 - state.y);
+        state.f1 = state.f1 * (1.0 - rolloff);
+        state.f2 = state.f2 * (1.0 - rolloff);
+        if (Math.abs(state.x - 0.5) < 0.01 && Math.abs(state.y - 0.5) < 0.01) {
+          state.lastZone = 'none';
+          state.initialized = false;
+        }
+      }
+    }
+
+    this.vowelHoldState.set(stateKey, state);
+    return { x: state.x, y: state.y, f1: state.f1, f2: state.f2, isVowelChange };
+  }
+
 
   public compileLayer(layer: LayerState) {
     const edges = layer.graph?.edges || [];
-    
+
     const adj: Record<string, string[]> = {};
     const inDegree: Record<string, number> = {};
 
@@ -123,23 +319,67 @@ export class SignalDispatcher {
     });
 
     const sortedNodeIds: string[] = [];
-    while (queue.length > 0) {
-      const u = queue.shift()!;
-      sortedNodeIds.push(u);
-      (adj[u] || []).forEach(v => {
-        inDegree[v]--;
-        if (inDegree[v] === 0) queue.push(v);
+    const sortedSet = new Set<string>();
+    const enqueueZeroes = () => {
+      while (queue.length > 0) {
+        const u = queue.shift()!;
+        if (sortedSet.has(u)) continue;
+        sortedSet.add(u);
+        sortedNodeIds.push(u);
+        (adj[u] || []).forEach(v => {
+          inDegree[v]--;
+          if (inDegree[v] === 0 && !sortedSet.has(v)) queue.push(v);
+        });
+      }
+    };
+
+    enqueueZeroes();
+
+    // Gracefully break remaining graph cycles (e.g. TextCue <-> PoetrySequencer trigger sync loops)
+    // so feedback-connected nodes remain active instead of being dropped.
+    while (sortedNodeIds.length < nodeIds.size) {
+      let bestId: string | null = null;
+      let bestDeg = Infinity;
+      nodeIds.forEach(id => {
+        if (sortedSet.has(id)) return;
+        const deg = inDegree[id] ?? 0;
+        if (deg < bestDeg || (deg === bestDeg && id === 'source')) {
+          bestDeg = deg;
+          bestId = id;
+        }
+      });
+      if (!bestId) break;
+      queue.push(bestId);
+      enqueueZeroes();
+    }
+
+    const nodeRank: Record<string, number> = {};
+    sortedNodeIds.forEach((id, idx) => { nodeRank[id] = idx; });
+
+    const pipeline: SignalFunction[] = [];
+
+    // Seed any cycle back-edges from previous frame's latestSignals (1-frame feedback delay)
+    const backEdges = edges.filter(
+      e => (nodeRank[e.toNodeId] ?? Infinity) <= (nodeRank[e.fromNodeId] ?? -1)
+    );
+    if (backEdges.length > 0) {
+      pipeline.push((ctx: DispatchContext) => {
+        const prevSignals = this.latestSignals[ctx.layer.id] || {};
+        backEdges.forEach(edge => {
+          this.propagateEdgeSignal(ctx, edge, prevSignals[`${edge.fromNodeId}.${edge.fromPort}`] ?? 0);
+        });
       });
     }
 
-    const pipeline: SignalFunction[] = [];
-    
     sortedNodeIds.forEach(nodeId => {
       if (nodeId === 'source') {
         pipeline.push((ctx: DispatchContext, dt: number) => {
           ctx.signalValues['source.video_out'] = 1.0;
           const srcType = ctx.layer.source.type;
           if (srcType === 'AudioInput' || srcType === 'AudioFile' || srcType === 'SystemAudio') {
+            if (srcType === 'AudioInput') {
+              this.syncAudioInputGate(ctx, ctx.layer.id, 'source', ctx.layer.source as AudioInputSource);
+            }
             const peak = ctx.audioEngine.getPeakVolume(ctx.layer.id);
             ctx.signalValues['source.peak_out'] = peak;
             ctx.signalValues['source.audio_out'] = peak;
@@ -160,29 +400,32 @@ export class SignalDispatcher {
         const mod = layer.modulators?.[nodeId];
         if (mod) {
           if (mod.type === 'LFO') {
-          pipeline.push((ctx: DispatchContext, dt: number) => {
-            const lfo = ctx.layer.modulators?.[nodeId] as any;
-            if (!lfo) return;
+            pipeline.push((ctx: DispatchContext, dt: number) => {
+              const lfo = ctx.layer.modulators?.[nodeId] as any;
+              if (!lfo) return;
 
-            const lastPhase = this.lfoPhases[nodeId] ?? 0;
-            let phase = (lastPhase + (lfo.frequency ?? 0) * dt) % 1.0; 
-            this.lfoPhases[nodeId] = phase;
-            
-            // Sync Out (Rising edge on phase reset)
-            ctx.signalValues[`${nodeId}.sync_out`] = (phase < lastPhase) ? 1.0 : 0.0;
+              const lastPhase = this.lfoPhases[nodeId] ?? 0;
+              let phase = (lastPhase + (lfo.frequency ?? 0) * dt) % 1.0;
+              this.lfoPhases[nodeId] = phase;
 
-            let val = 0;
-            switch (lfo.waveform) {
-              case 'sine': val = Math.sin(phase * Math.PI * 2) * 0.5 + 0.5; break;
-              case 'square': val = phase < 0.5 ? 1 : 0; break;
-              case 'triangle': val = phase < 0.5 ? phase * 2 : 2 - phase * 2; break;
-              case 'saw': val = phase; break;
-            }
-            const amplitude = (lfo.amplitude ?? 1.0) + (ctx.signalValues[`${nodeId}.amplitude_cv`] ?? 0);
-            const offset = (lfo.offset ?? 0) + (ctx.signalValues[`${nodeId}.offset_cv`] ?? 0);
-            const finalVal = val * amplitude + offset;
-            ctx.signalValues[`${nodeId}.modulation_out`] = finalVal;
-          });
+              // Sync Out (Rising edge on phase reset)
+              ctx.signalValues[`${nodeId}.sync_out`] = (phase < lastPhase) ? 1.0 : 0.0;
+
+              let val = 0;
+              switch (lfo.waveform) {
+                case 'sine': val = Math.sin(phase * Math.PI * 2) * 0.5 + 0.5; break;
+                case 'square': val = phase < 0.5 ? 1 : 0; break;
+                case 'triangle': val = phase < 0.5 ? phase * 2 : 2 - phase * 2; break;
+                case 'saw': val = phase; break;
+              }
+              if (lfo.bipolar) {
+                val = val * 2.0 - 1.0;
+              }
+              const amplitude = (lfo.amplitude ?? 1.0) + (ctx.signalValues[`${nodeId}.amplitude_cv`] ?? 0);
+              const offset = (lfo.offset ?? 0) + (ctx.signalValues[`${nodeId}.offset_cv`] ?? 0);
+              const finalVal = val * amplitude + offset;
+              ctx.signalValues[`${nodeId}.modulation_out`] = finalVal;
+            });
           } else if (mod.type === 'Noise') {
             pipeline.push((ctx: DispatchContext, dt: number) => {
               const noise = ctx.layer.modulators?.[nodeId] as any;
@@ -239,60 +482,66 @@ export class SignalDispatcher {
 
               const amplitude = (noise.amplitude ?? 1.0) + (ctx.signalValues[`${nodeId}.amplitude_cv`] ?? 0);
               const offset = (noise.offset ?? 0) + (ctx.signalValues[`${nodeId}.offset_cv`] ?? 0);
-              
+
               let v = nState.value;
               if (!noise.bipolar) v = v * 0.5 + 0.5;
-              
+
               ctx.signalValues[`${nodeId}.modulation_out`] = v * amplitude + offset;
             });
           } else if (mod.type === 'TriggerPad') {
-          pipeline.push((ctx: DispatchContext, dt: number) => {
-            const pad = ctx.layer.modulators?.[nodeId] as TriggerPadSource;
-            if (!pad) return;
+            pipeline.push((ctx: DispatchContext, dt: number) => {
+              const pad = ctx.layer.modulators?.[nodeId] as TriggerPadSource;
+              if (!pad) return;
 
-            const stateKey = `${ctx.layer.id}.${nodeId}`;
-            let current = this.triggerPadStates.get(stateKey) ?? 0;
+              const stateKey = `${ctx.layer.id}.${nodeId}`;
+              let current = this.triggerPadStates.get(stateKey) ?? 0;
 
-            if (pad.useEnvelope) {
-              const attack = Math.max(0.001, pad.attack ?? 0.01);
-              const release = Math.max(0.001, pad.release ?? 0.1);
+              if (pad.useEnvelope) {
+                const attack = Math.max(0.001, pad.attack ?? 0.01);
+                const release = Math.max(0.001, pad.release ?? 0.1);
 
-              if (pad.isPressed) {
-                current = Math.min(1.0, current + dt / attack);
+                if (pad.isPressed) {
+                  current = Math.min(1.0, current + dt / attack);
+                } else {
+                  current = Math.max(0.0, current - dt / release);
+                }
               } else {
-                current = Math.max(0.0, current - dt / release);
+                current = pad.isPressed ? 1.0 : 0.0;
               }
-            } else {
-              current = pad.isPressed ? 1.0 : 0.0;
-            }
 
-            this.triggerPadStates.set(stateKey, current);
-            ctx.signalValues[`${nodeId}.trigger_out`] = current;
-          });
-        } else if (mod.type === 'MidiInput') {
-          pipeline.push((ctx: DispatchContext) => {
-            const midi = ctx.layer.modulators?.[nodeId] as any;
-            if (!midi) return;
-            const mgr = MidiManager.getInstance();
-            const channel = midi.channel ?? 'all';
-            const ccNum = midi.ccNumber ?? 7;
-            const div = midi.clockDivision ?? '1/4';
+              this.triggerPadStates.set(stateKey, current);
+              ctx.signalValues[`${nodeId}.trigger_out`] = current;
+            });
+          } else if (mod.type === 'MidiInput') {
+            pipeline.push((ctx: DispatchContext) => {
+              const midi = ctx.layer.modulators?.[nodeId] as any;
+              if (!midi) return;
+              const mgr = MidiManager.getInstance();
+              const channel = midi.channel ?? 'all';
+              const ccNum = midi.ccNumber ?? 7;
+              const div = midi.clockDivision ?? '1/4';
 
-            const noteData = mgr.getNoteData(channel);
-            ctx.signalValues[`${nodeId}.note_out`] = noteData.pitch;
-            ctx.signalValues[`${nodeId}.gate_out`] = noteData.gate ? 1.0 : 0.0;
-            ctx.signalValues[`${nodeId}.velocity_out`] = noteData.velocity;
-            ctx.signalValues[`${nodeId}.cc_out`] = mgr.getCCValue(channel, ccNum);
-            ctx.signalValues[`${nodeId}.clock_out`] = mgr.getClockPulse(div) ? 1.0 : 0.0;
-          });
+              const noteData = mgr.getNoteData(channel);
+              ctx.signalValues[`${nodeId}.note_out`] = noteData.pitch;
+              ctx.signalValues[`${nodeId}.gate_out`] = noteData.gate ? 1.0 : 0.0;
+              ctx.signalValues[`${nodeId}.velocity_out`] = noteData.velocity;
+              ctx.signalValues[`${nodeId}.cc_out`] = mgr.getCCValue(channel, ccNum);
+              ctx.signalValues[`${nodeId}.clock_out`] = mgr.getClockPulse(div) ? 1.0 : 0.0;
+            });
+          }
         }
-      }
 
         const effect = layer.effects.find(e => e.id === nodeId);
         if (effect) {
           if (effect.type === 'AudioInput' || effect.type === 'AudioFile' || effect.type === 'SystemAudio') {
             pipeline.push((ctx: DispatchContext) => {
               const busId = nodeId; // For these effects, the node ID is the bus ID
+              if (effect.type === 'AudioInput') {
+                const ef = ctx.layer.effects.find(e => e.id === nodeId) as AudioInputSource | undefined;
+                if (ef) {
+                  this.syncAudioInputGate(ctx, busId, nodeId, ef);
+                }
+              }
               const bus = ctx.audioEngine.getBusData(busId);
               if (bus) {
                 ctx.signalValues[`${nodeId}.peak_out`] = bus.peak;
@@ -327,6 +576,12 @@ export class SignalDispatcher {
               ctx.signalValues[`${nodeId}.video_out`] = 1.0;
               ctx.signalValues[`${nodeId}.matte_out`] = 1.0;
               ctx.signalValues[`${nodeId}.text_out`] = 1.0;
+            });
+          } else if (effect.type === 'BlackoutPoetry') {
+            pipeline.push((ctx: DispatchContext, dt: number) => {
+              const ef = ctx.layer.effects.find(e => e.id === nodeId) as BlackoutPoetryEffect;
+              if (!ef) return;
+              this.handleBlackoutPoetry(ctx, nodeId, ef, dt);
             });
           } else if (effect.type === 'GlyphMap') {
             pipeline.push((ctx: DispatchContext) => {
@@ -380,20 +635,35 @@ export class SignalDispatcher {
               }
             });
           } else if (effect.type === 'SpeechEnvelopeTracker') {
-            pipeline.push((ctx: DispatchContext) => {
+            pipeline.push((ctx: DispatchContext, dt: number) => {
               const ef = ctx.layer.effects.find(e => e.id === nodeId) as SpeechEnvelopeTrackerEffect;
               if (!ef) return;
 
               const edges = ctx.layer.graph?.edges || [];
               const incomingEdge = edges.find(e => e.toNodeId === nodeId && e.toPort === 'audio_in');
-              const busId = this.resolveAudioBusId(ctx.layer.id, incomingEdge);
+              const busId = this.resolveAudioBusId(ctx.layer.id, incomingEdge, ctx.layer.effects);
 
-              const features = ctx.audioEngine.getSpeechFeatures(busId, ef.attackMs || 10, ef.releaseMs || 150);
+              const attackMs = this.getMidiOverride(ctx.layer.id, nodeId, 'attackMs') ?? ef.attackMs ?? 10;
+              const releaseMs = this.getMidiOverride(ctx.layer.id, nodeId, 'releaseMs') ?? ef.releaseMs ?? 150;
+              const sensitivityDb = this.getMidiOverride(ctx.layer.id, nodeId, 'sensitivityDb') ?? ef.sensitivityDb ?? -40;
+
+              const features = ctx.audioEngine.getSpeechFeatures(
+                busId,
+                attackMs,
+                releaseMs,
+                `${ctx.layer.id}.${nodeId}`,
+                dt,
+                {
+                  sensitivityDb,
+                  prominenceDb: ef.prominenceDb ?? 6,
+                  microGapMs: ef.microGapMs ?? 180
+                }
+              );
               if (features) {
                 ctx.signalValues[`${nodeId}.envelope_out`] = features.envelope;
                 ctx.signalValues[`${nodeId}.cadence_out`] = Math.min(1.0, features.cadence);
 
-                const threshold = Math.pow(10, (ef.sensitivityDb ?? -40) / 20);
+                const threshold = Math.pow(10, sensitivityDb / 20);
                 const isSpeech = features.envelope > threshold;
 
                 const stateKey = `${ctx.layer.id}.${nodeId}`;
@@ -417,106 +687,94 @@ export class SignalDispatcher {
                 this.speechStateMap.set(stateKey, isSpeech);
               }
             });
+          } else if (effect.type === 'PoetrySequencer') {
+            pipeline.push((ctx: DispatchContext, dt: number) => {
+              const ef = ctx.layer.effects.find(e => e.id === nodeId) as PoetrySequencerEffect;
+              if (!ef) return;
+              this.handlePoetrySequencer(ctx, nodeId, ef, dt);
+            });
           } else if (effect.type === 'VocalPitchTracker') {
-            pipeline.push((ctx: DispatchContext) => {
+            pipeline.push((ctx: DispatchContext, dt: number) => {
               const ef = ctx.layer.effects.find(e => e.id === nodeId) as VocalPitchTrackerEffect;
               if (!ef) return;
 
               const edges = ctx.layer.graph?.edges || [];
               const incomingEdge = edges.find(e => e.toNodeId === nodeId && e.toPort === 'audio_in');
-              const busId = this.resolveAudioBusId(ctx.layer.id, incomingEdge);
+              const busId = this.resolveAudioBusId(ctx.layer.id, incomingEdge, ctx.layer.effects);
+
+              const minPitchHz = this.getMidiOverride(ctx.layer.id, nodeId, 'minPitchHz') ?? ef.minPitchHz ?? 80;
+              const maxPitchHz = this.getMidiOverride(ctx.layer.id, nodeId, 'maxPitchHz') ?? ef.maxPitchHz ?? 800;
+              const tolerance = this.getMidiOverride(ctx.layer.id, nodeId, 'tolerance') ?? ef.tolerance ?? 0.35;
+              const holdOnSilence = ef.holdOnSilence ?? true;
+              const holdTimeoutMs = Math.max(0, this.getMidiOverride(ctx.layer.id, nodeId, 'holdTimeoutMs') ?? ef.holdTimeoutMs ?? 600);
 
               const features = ctx.audioEngine.getPitchFeatures(
-                busId, 
-                ef.minPitchHz || 80, 
-                ef.maxPitchHz || 800,
-                ef.pitchRangeMode || 'voice'
+                busId,
+                minPitchHz,
+                maxPitchHz,
+                ef.pitchRangeMode || 'voice',
+                `${ctx.layer.id}.${nodeId}`
               );
               if (features) {
-                ctx.signalValues[`${nodeId}.pitch_hz`] = features.hz;
-                ctx.signalValues[`${nodeId}.pitch_midi`] = features.midi;
-                ctx.signalValues[`${nodeId}.stability`] = features.confidence;
-
                 const stateKey = `${ctx.layer.id}.${nodeId}`;
-                const lastNote = this.pitchStateMap.get(stateKey) ?? 0;
-
-                let isNoteChange = false;
-                if (features.hz > 20 && features.confidence > 0.4) {
-                  const midiNote = 12 * Math.log2(features.hz / 440) + 69;
-                  if (lastNote > 0 && Math.abs(midiNote - lastNote) >= 0.5) {
-                    isNoteChange = true;
-                  }
-                  this.pitchStateMap.set(stateKey, midiNote);
-                } else if (features.hz <= 20) {
-                  this.pitchStateMap.delete(stateKey);
-                }
-
-                ctx.signalValues[`${nodeId}.note_change_trig`] = isNoteChange ? 1.0 : 0.0;
+                const stepped = this.stepVocalPitchState(
+                  stateKey,
+                  features.hz,
+                  features.midi,
+                  features.confidence,
+                  tolerance,
+                  holdOnSilence,
+                  holdTimeoutMs,
+                  dt
+                );
+                ctx.signalValues[`${nodeId}.pitch_hz`] = stepped.hz;
+                ctx.signalValues[`${nodeId}.pitch_midi`] = stepped.midi;
+                ctx.signalValues[`${nodeId}.stability`] = features.confidence;
+                ctx.signalValues[`${nodeId}.note_change_trig`] = stepped.isNoteChange ? 1.0 : 0.0;
               }
             });
           } else if (effect.type === 'VowelFormantTracker') {
-            pipeline.push((ctx: DispatchContext) => {
+            pipeline.push((ctx: DispatchContext, dt: number) => {
               const ef = ctx.layer.effects.find(e => e.id === nodeId) as VowelFormantTrackerEffect;
               if (!ef) return;
 
               const edges = ctx.layer.graph?.edges || [];
               const incomingEdge = edges.find(e => e.toNodeId === nodeId && e.toPort === 'audio_in');
-              const busId = this.resolveAudioBusId(ctx.layer.id, incomingEdge);
+              const busId = this.resolveAudioBusId(ctx.layer.id, incomingEdge, ctx.layer.effects);
 
-              const features = ctx.audioEngine.getFormantFeatures(busId, ef.voiceProfile);
+              const stateKey = `${ctx.layer.id}.${nodeId}`;
+              const features = ctx.audioEngine.getFormantFeatures(busId, ef.voiceProfile, stateKey) as
+                | { f1: number; f2: number; x: number; y: number; voiced?: boolean }
+                | null;
               if (features) {
-                const sm = ef.smoothing ?? 0.8;
-                const prevSignals = this.latestSignals[ctx.layer.id] || {};
-                const prevX = prevSignals[`${nodeId}.vowel_x`] ?? 0.5;
-                const prevY = prevSignals[`${nodeId}.vowel_y`] ?? 0.5;
-
-                const targetX = features.x;
-                const targetY = features.y;
-
-                const curX = prevX * sm + targetX * (1 - sm);
-                const curY = prevY * sm + targetY * (1 - sm);
-
-                ctx.signalValues[`${nodeId}.formant_f1`] = features.f1;
-                ctx.signalValues[`${nodeId}.formant_f2`] = features.f2;
-                ctx.signalValues[`${nodeId}.vowel_x`] = curX;
-                ctx.signalValues[`${nodeId}.vowel_y`] = curY;
-
-                const getVowelZone = (x: number, y: number): string => {
-                  if (x < 0.5) {
-                    return y >= 0.5 ? 'Oo' : 'Oh';
-                  } else {
-                    return y >= 0.5 ? 'Ee' : 'Ah';
-                  }
-                };
-
+                const sm = this.getMidiOverride(ctx.layer.id, nodeId, 'smoothing') ?? ef.smoothing ?? 0.8;
+                const holdOnSilence = ef.holdOnSilence ?? true;
+                const holdTimeoutMs = Math.max(0, this.getMidiOverride(ctx.layer.id, nodeId, 'holdTimeoutMs') ?? ef.holdTimeoutMs ?? 600);
                 const bus = ctx.audioEngine.getBusData(busId);
-                const isSilent = bus ? bus.peak < 0.02 : false;
+                const stepped = this.stepVowelFormantState(stateKey, features, bus?.rms, sm, holdOnSilence, holdTimeoutMs, dt);
 
-                const stateKey = `${ctx.layer.id}.${nodeId}`;
-                const lastZone = this.vowelStateMap.get(stateKey) ?? 'none';
-                const currentZone = isSilent ? 'none' : getVowelZone(curX, curY);
-
-                let isVowelChange = false;
-                if (currentZone !== 'none' && lastZone !== 'none' && currentZone !== lastZone) {
-                  isVowelChange = true;
-                }
-
-                this.vowelStateMap.set(stateKey, currentZone);
-                ctx.signalValues[`${nodeId}.vowel_change_trig`] = isVowelChange ? 1.0 : 0.0;
+                ctx.signalValues[`${nodeId}.formant_f1`] = stepped.f1;
+                ctx.signalValues[`${nodeId}.formant_f2`] = stepped.f2;
+                ctx.signalValues[`${nodeId}.vowel_x`] = stepped.x;
+                ctx.signalValues[`${nodeId}.vowel_y`] = stepped.y;
+                ctx.signalValues[`${nodeId}.vowel_change_trig`] = stepped.isVowelChange ? 1.0 : 0.0;
               }
             });
           } else if (effect.type === 'SpokenWordVisualizer') {
-            pipeline.push((ctx: DispatchContext) => {
+            pipeline.push((ctx: DispatchContext, dt: number) => {
               const ef = ctx.layer.effects.find(e => e.id === nodeId) as SpokenWordVisualizerEffect;
               if (!ef) return;
 
               const edges = ctx.layer.graph?.edges || [];
               const incomingEdge = edges.find(e => e.toNodeId === nodeId && e.toPort === 'audio_in');
-              const busId = this.resolveAudioBusId(ctx.layer.id, incomingEdge);
+              const busId = this.resolveAudioBusId(ctx.layer.id, incomingEdge, ctx.layer.effects);
+              const stateKey = `${ctx.layer.id}.${nodeId}`;
 
-              const speech = ctx.audioEngine.getSpeechFeatures(busId, 10, 150);
-              const pitch = ctx.audioEngine.getPitchFeatures(busId, 80, 800);
-              const formant = ctx.audioEngine.getFormantFeatures(busId);
+              const speech = ctx.audioEngine.getSpeechFeatures(busId, 10, 150, stateKey, dt);
+              const pitch = ctx.audioEngine.getPitchFeatures(busId, 80, 800, 'voice', stateKey);
+              const formant = ctx.audioEngine.getFormantFeatures(busId, 'universal', stateKey) as
+                | { f1: number; f2: number; x: number; y: number; voiced?: boolean }
+                | null;
 
               if (speech && pitch && formant) {
                 ctx.signalValues[`${nodeId}.envelope_out`] = speech.envelope;
@@ -526,60 +784,30 @@ export class SignalDispatcher {
                 ctx.signalValues[`${nodeId}.timbre_flatness`] = speech.timbral.flatness;
                 ctx.signalValues[`${nodeId}.sibilance`] = speech.timbral.sibilance;
 
-                ctx.signalValues[`${nodeId}.pitch_hz`] = pitch.hz;
-                ctx.signalValues[`${nodeId}.pitch_midi`] = pitch.midi;
-                ctx.signalValues[`${nodeId}.stability`] = pitch.confidence;
-
-                ctx.signalValues[`${nodeId}.formant_f1`] = formant.f1;
-                ctx.signalValues[`${nodeId}.formant_f2`] = formant.f2;
-                ctx.signalValues[`${nodeId}.vowel_x`] = formant.x;
-                ctx.signalValues[`${nodeId}.vowel_y`] = formant.y;
-
-                const stateKey = `${ctx.layer.id}.${nodeId}`;
-
-                const threshold = 0.15;
+                const threshold = 0.08;
                 const isSpeech = speech.envelope > threshold;
                 const wasSpeech = this.speechStateMap.get(`${stateKey}.speech`) ?? false;
-                
-                const isOnset = speech.envelope > 0.25 && !wasSpeech;
-                ctx.signalValues[`${nodeId}.onset_pulse`] = isOnset ? 1.0 : 0.0;
 
+                const isOnset = speech.envelope > 0.16 && !wasSpeech;
+                ctx.signalValues[`${nodeId}.onset_pulse`] = isOnset ? 1.0 : 0.0;
                 ctx.signalValues[`${nodeId}.speech_trig`] = (isSpeech && !wasSpeech) ? 1.0 : 0.0;
                 ctx.signalValues[`${nodeId}.silence_trig`] = (!isSpeech && wasSpeech) ? 1.0 : 0.0;
                 this.speechStateMap.set(`${stateKey}.speech`, isSpeech);
 
-                const lastNote = this.pitchStateMap.get(stateKey) ?? 0;
-                let isNoteChange = false;
-                if (pitch.hz > 20 && pitch.confidence > 0.4) {
-                  const midiNote = 12 * Math.log2(pitch.hz / 440) + 69;
-                  if (lastNote > 0 && Math.abs(midiNote - lastNote) >= 0.5) {
-                    isNoteChange = true;
-                  }
-                  this.pitchStateMap.set(stateKey, midiNote);
-                } else if (pitch.hz <= 20) {
-                  this.pitchStateMap.delete(stateKey);
-                }
-                ctx.signalValues[`${nodeId}.note_change_trig`] = isNoteChange ? 1.0 : 0.0;
+                const pStepped = this.stepVocalPitchState(stateKey, pitch.hz, pitch.midi, pitch.confidence, 0.35, true, 600, dt);
+                ctx.signalValues[`${nodeId}.pitch_hz`] = pStepped.hz;
+                ctx.signalValues[`${nodeId}.pitch_midi`] = pStepped.midi;
+                ctx.signalValues[`${nodeId}.stability`] = pitch.confidence;
+                ctx.signalValues[`${nodeId}.note_change_trig`] = pStepped.isNoteChange ? 1.0 : 0.0;
 
-                const getVowelZone = (x: number, y: number): string => {
-                  if (x < 0.5) {
-                    return y >= 0.5 ? 'Oo' : 'Oh';
-                  } else {
-                    return y >= 0.5 ? 'Ee' : 'Ah';
-                  }
-                };
                 const bus = ctx.audioEngine.getBusData(busId);
-                const isSilent = bus ? bus.peak < 0.02 : false;
-                const lastZone = this.vowelStateMap.get(stateKey) ?? 'none';
-                const currentZone = isSilent ? 'none' : getVowelZone(formant.x, formant.y);
-                
-                let isVowelChange = false;
-                if (currentZone !== 'none' && lastZone !== 'none' && currentZone !== lastZone) {
-                  isVowelChange = true;
-                }
-                this.vowelStateMap.set(stateKey, currentZone);
-                ctx.signalValues[`${nodeId}.vowel_change_trig`] = isVowelChange ? 1.0 : 0.0;
-                
+                const vStepped = this.stepVowelFormantState(stateKey, formant, bus?.rms, 0.7, true, 600, dt);
+                ctx.signalValues[`${nodeId}.formant_f1`] = vStepped.f1;
+                ctx.signalValues[`${nodeId}.formant_f2`] = vStepped.f2;
+                ctx.signalValues[`${nodeId}.vowel_x`] = vStepped.x;
+                ctx.signalValues[`${nodeId}.vowel_y`] = vStepped.y;
+                ctx.signalValues[`${nodeId}.vowel_change_trig`] = vStepped.isVowelChange ? 1.0 : 0.0;
+
                 ctx.signalValues[`${nodeId}.video_out`] = 1.0;
               }
             });
@@ -590,7 +818,7 @@ export class SignalDispatcher {
 
               const trigger = ctx.signalValues[`${nodeId}.freeze`] ?? 0;
               const lastTrig = this.lastTriggerVals.get(`${ctx.layer.id}.${nodeId}.freeze`) ?? 0;
-              
+
               // Toggle on rising edge
               if (trigger > 0.5 && lastTrig <= 0.5) {
                 // We use the store to update so the UI stays in sync
@@ -599,7 +827,7 @@ export class SignalDispatcher {
               this.lastTriggerVals.set(`${ctx.layer.id}.${nodeId}.freeze`, trigger);
 
               // Signal that we are active for the renderer
-              ctx.signalValues[`${nodeId}.video_out`] = 1.0; 
+              ctx.signalValues[`${nodeId}.video_out`] = 1.0;
             });
           } else if (effect.type === 'SpectralSplitter') {
             pipeline.push((ctx: DispatchContext) => {
@@ -627,7 +855,7 @@ export class SignalDispatcher {
               const sensitivity = ef.sensitivity ?? 1.0;
               const gain = ef.gain ?? 2.0;
               const stateKey = `${ctx.layer.id}.${nodeId}`;
-              
+
               let state = this.spectralStates.get(stateKey) || { low: 0, lowMid: 0, mid: 0, highMid: 0, high: 0 };
 
               const updateBand = (prev: number, instant: number) => {
@@ -671,7 +899,7 @@ export class SignalDispatcher {
               // 2. Bypass Trigger Logic
               const trigger = ctx.signalValues[`${nodeId}.bypass_cv`] ?? 0;
               const lastTrig = this.lastTriggerVals.get(`${ctx.layer.id}.${nodeId}.bypass_cv`) ?? 0;
-              
+
               if (ef.bypassLatching) {
                 // Toggle on rising edge
                 if (trigger > 0.5 && lastTrig <= 0.5) {
@@ -680,7 +908,7 @@ export class SignalDispatcher {
               } else {
                 // Momentary - bypass while trigger is high
                 if ((trigger > 0.5) !== ef.bypass) {
-                   useEngineStore.getState().updateEffect(ctx.layer.id, nodeId, { bypass: trigger > 0.5 } as any);
+                  useEngineStore.getState().updateEffect(ctx.layer.id, nodeId, { bypass: trigger > 0.5 } as any);
                 }
               }
               this.lastTriggerVals.set(`${ctx.layer.id}.${nodeId}.bypass_cv`, trigger);
@@ -689,7 +917,7 @@ export class SignalDispatcher {
               const filterFreq = (ef.filterFreq || 1000) * Math.pow(2, (ctx.signalValues[`${nodeId}.filter_freq_cv`] || 0) * 2);
               const filterRes = Math.max(0, Math.min(1, (ef.filterResonance || 0) + (ctx.signalValues[`${nodeId}.filter_res_cv`] || 0)));
               const sustain = Math.max(0, Math.min(1, (ef.compSustain || 0) + (ctx.signalValues[`${nodeId}.comp_sustain_cv`] || 0)));
-              
+
               // Mapping Sustain to Thresh/Ratio (Guitar pedal style)
               const compThresh = -sustain * 60;
               const compRatio = 1 + sustain * 19;
@@ -710,11 +938,11 @@ export class SignalDispatcher {
                 const attack = Math.max(0.001, (ef.envelopeAttack || 0.01) * Math.pow(10, (ctx.signalValues[`${nodeId}.env_attack_cv`] || 0) * 2));
                 const release = Math.max(0.001, (ef.envelopeRelease || 0.1) * Math.pow(10, (ctx.signalValues[`${nodeId}.env_release_cv`] || 0) * 2));
                 const target = bus.peak;
-                
+
                 let current = this.transformerEnvelopes.get(nodeId) || 0;
                 const factor = target > current ? dt / attack : dt / release;
                 current += (target - current) * Math.min(1.0, factor);
-                
+
                 this.transformerEnvelopes.set(nodeId, current);
                 ctx.signalValues[`${nodeId}.env_out`] = current;
                 ctx.signalValues[`${nodeId}.audio_out`] = 1.0; // Pass-thru signal
@@ -749,7 +977,7 @@ export class SignalDispatcher {
                 octaveHigh2: Math.max(0, Math.min(1, ef.octaveHigh2 + octaveOffset)),
                 bypass: ef.bypass
               });
-              
+
               ctx.signalValues[`${nodeId}.audio_out`] = 1.0;
             });
           } else if (effect.type === 'AudioGate') {
@@ -926,11 +1154,11 @@ export class SignalDispatcher {
               const b = bVal >= threshB;
               let isTrue = false;
               switch (ef.mode) {
-                case 'and':  isTrue = a && b; break;
-                case 'or':   isTrue = a || b; break;
-                case 'xor':  isTrue = a !== b; break;
+                case 'and': isTrue = a && b; break;
+                case 'or': isTrue = a || b; break;
+                case 'xor': isTrue = a !== b; break;
                 case 'nand': isTrue = !(a && b); break;
-                case 'nor':  isTrue = !(a || b); break;
+                case 'nor': isTrue = !(a || b); break;
               }
               ctx.signalValues[`${nodeId}.out`] = isTrue ? 1.0 : 0.0;
             });
@@ -938,17 +1166,17 @@ export class SignalDispatcher {
             pipeline.push((ctx: DispatchContext) => {
               const ef = ctx.layer.effects.find(e => e.id === nodeId) as TriggeredGateEffect;
               if (!ef) return;
-              
+
               const sigIn = ctx.signalValues[`${nodeId}.sig_in`] ?? 0;
               const trigger = ctx.signalValues[`${nodeId}.trigger_in`] ?? 0;
               const threshold = ef.threshold ?? 0.5;
               const isActive = trigger >= threshold;
-              
+
               const gateId = `${ctx.layer.id}.${nodeId}`;
               const lastValKey = gateId;
               const lastVal = this.lastTriggerVals.get(lastValKey) ?? 0;
               const wasActive = lastVal >= threshold;
-              
+
               // Internal state management
               let currentActive = this.gateLatchStates.get(gateId) ?? false;
               if (ef.gateMode === 'latch') {
@@ -959,23 +1187,23 @@ export class SignalDispatcher {
               } else {
                 currentActive = isActive;
               }
-              
+
               this.lastTriggerVals.set(lastValKey, trigger);
-              
+
               let gateOpen = currentActive;
               if (ef.defaultState === 'on') {
                 gateOpen = !currentActive;
               }
-              
+
               this.gateOpenStates.set(gateId, !!gateOpen);
-              
+
               // Audio Gating
               const edges = ctx.layer.graph?.edges ?? [];
               const inputEdge = edges.find(e => e.toNodeId === nodeId && e.toPort === 'sig_in');
               if (inputEdge && inputEdge.fromNodeId === 'source') {
                 AudioEngine.getInstance().setModuleMute(ctx.layer.id, !gateOpen);
               }
-              
+
               ctx.signalValues[`${nodeId}.sig_out`] = gateOpen ? sigIn : 0;
             });
           } else if (effect.type === 'SignalMath') {
@@ -1002,7 +1230,7 @@ export class SignalDispatcher {
               if (!sh) return;
               const trigger = ctx.signalValues[`${nodeId}.trigger`] ?? 0;
               const stateKey = `${ctx.layer.id}.${nodeId}`;
-              
+
               const lastManualTime = this.lastTriggerVals.get(`${stateKey}.manual`) ?? 0;
               const currentManualTime = sh.manualTriggerTime ?? 0;
               const isManualRising = currentManualTime > lastManualTime;
@@ -1079,15 +1307,15 @@ export class SignalDispatcher {
               const stateKey = `${ctx.layer.id}.${nodeId}`;
               let state = this.sequencerStates.get(stateKey);
               if (!state) {
-                state = { 
-                  phase: 0, 
-                  currentStep: 0, 
-                  lastGlobalValue: 0, 
-                  lastStepValues: new Array(16).fill(0), 
-                  lastResetManualTime: 0, 
-                  isPaused: false, 
+                state = {
+                  phase: 0,
+                  currentStep: 0,
+                  lastGlobalValue: 0,
+                  lastStepValues: new Array(16).fill(0),
+                  lastResetManualTime: 0,
+                  isPaused: false,
                   directionState: 'up',
-                  lastManualPlayState: ef.playState 
+                  lastManualPlayState: ef.playState
                 };
                 this.sequencerStates.set(stateKey, state);
               }
@@ -1140,7 +1368,7 @@ export class SignalDispatcher {
                   const shuffleAmount = ef.shuffle ?? 0;
                   // Even steps (1, 3, 5...) are delayed
                   const threshold = (state.currentStep % 2 === 1) ? (1.0 + shuffleAmount * 0.5) : (1.0 - shuffleAmount * 0.5);
-                  
+
                   if (state.phase >= threshold) {
                     state.phase -= threshold;
                     advance = true;
@@ -1184,7 +1412,7 @@ export class SignalDispatcher {
               };
 
               const activeStepVal = getProcessedStepVal(state.currentStep);
-              
+
               // Slew Global Out
               state.lastGlobalValue += (activeStepVal - state.lastGlobalValue) * Math.min(1.0, slewFactor);
               ctx.signalValues[`${nodeId}.global_out`] = state.lastGlobalValue;
@@ -1316,42 +1544,13 @@ export class SignalDispatcher {
         }
       }
 
-      const nodeEdges = edges.filter(e => e.fromNodeId === nodeId);
+      const nodeEdges = edges.filter(
+        e => e.fromNodeId === nodeId && (nodeRank[e.toNodeId] ?? Infinity) > (nodeRank[e.fromNodeId] ?? -1)
+      );
       nodeEdges.forEach(edge => {
         pipeline.push((ctx: DispatchContext) => {
-          let rawValue = ctx.signalValues[`${edge.fromNodeId}.${edge.fromPort}`] ?? 0;
-          
-          if (edge.signalType === 'audio' || edge.fromPort === 'audio_out' || edge.fromPort === 'peak_out' || edge.fromPort === 'ch1_out' || edge.fromPort === 'ch2_out') {
-            const busId = this.resolveAudioBusId(ctx.layer.id, edge);
-            rawValue = ctx.audioEngine.getPeakVolume(busId);
-          } else if (edge.signalType === 'video' || edge.toPort === 'map_in' || edge.toPort === 'video_in') {
-            // Video connections carry active video streams without expensive CPU readbacks
-            rawValue = 1.0;
-          } else {
-            const renderer = (window as any).renderer;
-            if (renderer && renderer.latestLumaValues) {
-              const luma = renderer.latestLumaValues[`${edge.fromNodeId}.${edge.fromPort}`];
-              if (luma !== undefined) rawValue = luma;
-            }
-          }
-
-          let processedValue = rawValue;
-          const settings = ctx.layer.inputSettings?.[`${edge.toNodeId}.${edge.toPort}`];
-          if (settings) {
-            let val = rawValue;
-            if (settings.bipolar) processedValue = (val * 2.0) - 1.0;
-            else processedValue = val;
-            processedValue *= settings.amount;
-
-            if (settings.invert) {
-              processedValue = -processedValue;
-            }
-          }
-
-          if (!Number.isNaN(processedValue)) {
-            const targetKey = `${edge.toNodeId}.${edge.toPort}`;
-            ctx.signalValues[targetKey] = (ctx.signalValues[targetKey] ?? 0) + processedValue;
-          }
+          const rawValue = ctx.signalValues[`${edge.fromNodeId}.${edge.fromPort}`] ?? 0;
+          this.propagateEdgeSignal(ctx, edge, rawValue);
         });
       });
     });
@@ -1375,7 +1574,7 @@ export class SignalDispatcher {
   public execute(force = false) {
     const state = useEngineStore.getState();
     const audioEngine = AudioEngine.getInstance();
-    
+
     this.frameCount++;
     const now = performance.now();
     let dt = (now - this.lastTime) / 1000;
@@ -1387,7 +1586,7 @@ export class SignalDispatcher {
     // 2. Resolve MIDI Mappings & Overrides
     this.midiOverrides.clear();
     const shouldCommitToUi = force || (now - this.lastUiCommitTime > this.UI_COMMIT_INTERVAL);
-    
+
     if (state.midiBindings && state.midiBindings.length > 0) {
       Object.values(state.layers).forEach(layer => {
         state.midiBindings.forEach(binding => {
@@ -1397,7 +1596,7 @@ export class SignalDispatcher {
               const paramId = binding.target.paramId;
               const mgr = MidiManager.getInstance();
               let rawVal = 0;
-              
+
               if (binding.midiSource.ccNumber !== undefined) {
                 rawVal = mgr.getCCValue(binding.midiSource.channel, binding.midiSource.ccNumber);
               } else if (binding.midiSource.noteNumber !== undefined) {
@@ -1443,8 +1642,8 @@ export class SignalDispatcher {
       this.noiseStates.clear();
       this.triggerPadStates.clear();
       this.speechStateMap.clear();
-      this.pitchStateMap.clear();
-      this.vowelStateMap.clear();
+      this.pitchHoldState.clear();
+      this.vowelHoldState.clear();
       dt = 0;
     }
 
@@ -1457,24 +1656,24 @@ export class SignalDispatcher {
     layerIds.forEach(layerId => {
       const layer = state.layers[layerId];
       if (!layer) return;
-      
+
       const edgeCount = layer.graph?.edges.length ?? 0;
       const modCount = Object.keys(layer.modulators || {}).length;
       const interCount = state.interLayerEdges.length;
       const settingsHash = JSON.stringify(layer.inputSettings || {});
       const cacheKey = `${layer.id}_${edgeCount}_${layer.effects.length}_${modCount}_${interCount}_${settingsHash}`;
-      
+
       if (!(this as any)[`_cache_${layer.id}`] || (this as any)[`_cache_${layer.id}`] !== cacheKey) {
         this.compileLayer(layer);
         (this as any)[`_cache_${layer.id}`] = cacheKey;
       }
-      
+
       const freshSignals: Record<string, number> = {};
-      
+
       // 1. Pass 1: Sync Audio Engine Muting & Populate inter-layer inputs
       const isLayerAudioMuted = layer.audioMuted || layer.muted;
       audioEngine.setLayerMute(layer.id, !!isLayerAudioMuted);
-      
+
       const isModuleAudioMuted = (layer.source as any).audioMuted || (layer.source as any).muted;
       audioEngine.setModuleMute(layer.id, !!isModuleAudioMuted);
 
@@ -1539,7 +1738,7 @@ export class SignalDispatcher {
         // Trigger can override active state if connected
         const trigger = ctx.signalValues[`${e.id}.trigger_in`] ?? 0;
         const lastTrig = this.lastTriggerVals.get(`${layer.id}.${e.id}`) ?? 0;
-        
+
         if (ef.triggerMode === 'momentary') {
           ef.active = trigger > 0.5;
         } else {
@@ -1558,6 +1757,42 @@ export class SignalDispatcher {
           const ps = sState.isPaused ? 'pause' : 'play';
           if (s.currentStep !== sState.currentStep || s.playState !== ps) {
             state.updateEffect(layer.id, seq.id, { currentStep: sState.currentStep, playState: ps } as any);
+          }
+        }
+      });
+
+      layer.effects.filter(ef => ef.type === 'PoetrySequencer').forEach(seq => {
+        const pState = this.poetrySeqStates.get(`${layer.id}.${seq.id}`);
+        if (pState && shouldCommitToUi) {
+          const p = seq as PoetrySequencerEffect;
+          if (
+            p.currentStepIndex !== pState.currentStepIndex ||
+            p.totalSteps !== pState.totalSteps ||
+            p.currentText !== pState.currentText ||
+            p.stepCount !== pState.stepCount
+          ) {
+            state.updateEffect(layer.id, seq.id, {
+              currentStepIndex: pState.currentStepIndex,
+              totalSteps: pState.totalSteps,
+              currentText: pState.currentText,
+              stepCount: pState.stepCount
+            } as any);
+          }
+        }
+      });
+
+      layer.effects.filter(ef => ef.type === 'BlackoutPoetry').forEach(bp => {
+        const bState = this.blackoutStates.get(`${layer.id}.${bp.id}`);
+        if (bState && shouldCommitToUi) {
+          const b = bp as BlackoutPoetryEffect;
+          if (
+            b.survivorCount !== bState.survivorCount ||
+            b.totalWordCount !== bState.totalWordCount
+          ) {
+            state.updateEffect(layer.id, bp.id, {
+              survivorCount: bState.survivorCount,
+              totalWordCount: bState.totalWordCount
+            } as any);
           }
         }
       });
@@ -1824,11 +2059,17 @@ export class SignalDispatcher {
       }
 
       if (isSource) {
+        const nextSource = { ...ctx.layer.source, ...updates } as any;
         useEngineStore.getState().updateLayer(ctx.layer.id, {
-          source: { ...ctx.layer.source, ...updates } as any
+          source: nextSource
         });
+        ctx.layer = { ...ctx.layer, source: nextSource };
       } else {
         useEngineStore.getState().updateEffect(ctx.layer.id, nodeId, updates as any);
+        ctx.layer = {
+          ...ctx.layer,
+          effects: ctx.layer.effects.map(e => (e.id === nodeId ? { ...e, ...updates } : e)) as any
+        };
       }
     }
 
@@ -2118,11 +2359,17 @@ export class SignalDispatcher {
       };
 
       if (isSource) {
+        const nextSource = { ...ctx.layer.source, ...updates } as any;
         useEngineStore.getState().updateLayer(ctx.layer.id, {
-          source: { ...ctx.layer.source, ...updates } as any
+          source: nextSource
         });
+        ctx.layer = { ...ctx.layer, source: nextSource };
       } else {
         useEngineStore.getState().updateEffect(ctx.layer.id, nodeId, updates as any);
+        ctx.layer = {
+          ...ctx.layer,
+          effects: ctx.layer.effects.map(e => (e.id === nodeId ? { ...e, ...updates } : e)) as any
+        };
       }
     }
 
@@ -2137,6 +2384,458 @@ export class SignalDispatcher {
     ctx.signalValues[`${nodeId}.video_out`] = 1.0;
     const activeBank = updatedBanks[nextBankIndex];
     ctx.signalValues[`${nodeId}.text_out`] = (activeBank?.cards && activeBank.cards.length > 0) ? 1.0 : 0.0;
+  }
+
+  private propagateEdgeSignal(
+    ctx: DispatchContext,
+    edge: { fromNodeId: string; fromPort: string; toNodeId: string; toPort: string; signalType?: string },
+    initialValue: number
+  ) {
+    let rawValue = initialValue;
+
+    if (edge.signalType === 'audio' || edge.fromPort === 'audio_out' || edge.fromPort === 'peak_out' || edge.fromPort === 'ch1_out' || edge.fromPort === 'ch2_out') {
+      const busId = this.resolveAudioBusId(ctx.layer.id, edge);
+      rawValue = ctx.audioEngine.getPeakVolume(busId);
+    } else if (edge.signalType === 'video' || edge.toPort === 'map_in' || edge.toPort === 'video_in') {
+      rawValue = 1.0;
+    } else {
+      const renderer = (window as any).renderer;
+      if (renderer && renderer.latestLumaValues) {
+        const luma = renderer.latestLumaValues[`${edge.fromNodeId}.${edge.fromPort}`];
+        if (luma !== undefined) rawValue = luma;
+      }
+    }
+
+    let processedValue = rawValue;
+    const settings = ctx.layer.inputSettings?.[`${edge.toNodeId}.${edge.toPort}`];
+    if (settings) {
+      if (settings.bipolar) processedValue = (rawValue * 2.0) - 1.0;
+      else processedValue = rawValue;
+      processedValue *= settings.amount;
+      if (settings.invert) processedValue = -processedValue;
+    }
+
+    if (!Number.isNaN(processedValue)) {
+      const targetKey = `${edge.toNodeId}.${edge.toPort}`;
+      ctx.signalValues[targetKey] = (ctx.signalValues[targetKey] ?? 0) + processedValue;
+    }
+  }
+
+  private resolveIncomingText(
+    ctx: DispatchContext,
+    nodeId: string,
+    localFallback: string
+  ): { text: string; sourceStepCount: number; hasExternal: boolean } {
+    const edge = ctx.layer.graph?.edges.find(e => e.toNodeId === nodeId && e.toPort === 'text_in');
+    if (!edge) {
+      return { text: localFallback, sourceStepCount: 0, hasExternal: false };
+    }
+
+    const extractTextCue = (src: TextCueSource) => {
+      const activeBank = src.banks?.[src.activeBankIndex ?? 0];
+      const text = (src.currentText && src.currentText.length > 0)
+        ? src.currentText
+        : (activeBank?.cards?.[activeBank?.activeCardIndex ?? 0]?.text ?? '');
+      return { text, sourceStepCount: src.stepCount ?? 0, hasExternal: true };
+    };
+
+    if (edge.fromNodeId === 'source' && ctx.layer.source.type === 'TextCue') {
+      return extractTextCue(ctx.layer.source as TextCueSource);
+    }
+
+    const upstream = ctx.layer.effects.find(e => e.id === edge.fromNodeId);
+    if (!upstream) return { text: localFallback, sourceStepCount: 0, hasExternal: false };
+    if (upstream.type === 'TextCue') {
+      return extractTextCue(upstream as TextCueSource);
+    }
+    if (upstream.type === 'PoetrySequencer') {
+      const rt = this.poetrySeqStates.get(`${ctx.layer.id}.${upstream.id}`);
+      const p = upstream as PoetrySequencerEffect;
+      return {
+        text: rt?.currentText ?? p.currentText ?? p.localText ?? '',
+        sourceStepCount: rt?.stepCount ?? p.stepCount ?? 0,
+        hasExternal: true
+      };
+    }
+    if (upstream.type === 'TextMaker') {
+      const tm = upstream as TextMakerEffect;
+      return { text: tm.localText ?? '', sourceStepCount: 0, hasExternal: true };
+    }
+
+    return { text: localFallback, sourceStepCount: 0, hasExternal: false };
+  }
+
+  private handlePoetrySequencer(
+    ctx: DispatchContext,
+    nodeId: string,
+    ef: PoetrySequencerEffect,
+    dt: number
+  ) {
+    const stateKey = `${ctx.layer.id}.${nodeId}`;
+    let pState = this.poetrySeqStates.get(stateKey);
+    if (!pState) {
+      pState = {
+        currentStepIndex: Math.max(0, ef.currentStepIndex ?? 0),
+        stepCount: ef.stepCount ?? 0,
+        currentText: ef.currentText ?? '',
+        prevText: '',
+        totalSteps: 0,
+        lastTextKey: '',
+        lastManualStep: ef.manualStepTrigger ?? 0,
+        lastManualPrev: ef.manualPrevTrigger ?? 0,
+        lastManualReset: ef.manualResetTrigger ?? 0,
+        cadence: 0,
+        syllableRateHz: 0,
+        pauseTensionCv: 0,
+        inSpeech: false,
+        silenceDurationMs: 0,
+        stepPulseMs: 0,
+        caesuraPulseMs: 0,
+        tokens: [],
+      };
+      this.poetrySeqStates.set(stateKey, pState);
+    }
+
+    const dtMs = Math.max(0, dt * 1000);
+    pState.stepPulseMs = Math.max(0, pState.stepPulseMs - dtMs);
+    pState.caesuraPulseMs = Math.max(0, pState.caesuraPulseMs - dtMs);
+
+    // 1. Resolve incoming or local text and re-tokenize if text/unit/external card changed
+    const parseUnit = ef.parseUnit ?? 'word';
+    const revealMode = ef.revealMode ?? 'single';
+    const { text: resolvedText, sourceStepCount } = this.resolveIncomingText(ctx, nodeId, ef.localText ?? '');
+    const textKey = `${resolvedText}\0${sourceStepCount}\0${parseUnit}`;
+
+    if (textKey !== pState.lastTextKey) {
+      pState.tokens = tokenizePoetry(resolvedText, parseUnit);
+      pState.totalSteps = pState.tokens.length;
+      const isInitialInit = pState.lastTextKey === '';
+      pState.lastTextKey = textKey;
+      // Preserve loaded step index on initial compile, otherwise rewind to 0 when source text changes
+      pState.currentStepIndex = isInitialInit
+        ? Math.max(0, Math.min(Math.max(0, pState.tokens.length - 1), pState.currentStepIndex))
+        : 0;
+      const nextFormatted = formatPoetryStep(pState.tokens, pState.currentStepIndex, revealMode);
+      if (nextFormatted !== pState.currentText) {
+        pState.prevText = pState.currentText;
+        pState.currentText = nextFormatted;
+        pState.stepCount += 1;
+      }
+    }
+
+    // 2. Analyze audio_in (or master fallback) using A + C cadence tracker
+    const edges = ctx.layer.graph?.edges || [];
+    const incomingAudio = edges.find(e => e.toNodeId === nodeId && e.toPort === 'audio_in');
+    const busId = this.resolveAudioBusId(ctx.layer.id, incomingAudio, ctx.layer.effects);
+
+    const sensitivityDb = this.getMidiOverride(ctx.layer.id, nodeId, 'sensitivityDb') ?? ef.sensitivityDb ?? -38;
+    const prominenceDb = this.getMidiOverride(ctx.layer.id, nodeId, 'prominenceDb') ?? ef.prominenceDb ?? 6;
+    const lockoutMs = this.getMidiOverride(ctx.layer.id, nodeId, 'lockoutMs') ?? ef.lockoutMs ?? 135;
+    const microGapMs = this.getMidiOverride(ctx.layer.id, nodeId, 'microGapMs') ?? ef.microGapMs ?? 180;
+    const breathPauseMs = this.getMidiOverride(ctx.layer.id, nodeId, 'breathPauseMs') ?? ef.breathPauseMs ?? 450;
+    const caesuraPauseMs = this.getMidiOverride(ctx.layer.id, nodeId, 'caesuraPauseMs') ?? ef.caesuraPauseMs ?? 1600;
+
+    const features = ctx.audioEngine.getSpeechFeatures(
+      busId,
+      10,
+      120,
+      stateKey,
+      dt,
+      { sensitivityDb, prominenceDb, lockoutMs, microGapMs, breathPauseMs, caesuraPauseMs }
+    );
+
+    if (features) {
+      pState.cadence = features.cadence;
+      pState.syllableRateHz = features.syllableRateHz ?? 0;
+      pState.pauseTensionCv = features.pauseTensionCv ?? 0;
+      pState.inSpeech = !!features.inSpeech;
+      pState.silenceDurationMs = features.silenceDurationMs ?? 0;
+    } else {
+      pState.cadence = 0;
+      pState.syllableRateHz = 0;
+      pState.pauseTensionCv = 0;
+      pState.inSpeech = false;
+      pState.silenceDurationMs = 0;
+    }
+
+    // 3. Collect manual, external CV, and cadence triggers
+    const thresh = ef.triggerThreshold ?? 0.5;
+
+    const stepTrigVal = ctx.signalValues[`${nodeId}.step_trig`] ?? 0;
+    const lastStepTrig = this.lastTriggerVals.get(`${stateKey}.step_trig`) ?? 0;
+    const isExtStep = stepTrigVal >= thresh && lastStepTrig < thresh;
+    this.lastTriggerVals.set(`${stateKey}.step_trig`, stepTrigVal);
+
+    const prevTrigVal = ctx.signalValues[`${nodeId}.prev_trig`] ?? 0;
+    const lastPrevTrig = this.lastTriggerVals.get(`${stateKey}.prev_trig`) ?? 0;
+    const isExtPrev = prevTrigVal >= thresh && lastPrevTrig < thresh;
+    this.lastTriggerVals.set(`${stateKey}.prev_trig`, prevTrigVal);
+
+    const resetTrigVal = ctx.signalValues[`${nodeId}.reset_trig`] ?? 0;
+    const lastResetTrig = this.lastTriggerVals.get(`${stateKey}.reset_trig`) ?? 0;
+    const isExtReset = resetTrigVal >= thresh && lastResetTrig < thresh;
+    this.lastTriggerVals.set(`${stateKey}.reset_trig`, resetTrigVal);
+
+    const curManualStep = ef.manualStepTrigger ?? 0;
+    const isManualStep = curManualStep > pState.lastManualStep;
+    pState.lastManualStep = curManualStep;
+
+    const curManualPrev = ef.manualPrevTrigger ?? 0;
+    const isManualPrev = curManualPrev > pState.lastManualPrev;
+    pState.lastManualPrev = curManualPrev;
+
+    const curManualReset = ef.manualResetTrigger ?? 0;
+    const isManualReset = curManualReset > pState.lastManualReset;
+    pState.lastManualReset = curManualReset;
+
+    let isCadenceStep = false;
+    if (features) {
+      if (ef.cadenceMode === 'syllable') {
+        isCadenceStep = !!features.syllableOnset;
+      } else if (ef.cadenceMode === 'breath_pause') {
+        isCadenceStep = !!features.breathPauseTrig;
+      } else if (ef.cadenceMode === 'breath_resume') {
+        isCadenceStep = !!features.resumePhraseTrig;
+      }
+    }
+
+    let caesuraBankPulse = false;
+    let isCaesuraStep = false;
+    let isCaesuraReset = false;
+    if (features?.caesuraTrig) {
+      pState.caesuraPulseMs = 180;
+      if (ef.caesuraAction === 'step') isCaesuraStep = true;
+      else if (ef.caesuraAction === 'reset') isCaesuraReset = true;
+      else if (ef.caesuraAction === 'advance_text_bank') caesuraBankPulse = true;
+    }
+
+    // 4. Advance sequencer index cleanly
+    const count = pState.tokens.length;
+    let didStep = false;
+    let bankStepPulse = caesuraBankPulse;
+
+    if (isExtReset || isManualReset || isCaesuraReset) {
+      if (pState.currentStepIndex !== 0) {
+        pState.currentStepIndex = 0;
+        didStep = true;
+      }
+    } else if ((isExtPrev || isManualPrev) && count > 0) {
+      if (pState.currentStepIndex > 0) {
+        pState.currentStepIndex -= 1;
+        didStep = true;
+      } else if (ef.endAction === 'loop') {
+        pState.currentStepIndex = count - 1;
+        didStep = true;
+      }
+    } else if ((isExtStep || isManualStep || isCadenceStep || isCaesuraStep) && count > 0) {
+      if (pState.currentStepIndex + 1 < count) {
+        pState.currentStepIndex += 1;
+        didStep = true;
+      } else if (ef.endAction === 'loop') {
+        pState.currentStepIndex = 0;
+        didStep = true;
+      } else if (ef.endAction === 'advance_text_bank') {
+        bankStepPulse = true;
+        didStep = true;
+      }
+    }
+
+    // Also refresh formatted output if revealMode changed without changing textKey
+    const formatted = formatPoetryStep(pState.tokens, pState.currentStepIndex, revealMode);
+    if (formatted !== pState.currentText || didStep) {
+      pState.prevText = pState.currentText;
+      pState.currentText = formatted;
+      pState.stepCount += 1;
+      pState.stepPulseMs = 140;
+    }
+
+    // 5. Emit outputs
+    ctx.signalValues[`${nodeId}.text_out`] = count > 0 ? 1.0 : 0.0;
+    ctx.signalValues[`${nodeId}.step_out`] = didStep ? 1.0 : 0.0;
+    ctx.signalValues[`${nodeId}.phrase_out`] = (features?.breathPauseTrig || features?.resumePhraseTrig) ? 1.0 : 0.0;
+    ctx.signalValues[`${nodeId}.caesura_out`] = features?.caesuraTrig ? 1.0 : 0.0;
+    ctx.signalValues[`${nodeId}.bank_step_out`] = bankStepPulse ? 1.0 : 0.0;
+    ctx.signalValues[`${nodeId}.cadence_cv`] = pState.cadence;
+    ctx.signalValues[`${nodeId}.progress_cv`] = count > 1
+      ? pState.currentStepIndex / (count - 1)
+      : (count === 1 ? 1.0 : 0.0);
+    ctx.signalValues[`${nodeId}.tension_cv`] = pState.pauseTensionCv;
+  }
+
+  private handleBlackoutPoetry(
+    ctx: DispatchContext,
+    nodeId: string,
+    ef: BlackoutPoetryEffect,
+    dt: number
+  ) {
+    const stateKey = `${ctx.layer.id}.${nodeId}`;
+    let bState = this.blackoutStates.get(stateKey);
+    if (!bState) {
+      const initFloor = Math.max(0, Math.min(1, ef.rampFloor ?? 0));
+      bState = {
+        flashEnvelope: 0,
+        survivorRatio: 0,
+        survivorCount: ef.survivorCount ?? 0,
+        totalWordCount: ef.totalWordCount ?? 0,
+        lastSourceStepCount: 0,
+        lastTextValue: '',
+        rerollPulseMs: 0,
+        rampProgress: 0,
+        rampDir: 1,
+        progressiveDensity: initFloor,
+        wordDurationMs: ef.wordDurationMs ?? 400,
+        textGeneration: 0,
+        lastManualRampReset: ef.manualRampResetTrigger ?? 0,
+        rampDoneLatched: false,
+      };
+      this.blackoutStates.set(stateKey, bState);
+    }
+
+    const dtMs = Math.max(0, dt * 1000);
+    bState.rerollPulseMs = Math.max(0, bState.rerollPulseMs - dtMs);
+
+    const thresh = ef.triggerThreshold ?? 0.5;
+
+    // 1. Independent TextCue card_trig & bank_trig handling (when wired to Text Bank via text_in)
+    const cardTrigVal = ctx.signalValues[`${nodeId}.card_trig`] ?? 0;
+    const lastCardTrig = this.lastTriggerVals.get(`${stateKey}.card_trig`) ?? 0;
+    const isCardRising = cardTrigVal >= thresh && lastCardTrig < thresh;
+    this.lastTriggerVals.set(`${stateKey}.card_trig`, cardTrigVal);
+
+    const bankTrigVal = ctx.signalValues[`${nodeId}.bank_trig`] ?? 0;
+    const lastBankTrig = this.lastTriggerVals.get(`${stateKey}.bank_trig`) ?? 0;
+    const isBankRising = bankTrigVal >= thresh && lastBankTrig < thresh;
+    this.lastTriggerVals.set(`${stateKey}.bank_trig`, bankTrigVal);
+
+    if (isCardRising || isBankRising) {
+      const linked = findConnectedTextCue(ctx.layer, nodeId, 'text_in');
+      if (linked) {
+        const updates = isBankRising
+          ? stepTextCueBankBy(linked.cue, 1)
+          : stepTextCueCardBy(linked.cue, 1, true);
+        if (Object.keys(updates).length > 0) {
+          if (linked.isSource) {
+            const nextSource = { ...ctx.layer.source, ...updates } as any;
+            useEngineStore.getState().updateLayer(ctx.layer.id, { source: nextSource });
+            ctx.layer = { ...ctx.layer, source: nextSource };
+          } else {
+            useEngineStore.getState().updateEffect(ctx.layer.id, linked.nodeId, updates as any);
+            ctx.layer = {
+              ...ctx.layer,
+              effects: ctx.layer.effects.map(e => (e.id === linked.nodeId ? { ...e, ...updates } : e)) as any,
+            };
+          }
+        }
+      }
+    }
+
+    // 2. Entropy reroll trigger & upstream text change detection
+    const entropyVal = ctx.signalValues[`${nodeId}.entropy_trig`] ?? 0;
+    const lastEntropyVal = this.lastTriggerVals.get(`${stateKey}.entropy_trig`) ?? 0;
+    const isEntropyRising = entropyVal >= thresh && lastEntropyVal < thresh;
+    this.lastTriggerVals.set(`${stateKey}.entropy_trig`, entropyVal);
+
+    const incoming = this.resolveIncomingText(ctx, nodeId, ef.localText ?? '');
+    const sourceStepped = incoming.sourceStepCount !== bState.lastSourceStepCount;
+    const textChanged = incoming.text !== bState.lastTextValue;
+    bState.lastSourceStepCount = incoming.sourceStepCount;
+    bState.lastTextValue = incoming.text;
+
+    let didReroll = isEntropyRising || sourceStepped;
+    if (isEntropyRising) {
+      const nextSeed = ((ef.seed ?? 1) % 9999) + 1;
+      useEngineStore.getState().updateEffect(ctx.layer.id, nodeId, { seed: nextSeed } as any);
+      ctx.layer = {
+        ...ctx.layer,
+        effects: ctx.layer.effects.map(e => (e.id === nodeId ? { ...e, seed: nextSeed } : e)) as any,
+      };
+      bState.rerollPulseMs = 140;
+    }
+
+    // 3. Progressive blackout ramp (Floor -> Ceiling) & per-word animation duration (ms + CV)
+    const rampResetVal = ctx.signalValues[`${nodeId}.ramp_reset_trig`] ?? 0;
+    const lastRampReset = this.lastTriggerVals.get(`${stateKey}.ramp_reset_trig`) ?? 0;
+    const isExtRampReset = rampResetVal >= thresh && lastRampReset < thresh;
+    this.lastTriggerVals.set(`${stateKey}.ramp_reset_trig`, rampResetVal);
+
+    const manualRampReset = ef.manualRampResetTrigger ?? 0;
+    const isManualRampReset = manualRampReset > bState.lastManualRampReset;
+    bState.lastManualRampReset = manualRampReset;
+
+    const resetOnCard = ef.resetOnCardChange !== false;
+    const cardTriggeredReset = resetOnCard && (sourceStepped || textChanged);
+
+    if (isExtRampReset || isManualRampReset || cardTriggeredReset) {
+      bState.rampProgress = 0;
+      bState.rampDir = 1;
+      bState.rampDoneLatched = false;
+      bState.textGeneration += 1;
+    }
+
+    const rampMode = ef.rampMode ?? 'off';
+    const rampFloor = Math.max(0, Math.min(1, this.getMidiOverride(ctx.layer.id, nodeId, 'rampFloor') ?? ef.rampFloor ?? 0));
+    const rampCeiling = Math.max(rampFloor, Math.min(1, this.getMidiOverride(ctx.layer.id, nodeId, 'rampCeiling') ?? ef.rampCeiling ?? 0.85));
+    const rampDurSec = Math.max(0.5, this.getMidiOverride(ctx.layer.id, nodeId, 'rampDurationSec') ?? ef.rampDurationSec ?? 12.0);
+    const rampRateCv = ctx.signalValues[`${nodeId}.ramp_rate_cv`] ?? 0;
+    const speedScale = Math.max(0.0, 1.0 + rampRateCv * 2.0);
+
+    let rampDonePulse = false;
+    if (rampMode !== 'off' && !ef.rampPaused && dt > 0 && speedScale > 0) {
+      const deltaProg = (dt / rampDurSec) * speedScale * bState.rampDir;
+      bState.rampProgress += deltaProg;
+
+      if (bState.rampProgress >= 1.0) {
+        if (!bState.rampDoneLatched) {
+          rampDonePulse = true;
+          bState.rampDoneLatched = true;
+        }
+        if (rampMode === 'loop') {
+          bState.rampProgress = bState.rampProgress % 1.0;
+          bState.rampDoneLatched = false;
+        } else if (rampMode === 'pingpong') {
+          bState.rampProgress = 1.0 - (bState.rampProgress - 1.0);
+          bState.rampDir = -1;
+          bState.rampDoneLatched = false;
+        } else {
+          bState.rampProgress = 1.0;
+        }
+      } else if (bState.rampProgress <= 0.0) {
+        if (rampMode === 'pingpong') {
+          bState.rampProgress = Math.min(1.0, -bState.rampProgress);
+          bState.rampDir = 1;
+        } else {
+          bState.rampProgress = 0.0;
+        }
+      }
+    }
+
+    bState.progressiveDensity = rampFloor + (rampCeiling - rampFloor) * Math.max(0, Math.min(1, bState.rampProgress));
+
+    const baseWordDurMs = this.getMidiOverride(ctx.layer.id, nodeId, 'wordDurationMs') ?? ef.wordDurationMs ?? 400;
+    const wordDurCv = ctx.signalValues[`${nodeId}.word_dur_cv`] ?? 0;
+    bState.wordDurationMs = Math.max(20, Math.min(5000, baseWordDurMs + wordDurCv * 1500));
+
+    // 4. Glimpse flash trigger + smooth release envelope
+    const flashVal = ctx.signalValues[`${nodeId}.flash_trig`] ?? 0;
+    const lastFlashVal = this.lastTriggerVals.get(`${stateKey}.flash_trig`) ?? 0;
+    const isFlashRising = flashVal >= thresh && lastFlashVal < thresh;
+    this.lastTriggerVals.set(`${stateKey}.flash_trig`, flashVal);
+
+    if (isFlashRising) {
+      bState.flashEnvelope = 1.0;
+    } else if (bState.flashEnvelope > 0.001) {
+      const releaseSec = Math.max(0.03, (this.getMidiOverride(ctx.layer.id, nodeId, 'flashReleaseMs') ?? ef.flashReleaseMs ?? 320) / 1000);
+      bState.flashEnvelope *= Math.exp(-Math.max(0, dt) / releaseSec);
+      if (bState.flashEnvelope < 0.002) bState.flashEnvelope = 0;
+    }
+
+    // 5. Outputs
+    ctx.signalValues[`${nodeId}.video_out`] = 1.0;
+    ctx.signalValues[`${nodeId}.matte_out`] = 1.0;
+    ctx.signalValues[`${nodeId}.survivor_cv`] = bState.survivorRatio;
+    ctx.signalValues[`${nodeId}.reroll_out`] = didReroll ? 1.0 : 0.0;
+    ctx.signalValues[`${nodeId}.ramp_cv`] = rampMode !== 'off' ? bState.progressiveDensity : (ef.density ?? 0.62);
+    ctx.signalValues[`${nodeId}.ramp_done_out`] = rampDonePulse ? 1.0 : 0.0;
   }
 
 }

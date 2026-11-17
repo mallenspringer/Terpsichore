@@ -332,6 +332,15 @@ export const ALL_MODULES: ModuleEntry[] = [
     tags: ['effect', 'text', 'title', 'titlemaker', 'videonics', 'character', 'generator', 'cg', 'scroll', 'crawl', 'crt', 'ntsc', 'superimpose', 'overlay', 'typography']
   },
   {
+    id: 'BlackoutPoetry',
+    glyph: '⬛',
+    label: 'Blackout',
+    tooltip: 'Blackout & Entropic Erasure Poetry Synthesizer with 9 Visual Styles & Text Bank Controls',
+    category: 'Effects',
+    moduleType: 'effect:BlackoutPoetry',
+    tags: ['effect', 'blackout', 'erasure', 'entropic', 'poetry', 'text', 'redact', 'typography', 'spoken word', 'zine']
+  },
+  {
     id: 'LumaBands',
     glyph: '🥞',
     label: 'Luma Bands',
@@ -629,6 +638,15 @@ export const ALL_MODULES: ModuleEntry[] = [
     category: 'Audio',
     moduleType: 'effect:SpokenWordVisualizer',
     tags: ['vocal', 'console', 'bay', 'routing', 'speech', 'multitrack', 'voice']
+  },
+  {
+    id: 'PoetrySequencer',
+    glyph: '📜',
+    label: 'Poetry Seq',
+    tooltip: 'Cadence-Stepped Poetry Sequencer (Syllables & Caesura Pauses synced with Text Bank)',
+    category: 'Audio',
+    moduleType: 'effect:PoetrySequencer',
+    tags: ['poetry', 'cadence', 'speech', 'syllable', 'caesura', 'sequencer', 'text', 'spoken word', 'voice']
   }
 ];
 

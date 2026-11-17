@@ -1,4 +1,4 @@
-import { TextCueCard, TextCueBankSlot, TextCueSource } from '../state/types';
+import { LayerState, TextCueCard, TextCueBankSlot, TextCueSource } from '../state/types';
 
 export const MAX_TEXT_BANKS = 24;
 export const MAX_CARDS_PER_BANK = 64;
@@ -197,4 +197,107 @@ export function stepTextCueBank(cue: TextCueSource): Partial<TextCueSource> {
     lastStepTime: Date.now(),
     stepCount: (cue.stepCount ?? 0) + 1
   };
+}
+
+/**
+ * Independently steps forward or backward through cards within the active bank
+ * without crossing into other banks when `stayInBank` is true.
+ */
+export function stepTextCueCardBy(
+  cue: TextCueSource,
+  delta: 1 | -1,
+  stayInBank = true
+): Partial<TextCueSource> {
+  if (delta === 1 && !stayInBank) {
+    return stepTextCueCard(cue);
+  }
+  const banks = cue.banks || [];
+  const activeBankIdx = cue.activeBankIndex ?? 0;
+  const curBank = banks[activeBankIdx];
+  if (!curBank || !curBank.cards || curBank.cards.length === 0) {
+    return {};
+  }
+  const count = curBank.cards.length;
+  const prevIdx = curBank.activeCardIndex ?? 0;
+  const nextCardIdx = ((prevIdx + delta) % count + count) % count;
+  const updatedBanks = [...banks];
+  updatedBanks[activeBankIdx] = { ...curBank, activeCardIndex: nextCardIdx };
+  const nextText = curBank.cards[nextCardIdx]?.text ?? '';
+
+  return {
+    activeBankIndex: activeBankIdx,
+    banks: updatedBanks,
+    prevText: cue.currentText ?? '',
+    currentText: nextText,
+    lastStepTime: Date.now(),
+    stepCount: (cue.stepCount ?? 0) + 1
+  };
+}
+
+/**
+ * Independently steps forward or backward across populated banks in a TextCueSource.
+ */
+export function stepTextCueBankBy(cue: TextCueSource, delta: 1 | -1): Partial<TextCueSource> {
+  if (delta === 1 && cue.bankPlaybackOrder === 'shuffle') {
+    return stepTextCueBank(cue);
+  }
+  const banks = cue.banks || [];
+  const currentBankIdx = cue.activeBankIndex ?? 0;
+  const candidates = getPopulatedBankCandidates(cue, banks);
+  if (candidates.length === 0) return {};
+
+  const curPos = candidates.indexOf(currentBankIdx);
+  let nextBankIndex: number;
+  if (curPos === -1) {
+    nextBankIndex = delta > 0 ? candidates[0] : candidates[candidates.length - 1];
+  } else {
+    nextBankIndex = candidates[((curPos + delta) % candidates.length + candidates.length) % candidates.length];
+  }
+
+  const targetBank = banks[nextBankIndex];
+  const nextCard = targetBank?.cards?.[targetBank?.activeCardIndex ?? 0];
+  const nextText = nextCard?.text ?? '';
+
+  return {
+    activeBankIndex: nextBankIndex,
+    prevText: cue.currentText ?? '',
+    currentText: nextText,
+    lastStepTime: Date.now(),
+    stepCount: (cue.stepCount ?? 0) + 1
+  };
+}
+
+/**
+ * Directly selects a specific bank index on a TextCueSource.
+ */
+export function selectTextCueBankIndex(cue: TextCueSource, targetBankIndex: number): Partial<TextCueSource> {
+  const banks = cue.banks || [];
+  const safeIdx = Math.max(0, Math.min(banks.length - 1, targetBankIndex));
+  const targetBank = banks[safeIdx];
+  const card = targetBank?.cards?.[targetBank?.activeCardIndex ?? 0];
+  return {
+    activeBankIndex: safeIdx,
+    prevText: cue.currentText ?? '',
+    currentText: card?.text ?? '',
+    lastStepTime: Date.now(),
+    stepCount: (cue.stepCount ?? 0) + 1
+  };
+}
+
+export function findConnectedTextCue(
+  layer: LayerState | undefined,
+  targetNodeId: string,
+  portName = 'text_in'
+): { nodeId: string; isSource: boolean; cue: TextCueSource } | null {
+  if (!layer) return null;
+  const edge = layer.graph?.edges?.find(e => e.toNodeId === targetNodeId && e.toPort === portName);
+  if (!edge) return null;
+  if (edge.fromNodeId === 'source' && layer.source?.type === 'TextCue') {
+    return { nodeId: 'source', isSource: true, cue: layer.source as TextCueSource };
+  }
+  const fe = layer.effects?.find(e => e.id === edge.fromNodeId);
+  if (fe && fe.type === 'TextCue' && fe.id) {
+    return { nodeId: fe.id, isSource: false, cue: fe as unknown as TextCueSource };
+  }
+  return null;
 }

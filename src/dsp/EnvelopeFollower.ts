@@ -49,6 +49,39 @@ export class EnvelopeFollower {
     return env;
   }
 
+  /**
+   * Advances the envelope once per animation frame (dt-compensated), avoiding
+   * double-integration across overlapping AnalyserNode snapshots and glottal ripple.
+   */
+  public processFrame(inputBuffer: Float32Array, dtSec: number, attackMs: number, releaseMs: number): number {
+    const len = Math.max(1, inputBuffer.length);
+    let sumSq = 0;
+    let sumAbs = 0;
+    for (let i = 0; i < len; i++) {
+      const v = inputBuffer[i];
+      sumAbs += Math.abs(v);
+      sumSq += v * v;
+    }
+    const rms = Math.sqrt(sumSq / len);
+    const avgAbs = sumAbs / len;
+
+    // Update dynamic noise floor from block mean absolute amplitude
+    if (avgAbs < this.noiseFloor) {
+      this.noiseFloor = this.noiseFloor + 0.02 * (avgAbs - this.noiseFloor);
+    } else if (avgAbs < 0.05) {
+      this.noiseFloor = this.noiseFloor + 0.002 * (avgAbs - this.noiseFloor);
+    }
+    this.noiseFloor = Math.max(0.001, Math.min(0.1, this.noiseFloor));
+
+    const safeDt = Math.max(0.001, Math.min(0.1, dtSec));
+    const tauSec = rms > this.lastValue
+      ? Math.max(0.001, attackMs / 1000)
+      : Math.max(0.001, releaseMs / 1000);
+    const coef = 1.0 - Math.exp(-safeDt / tauSec);
+    this.lastValue = this.lastValue + coef * (rms - this.lastValue);
+    return this.lastValue;
+  }
+
   public getNoiseFloor(): number {
     return this.noiseFloor;
   }

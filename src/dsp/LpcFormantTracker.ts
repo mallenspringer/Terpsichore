@@ -3,27 +3,29 @@ interface Complex {
   im: number;
 }
 
-class BiquadLowPass {
+class BiquadFilter {
+  private mode: 'lowpass' | 'highpass';
   private b0 = 0;
   private b1 = 0;
   private b2 = 0;
   private a1 = 0;
   private a2 = 0;
-  
+
   private x1 = 0;
   private x2 = 0;
   private y1 = 0;
   private y2 = 0;
 
-  constructor(cutoff: number, sampleRate: number, Q = 0.7071) {
+  constructor(mode: 'lowpass' | 'highpass', cutoff: number, sampleRate: number, Q = 0.7071) {
+    this.mode = mode;
     const w0 = (2 * Math.PI * cutoff) / sampleRate;
     const cosW0 = Math.cos(w0);
     const sinW0 = Math.sin(w0);
     const alpha = sinW0 / (2 * Q);
 
-    const b0Raw = (1 - cosW0) / 2;
-    const b1Raw = 1 - cosW0;
-    const b2Raw = (1 - cosW0) / 2;
+    const b0Raw = mode === 'lowpass' ? (1 - cosW0) / 2 : (1 + cosW0) / 2;
+    const b1Raw = mode === 'lowpass' ? 1 - cosW0 : -(1 + cosW0);
+    const b2Raw = b0Raw;
     const a0Raw = 1 + alpha;
     const a1Raw = -2 * cosW0;
     const a2Raw = 1 - alpha;
@@ -44,23 +46,33 @@ class BiquadLowPass {
     return y;
   }
 
-  public reset() {
-    this.x1 = 0;
-    this.x2 = 0;
-    this.y1 = 0;
-    this.y2 = 0;
+  public reset(initialSample = 0) {
+    this.x1 = initialSample;
+    this.x2 = initialSample;
+    const steady = this.mode === 'lowpass' ? initialSample : 0;
+    this.y1 = steady;
+    this.y2 = steady;
   }
+}
+
+export interface FormantAnalysisResult {
+  f1: number;
+  f2: number;
+  x: number;
+  y: number;
+  voiced: boolean;
 }
 
 export class LpcFormantTracker {
   private sampleRate: number;
-  private order = 7; // Increased to order 7 to provide degrees of freedom for F1, F2, and F3/glottal tilt
-  private prevSample = 0; // for pre-emphasis
-  private prevF1 = 500;   // for formant frequency smoothing
-  private prevF2 = 1500;  // for formant frequency smoothing
-  private historyBuffer: Float32Array | null = null; // 2-frame rolling history buffer to double window resolution
-  private antiAliasFilter1: BiquadLowPass | null = null;
-  private antiAliasFilter2: BiquadLowPass | null = null;
+  private order = 10; // Order 10 yields up to 5 conjugate formant pole pairs (F1-F4 + spectral tilt)
+  private highPassFilter: BiquadFilter | null = null;
+  private antiAliasFilter1: BiquadFilter | null = null;
+  private antiAliasFilter2: BiquadFilter | null = null;
+  private filteredBuffer = new Float32Array(0);
+  private downsampledBuffer = new Float32Array(0);
+  private preEmpBuffer = new Float32Array(0);
+  private windowedBuffer = new Float32Array(0);
 
   constructor(sampleRate: number) {
     this.sampleRate = sampleRate;
@@ -72,88 +84,88 @@ export class LpcFormantTracker {
   public getFormants(
     buffer: Float32Array,
     profile: 'universal' | 'baritone_bass' | 'tenor_contralto_alto' | 'mezzo_soprano' = 'universal'
-  ): { f1: number; f2: number; x: number; y: number } {
+  ): FormantAnalysisResult {
     const N = buffer.length;
     if (N < 128) {
-      return { f1: 0, f2: 0, x: 0.5, y: 0.5 };
+      return { f1: 0, f2: 0, x: 0.5, y: 0.5, voiced: false };
     }
 
-    // Compute raw buffer RMS to gate out room rumble, hum, and noise floor
+    // Remove DC offset and gate out room rumble, hum, and silence
+    let mean = 0;
+    for (let i = 0; i < N; i++) {
+      mean += buffer[i];
+    }
+    mean /= N;
+
     let sumSq = 0;
     for (let i = 0; i < N; i++) {
-      sumSq += buffer[i] * buffer[i];
+      const ac = buffer[i] - mean;
+      sumSq += ac * ac;
     }
     const rms = Math.sqrt(sumSq / N);
-    if (rms < 0.005) {
-      // Smoothly return to the exact center during silence
-      this.prevF1 = 500;
-      this.prevF2 = 1500;
-      this.historyBuffer = null; // reset history buffer on silence
-      if (this.antiAliasFilter1) this.antiAliasFilter1.reset();
-      if (this.antiAliasFilter2) this.antiAliasFilter2.reset();
-      return { f1: 0, f2: 0, x: 0.5, y: 0.5 };
+    if (rms < 0.004) {
+      return { f1: 0, f2: 0, x: 0.5, y: 0.5, voiced: false };
     }
 
-    // Downsample the signal to ~5 kHz to decouple pitch harmonics from vocal-tract formants
-    const M = Math.max(1, Math.round(this.sampleRate / 5000));
+    // Target ~10 kHz downsample rate (Nyquist ~4.8-5.5 kHz) so upper female/tenor /i/ F2 (up to ~3 kHz) survives cleanly
+    const M = Math.max(1, Math.round(this.sampleRate / 10000));
     const downsampledRate = this.sampleRate / M;
 
-    if (!this.antiAliasFilter1 || !this.antiAliasFilter2) {
+    if (!this.highPassFilter || !this.antiAliasFilter1 || !this.antiAliasFilter2) {
+      // 210 Hz 2nd-order Butterworth HPF strips fundamental F0 proximity boom and low ambient rumble below human F1
+      this.highPassFilter = new BiquadFilter('highpass', 210, this.sampleRate, 0.7071);
       const cutoff = downsampledRate * 0.45;
-      this.antiAliasFilter1 = new BiquadLowPass(cutoff, this.sampleRate, 0.5412);
-      this.antiAliasFilter2 = new BiquadLowPass(cutoff, this.sampleRate, 1.3066);
+      this.antiAliasFilter1 = new BiquadFilter('lowpass', cutoff, this.sampleRate, 0.5412);
+      this.antiAliasFilter2 = new BiquadFilter('lowpass', cutoff, this.sampleRate, 1.3066);
     }
 
-    const filteredBuffer = new Float32Array(N);
+    // AnalyserNode windows overlap asynchronously between frames, so prime & reset biquads per snapshot
+    const x0 = buffer[0] - mean;
+    this.highPassFilter.reset(x0);
+    this.antiAliasFilter1.reset(0);
+    this.antiAliasFilter2.reset(0);
+
+    if (this.filteredBuffer.length !== N) {
+      this.filteredBuffer = new Float32Array(N);
+    }
+    const filteredBuffer = this.filteredBuffer;
     for (let i = 0; i < N; i++) {
-      const val1 = this.antiAliasFilter1.process(buffer[i]);
+      const hp = this.highPassFilter.process(buffer[i] - mean);
+      const val1 = this.antiAliasFilter1.process(hp);
       filteredBuffer[i] = this.antiAliasFilter2.process(val1);
     }
 
-    // Double the analysis window by maintaining a rolling 2-frame history buffer (e.g. 2048 samples).
-    // This provides 46.4ms of audio, allowing the autocorrelation algorithms to resolve low 
-    // formant frequencies (like F1 down to 250Hz) stably and cleanly for any voice pitch.
-    const historyLen = N * 2;
-    let isFirstFrame = false;
-    if (!this.historyBuffer || this.historyBuffer.length !== historyLen) {
-      this.historyBuffer = new Float32Array(historyLen);
-      isFirstFrame = true;
-    }
-
-    if (isFirstFrame) {
-      // Fill the entire history buffer immediately on the first frame (or in unit tests)
-      this.historyBuffer.set(filteredBuffer, 0);
-      this.historyBuffer.set(filteredBuffer, N);
-    } else {
-      // Shift left by 1 frame and insert the new frame at the end
-      this.historyBuffer.copyWithin(0, N);
-      this.historyBuffer.set(filteredBuffer, N);
+    const downsampledN = M > 1 ? Math.floor(N / M) : N;
+    if (downsampledN < this.order + 16) {
+      return { f1: 0, f2: 0, x: 0.5, y: 0.5, voiced: false };
     }
 
     let downsampledBuffer: Float32Array;
-
     if (M > 1) {
-      const newLen = Math.floor(historyLen / M);
-      downsampledBuffer = new Float32Array(newLen);
-      for (let i = 0; i < newLen; i++) {
-        downsampledBuffer[i] = this.historyBuffer![i * M];
+      if (this.downsampledBuffer.length !== downsampledN) {
+        this.downsampledBuffer = new Float32Array(downsampledN);
+      }
+      downsampledBuffer = this.downsampledBuffer;
+      for (let i = 0; i < downsampledN; i++) {
+        downsampledBuffer[i] = filteredBuffer[i * M];
       }
     } else {
-      downsampledBuffer = this.historyBuffer!;
+      downsampledBuffer = filteredBuffer;
     }
-    const downsampledN = downsampledBuffer.length;
 
-    // Step 1: Pre-emphasis filter
-    const preEmp = new Float32Array(downsampledN);
-    let prev = this.prevSample;
-    for (let i = 0; i < downsampledN; i++) {
-      preEmp[i] = downsampledBuffer[i] - 0.3 * prev; // Relaxed pre-emphasis constant to preserve low F1 energy
-      prev = downsampledBuffer[i];
+    // Step 1: Standard vocal pre-emphasis (0.94) to flatten -12 dB/oct glottal spectral tilt so F2/F3 stay crisp
+    if (this.preEmpBuffer.length !== downsampledN) {
+      this.preEmpBuffer = new Float32Array(downsampledN);
+      this.windowedBuffer = new Float32Array(downsampledN);
     }
-    this.prevSample = prev;
+    const preEmp = this.preEmpBuffer;
+    preEmp[0] = downsampledBuffer[0] * 0.06;
+    for (let i = 1; i < downsampledN; i++) {
+      preEmp[i] = downsampledBuffer[i] - 0.94 * downsampledBuffer[i - 1];
+    }
 
     // Step 2: Apply Hamming Window
-    const windowed = new Float32Array(downsampledN);
+    const windowed = this.windowedBuffer;
     for (let i = 0; i < downsampledN; i++) {
       const w = 0.54 - 0.46 * Math.cos((2 * Math.PI * i) / (downsampledN - 1));
       windowed[i] = preEmp[i] * w;
@@ -169,22 +181,21 @@ export class LpcFormantTracker {
       R[k] = sum;
     }
 
-    // Avoid division by zero and check absolute noise floor
     if (R[0] < 1e-15) {
-      return { f1: 0, f2: 0, x: 0.5, y: 0.5 };
+      return { f1: 0, f2: 0, x: 0.5, y: 0.5, voiced: false };
     }
 
-    // Normalize Autocorrelation coefficients to ensure scale invariance.
-    // This allows the tracker to model quiet signals stably and prevents
-    // Levinson-Durbin's absolute error threshold (1e-10) from breaking early.
+    // Normalize Autocorrelation coefficients for scale invariance
     const energy = R[0];
     for (let k = 0; k <= this.order; k++) {
       R[k] /= energy;
     }
 
-    // Step 4: Levinson-Durbin Recursion to solve for LPC coefficients
-    const a = new Float32Array(this.order + 1); // a[0] is unused, a[1..order] are coefficients
-    let E = R[0]; // now exactly 1.0
+    // Step 4: Levinson-Durbin Recursion solving R[i] + sum_{j=1}^{i-1} a[j]*R[i-j] = 0
+    // Whitening filter: A(z) = 1 + a[1] z^-1 + ... + a[P] z^-P
+    const a = new Float32Array(this.order + 1);
+    const nextA = new Float32Array(this.order + 1);
+    let E = R[0];
 
     for (let i = 1; i <= this.order; i++) {
       let sum = 0;
@@ -193,13 +204,11 @@ export class LpcFormantTracker {
       }
       const ki = -(R[i] + sum) / E;
 
-      // Update coefficients
-      const nextA = new Float32Array(this.order + 1);
       nextA[i] = ki;
       for (let j = 1; j < i; j++) {
         nextA[j] = a[j] + ki * a[i - j];
       }
-      
+
       for (let j = 1; j <= i; j++) {
         a[j] = nextA[j];
       }
@@ -208,54 +217,40 @@ export class LpcFormantTracker {
       if (E < 1e-10) break;
     }
 
-    // Step 5: Root Finding via Durand-Kerner Algorithm
-    // Polynomial: P(z) = z^P + c_1 * z^(P-1) + ... + c_P = 0
-    // where c_i = -a[i]
+    // Step 5: Root Finding via Durand-Kerner Algorithm on z^P * A(z) = z^P + a[1]*z^(P-1) + ... + a[P] = 0
     const c = new Float32Array(this.order);
     for (let i = 0; i < this.order; i++) {
-      c[i] = -a[i + 1];
+      c[i] = a[i + 1];
     }
 
     const roots = this.findRoots(c);
 
     // Step 6: Formant Extraction
-    // Convert complex roots to frequencies and filter by bandwidth
     const rawFormants: { freq: number; bandwidth: number }[] = [];
 
     for (const r of roots) {
-      // Roots are complex poles z = u + iv.
-      // We only care about roots in the upper half plane (v > 0) to avoid duplicates
       if (r.im > 0.01) {
-        // frequency = atan2(v, u) * Fs / 2pi
         const freq = (Math.atan2(r.im, r.re) * downsampledRate) / (2 * Math.PI);
-        // Bandwidth is determined by how close the root is to the unit circle:
-        // r_magnitude = sqrt(u^2 + v^2). Bandwidth = -Fs/pi * ln(r_magnitude)
         const mag = Math.sqrt(r.re * r.re + r.im * r.im);
-        
-        // Loosen bounds: We allow mag close to 1.0 (very sharp peaks) and widen search thresholds
-        if (mag > 0.05 && mag < 1.0) {
+
+        if (mag > 0.55 && mag < 1.0) {
           const bw = (-downsampledRate / Math.PI) * Math.log(mag);
-          if (freq >= 150 && freq <= 3200 && bw < 1200) {
+          if (freq >= 220 && freq <= 3400 && bw < 650) {
             rawFormants.push({ freq, bandwidth: bw });
           }
         }
       }
     }
 
-    // Sort formants by frequency
     rawFormants.sort((x, y) => x.freq - y.freq);
 
-    // CRITICAL: Deduplicate very close peaks (within 90Hz).
-    // Often, due to pitch harmonics or split poles, two roots converge to the same spectral peak.
-    // We deduplicate with a tighter threshold (90Hz) so that low-frequency formants which naturally 
-    // sit close together (like F1 and F2 in back-vowels Oo/Oh) are not accidentally merged.
+    // Deduplicate very close split poles (< 90 Hz) keeping sharpest resonance
     const formants: { freq: number; bandwidth: number }[] = [];
     for (const rf of rawFormants) {
       let isDuplicate = false;
       for (const f of formants) {
         if (Math.abs(f.freq - rf.freq) < 90) {
           isDuplicate = true;
-          // Keep the sharper resonance peak (smaller bandwidth)
           if (rf.bandwidth < f.bandwidth) {
             f.freq = rf.freq;
             f.bandwidth = rf.bandwidth;
@@ -268,51 +263,45 @@ export class LpcFormantTracker {
       }
     }
 
-    const targetF1 = formants.length > 0 ? formants[0].freq : 500;
-    const targetF2 = formants.length > 1 ? formants[1].freq : 1500;
+    if (formants.length < 2 || formants[0].freq > 1250) {
+      return { f1: formants[0]?.freq ?? 0, f2: 0, x: 0.5, y: 0.5, voiced: false };
+    }
 
-    // Smooth raw formant frequencies to eliminate frame-to-frame tracking jitter
-    const freqSmooth = 0.85;
-    const f1 = this.prevF1 * freqSmooth + targetF1 * (1 - freqSmooth);
-    const f2 = this.prevF2 * freqSmooth + targetF2 * (1 - freqSmooth);
+    const f1 = formants[0].freq;
+    const f2 = formants[1].freq;
 
-    this.prevF1 = f1;
-    this.prevF2 = f2;
-
-    // Define bounds depending on the chosen voice profile
-    let f1Min = 250;
-    let f1Max = 950;
-    let f2Min = 600;
+    // Log-frequency (Bark-like) bounds per voice profile so Oo/Oh/Ah/Ee land squarely in their quadrants
+    let f1Min = 260;
+    let f1Max = 800;
+    let f2Min = 560;
     let f2Max = 2300;
 
     if (profile === 'baritone_bass') {
-      f1Min = 200;
-      f1Max = 800;
-      f2Min = 500;
-      f2Max = 1800;
+      f1Min = 230;
+      f1Max = 750;
+      f2Min = 520;
+      f2Max = 1950;
     } else if (profile === 'tenor_contralto_alto') {
-      f1Min = 250;
-      f1Max = 1000;
-      f2Min = 600;
-      f2Max = 2100;
+      f1Min = 270;
+      f1Max = 860;
+      f2Min = 580;
+      f2Max = 2250;
     } else if (profile === 'mezzo_soprano') {
       f1Min = 300;
-      f1Max = 1200;
-      f2Min = 700;
-      f2Max = 2500;
+      f1Max = 980;
+      f2Min = 650;
+      f2Max = 2650;
     }
 
-    const f1Range = f1Max - f1Min;
-    const f2Range = f2Max - f2Min;
-
-    const vowelX = Math.max(0, Math.min(1, (f2 - f2Min) / f2Range));
-    const vowelY = Math.max(0, Math.min(1, (f1Max - f1) / f1Range));
+    const vowelX = Math.max(0, Math.min(1, Math.log2(Math.max(f2Min, f2) / f2Min) / Math.log2(f2Max / f2Min)));
+    const vowelY = Math.max(0, Math.min(1, Math.log2(f1Max / Math.min(f1Max, Math.max(f1Min, f1))) / Math.log2(f1Max / f1Min)));
 
     return {
       f1,
       f2,
       x: vowelX,
-      y: vowelY
+      y: vowelY,
+      voiced: true
     };
   }
 

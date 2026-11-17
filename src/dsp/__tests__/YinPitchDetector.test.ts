@@ -69,4 +69,33 @@ describe('YinPitchDetector', () => {
     expect(result.hz).toBe(0);
     expect(result.confidence).toBe(0);
   });
+
+  it('should detect low 65.4 Hz pitch at 48 kHz in 2048-sample buffer and support setRange', () => {
+    const sampleRate = 48000;
+    const detector = new YinPitchDetector(sampleRate, 40, 2000);
+    const buffer = new Float32Array(2048);
+    const targetHz = 65.41; // C2 baritone
+    for (let i = 0; i < buffer.length; i++) {
+      buffer[i] = Math.sin((2 * Math.PI * targetHz * i) / sampleRate);
+    }
+    const lowRes = detector.getPitch(buffer);
+    expect(lowRes.hz).toBeGreaterThan(62);
+    expect(lowRes.hz).toBeLessThan(69);
+    expect(lowRes.confidence).toBeGreaterThan(0.8);
+
+    // Narrowing minPitchHz above target rejects it immediately via setRange
+    detector.setRange(100, 800);
+    const rejected = detector.getPitch(buffer);
+    expect(rejected.hz).toBe(0);
+
+    // Gracefully handles 1024-sample buffers even when minPitchHz is 40 Hz
+    const shortBuf = new Float32Array(1024);
+    for (let i = 0; i < shortBuf.length; i++) {
+      shortBuf[i] = Math.sin((2 * Math.PI * 110 * i) / sampleRate);
+    }
+    detector.setRange(40, 2000);
+    const shortRes = detector.getPitch(shortBuf);
+    expect(shortRes.hz).toBeGreaterThan(105);
+    expect(shortRes.hz).toBeLessThan(115);
+  });
 });

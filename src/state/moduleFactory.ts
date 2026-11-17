@@ -42,6 +42,8 @@ export function isKnownEffectType(type: string): boolean {
     case 'VocalPitchTracker':
     case 'VowelFormantTracker':
     case 'SpokenWordVisualizer':
+    case 'PoetrySequencer':
+    case 'BlackoutPoetry':
     case 'InterLayerOutput':
     case 'InterLayerInput':
     case 'ColorRGB':
@@ -123,7 +125,7 @@ export function createDefaultSource(type: string): AnySource {
     case 'ImageFile':
       return { type: 'ImageFile', fileUrl: "", fileName: "No file selected", objectFit: 'cover' };
     case 'AudioInput':
-      return { type: 'AudioInput', deviceId: "", volume: 1.0, muted: false };
+      return { type: 'AudioInput', deviceId: "", volume: 1.0, muted: false, gateEnabled: false, gateThresholdDb: -40, gateMode: 'voice' };
     case 'AudioFile':
       return { type: 'AudioFile', fileUrl: "", fileName: "No file selected", volume: 1.0, muted: false, loop: true, playState: 'pause', playbackSpeed: 1.0, resetTarget: 'start flag' };
     case 'SystemAudio':
@@ -289,22 +291,94 @@ export function createDefaultEffect(type: string, id: string): AnyEffect {
       attackMs: 10,
       releaseMs: 150,
       sensitivityDb: -40,
+      prominenceDb: 6,
+      microGapMs: 180,
       speechContinuous: false,
       silenceContinuous: false
+    };
+    case 'PoetrySequencer': return {
+      id, type: 'PoetrySequencer',
+      layerId: '',
+      localText: 'The static remembers\nthe shape of every breath\n\nbefore the room falls quiet',
+      parseUnit: 'word',
+      revealMode: 'single',
+      cadenceMode: 'breath_resume',
+      sensitivityDb: -38,
+      prominenceDb: 6,
+      lockoutMs: 135,
+      microGapMs: 180,
+      breathPauseMs: 450,
+      caesuraPauseMs: 1600,
+      endAction: 'advance_text_bank',
+      caesuraAction: 'none',
+      triggerThreshold: 0.5,
+      currentStepIndex: 0,
+      totalSteps: 13,
+      currentText: 'The',
+      stepCount: 0,
+      manualStepTrigger: 0,
+      manualPrevTrigger: 0,
+      manualResetTrigger: 0
+    };
+    case 'BlackoutPoetry': return {
+      id, type: 'BlackoutPoetry',
+      layerId: '',
+      localText: 'When the [signal] enters the empty hall,\nlight [remembers] every word we left\nunder [[classified]] shadows across the glass,\nwaiting for one quiet breath to uncover [what remains].',
+      stylePreset: 'sharpie_zine',
+      selectionMode: 'entropy',
+      punctuationMode: 'attached',
+      density: 0.62,
+      seed: 1,
+      lengthBias: 0.25,
+      softness: 0.25,
+      styleIntensity: 0.6,
+      transitionSpeed: 0.45,
+      wordDurationMs: 400,
+      rampMode: 'off',
+      rampPaused: false,
+      rampFloor: 0.0,
+      rampCeiling: 0.85,
+      rampDurationSec: 12.0,
+      resetOnCardChange: true,
+      manualRampResetTrigger: 0,
+      invertMask: false,
+      ignorePins: false,
+      cursorX: 0.5,
+      cursorY: 0.5,
+      radius: 0.35,
+      flashReleaseMs: 320,
+      fontFamily: 'typewriter',
+      fontSize: 40,
+      lineHeight: 1.45,
+      layoutMode: 'editorial',
+      transparentBg: false,
+      paperOpacity: 0.92,
+      paperColor: [0.94, 0.91, 0.84, 1.0],
+      textColor: [0.09, 0.09, 0.11, 1.0],
+      barColor: [0.05, 0.05, 0.06, 1.0],
+      accentColor: [0.96, 0.82, 0.24, 1.0],
+      matteTarget: 'surviving',
+      triggerThreshold: 0.5,
+      survivorCount: 0,
+      totalWordCount: 0,
     };
     case 'VocalPitchTracker': return {
       id, type: 'VocalPitchTracker',
       layerId: '',
       minPitchHz: 80,
       maxPitchHz: 800,
-      tolerance: 0.15,
-      pitchRangeMode: 'voice'
+      tolerance: 0.35,
+      pitchRangeMode: 'voice',
+      holdOnSilence: true,
+      holdTimeoutMs: 600
     };
     case 'VowelFormantTracker': return {
       id, type: 'VowelFormantTracker',
       layerId: '',
       smoothing: 0.8,
-      voiceProfile: 'universal'
+      voiceProfile: 'universal',
+      holdOnSilence: true,
+      holdTimeoutMs: 600
     };
     case 'SpokenWordVisualizer': return {
       id, type: 'SpokenWordVisualizer',

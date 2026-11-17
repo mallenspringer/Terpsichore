@@ -104,6 +104,41 @@ export function SpeechEnvelopeTrackerUI({
           <span className="vocal-knob-label">REL: {Math.round(effect.releaseMs)}ms</span>
         </div>
       </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 4 }}>
+        <div className="vocal-range-mode-toggle" style={{ margin: 0 }}>
+          <button
+            className={`range-mode-btn ${!effect.speechContinuous ? 'active-voice' : ''}`}
+            onClick={() => onUpdate({ speechContinuous: false })}
+            title="Emit single-frame pulse on speech start"
+          >
+            SPCH PULSE
+          </button>
+          <button
+            className={`range-mode-btn ${effect.speechContinuous ? 'active-voice' : ''}`}
+            onClick={() => onUpdate({ speechContinuous: true })}
+            title="Hold high while speech is active"
+          >
+            SPCH GATE
+          </button>
+        </div>
+        <div className="vocal-range-mode-toggle" style={{ margin: 0 }}>
+          <button
+            className={`range-mode-btn ${!effect.silenceContinuous ? 'active-music' : ''}`}
+            onClick={() => onUpdate({ silenceContinuous: false })}
+            title="Emit single-frame pulse when speech drops into silence"
+          >
+            SIL PULSE
+          </button>
+          <button
+            className={`range-mode-btn ${effect.silenceContinuous ? 'active-music' : ''}`}
+            onClick={() => onUpdate({ silenceContinuous: true })}
+            title="Hold high while silent"
+          >
+            SIL GATE
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

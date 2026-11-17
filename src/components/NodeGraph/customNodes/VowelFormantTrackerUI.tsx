@@ -1,6 +1,7 @@
 import { useRef, useEffect } from 'react';
 import { VowelFormantTrackerEffect } from '../../../state/types';
 import { useEngineStore } from '../../../state/store';
+import { SignalDispatcher } from '../../../state/SignalDispatcher';
 import { Knob } from './Knob';
 
 export function VowelFormantTrackerUI({
@@ -16,18 +17,10 @@ export function VowelFormantTrackerUI({
 }) {
   const f1Val = useEngineStore(s => s.layers[layerId]?.signalValues?.[`${nodeId}.formant_f1`] ?? 0);
   const f2Val = useEngineStore(s => s.layers[layerId]?.signalValues?.[`${nodeId}.formant_f2`] ?? 0);
-  const vowelX = useEngineStore(s => s.layers[layerId]?.signalValues?.[`${nodeId}.vowel_x`] ?? 0.5);
-  const vowelY = useEngineStore(s => s.layers[layerId]?.signalValues?.[`${nodeId}.vowel_y`] ?? 0.5);
   const vowelTrig = useEngineStore(s => s.layers[layerId]?.signalValues?.[`${nodeId}.vowel_change_trig`] ?? 0);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const trailRef = useRef<{ x: number; y: number }[]>([]);
-
-  useEffect(() => {
-    const trail = trailRef.current;
-    trail.push({ x: vowelX, y: vowelY });
-    if (trail.length > 15) trail.shift();
-  }, [vowelX, vowelY]);
 
   useEffect(() => {
     let animId: number;
@@ -37,6 +30,13 @@ export function VowelFormantTrackerUI({
     if (!ctx) return;
 
     const render = () => {
+      const liveSignals = SignalDispatcher.getInstance().getLatestSignals(layerId);
+      const liveX = liveSignals[`${nodeId}.vowel_x`] ?? 0.5;
+      const liveY = liveSignals[`${nodeId}.vowel_y`] ?? 0.5;
+      const trail = trailRef.current;
+      trail.push({ x: liveX, y: liveY });
+      if (trail.length > 24) trail.shift();
+
       const w = canvas.width;
       const h = canvas.height;
       ctx.clearRect(0, 0, w, h);
@@ -64,7 +64,6 @@ export function VowelFormantTrackerUI({
       ctx.fillText('Ee (Front/High)', w * 0.75, h * 0.25);
       ctx.fillText('Ah (Front/Low)', w * 0.75, h * 0.75);
 
-      const trail = trailRef.current;
       if (trail.length > 0) {
         ctx.beginPath();
         ctx.lineWidth = 1.5;
@@ -111,7 +110,7 @@ export function VowelFormantTrackerUI({
 
     render();
     return () => cancelAnimationFrame(animId);
-  }, []);
+  }, [layerId, nodeId]);
 
   return (
     <div className="vowel-track-rack" onPointerDown={e => e.stopPropagation()}>
@@ -177,6 +176,39 @@ export function VowelFormantTrackerUI({
             <option value="mezzo_soprano">Mezzo Soprano</option>
           </select>
         </div>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
+        <div className="vocal-range-mode-toggle" style={{ margin: 0 }}>
+          <button
+            className={`range-mode-btn ${effect.holdOnSilence !== false ? 'active-voice' : ''}`}
+            onClick={() => onUpdate({ holdOnSilence: true })}
+            title="Hold last vowel position across short consonants/pauses until timeout"
+          >
+            HOLD SILENCE
+          </button>
+          <button
+            className={`range-mode-btn ${effect.holdOnSilence === false ? 'active-music' : ''}`}
+            onClick={() => onUpdate({ holdOnSilence: false })}
+            title="Recenter immediately when speech stops"
+          >
+            RECENTER INSTANT
+          </button>
+        </div>
+        {effect.holdOnSilence !== false && (
+          <div className="vocal-knob-item">
+            <div style={{ display: 'flex', alignItems: 'center', width: '100%', justifyContent: 'space-between' }}>
+              <span className="vocal-knob-label" style={{ margin: 0 }}>HOLD DECAY: {Math.round(effect.holdTimeoutMs ?? 600)}ms</span>
+              <Knob
+                value={effect.holdTimeoutMs ?? 600}
+                min={50} max={3000}
+                resetValue={600}
+                color="#d918f5"
+                onChange={v => onUpdate({ holdTimeoutMs: Math.round(v) })}
+              />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -85,4 +85,13 @@ describe('SpectralTimbreExtractor', () => {
     const resultBass = extractor.process(bassFft);
     expect(resultBass.sibilance).toBeCloseTo(0.0, 5); // High low-end, extremely low high-end
   });
+
+  it('should return zeros on silent -Infinity / -100 dB FFT floors', () => {
+    const extractor = new SpectralTimbreExtractor(48000);
+    const infSilent = new Float32Array(1024).fill(-Infinity);
+    expect(extractor.process(infSilent)).toEqual({ centroid: 0, flatness: 0, sibilance: 0 });
+
+    const floorSilent = new Float32Array(1024).fill(-100);
+    expect(extractor.process(floorSilent)).toEqual({ centroid: 0, flatness: 0, sibilance: 0 });
+  });
 });
